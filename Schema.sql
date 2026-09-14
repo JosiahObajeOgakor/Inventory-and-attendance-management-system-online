@@ -116,8 +116,7 @@ CREATE TABLE PurchaseOrders (
     Status       NVARCHAR(20) NOT NULL DEFAULT 'Pending', -- Pending, Ordered, Received, Cancelled
     PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- Unpaid, Paid — drives Accounts Payable
     TotalAmount  DECIMAL(14,2) NOT NULL DEFAULT 0,
-    CreatedByUserID INT NOT NULL REFERENCES Users(UserID),
-    IsSample     BIT NOT NULL DEFAULT 0
+    CreatedByUserID INT NOT NULL REFERENCES Users(UserID)
 );
 
 CREATE TABLE PurchaseOrderItems (

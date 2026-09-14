@@ -24,6 +24,12 @@ Public Module Purchasing
         ''' 0 when VAT isn't being added to this purchase.
         Public Property VatRate As Decimal
         Public Property Lines As New List(Of PurchaseLine)
+        ''' The goods are already here: book them into stock as part of saving.
+        ''' Candid Purrfect buys rather than produces, so its purchases fill the
+        ''' shelves directly. False keeps the order-now, receive-later flow.
+        Public Property ReceiveNow As Boolean
+        ''' Where received goods go; 0 = the first warehouse.
+        Public Property WarehouseID As Integer
     End Class
 
     Public Class PurchaseResult
@@ -84,8 +90,39 @@ Public Module Purchasing
                     New Dictionary(Of String, Object) From {
                         {"@d", req.OrderDate.Date}, {"@name", req.SupplierName}, {"@amt", money.Total}, {"@ref", money.PONumber}})
 
+                If req.ReceiveNow Then ReceiveInto(conn, tx, req, money, userId)
+
                 Return money
             End Function)
     End Function
+
+    ''' Books a purchase's goods into stock inside the saving transaction, so an
+    ''' order can never exist without its stock or its stock without the order.
+    ''' Each purchase gets its own batch (named by its number, so any unit on the
+    ''' shelf traces back to the purchase that brought it in) and a stock-history
+    ''' line. The product's cost becomes what was just paid, keeping profit on the
+    ''' next sale honest, and an unlabelled product gets its barcode now.
+    Private Sub ReceiveInto(conn As SqlConnection, tx As SqlTransaction, req As PurchaseRequest,
+                            money As PurchaseResult, userId As Integer)
+        Dim warehouseId = req.WarehouseID
+        If warehouseId <= 0 Then
+            warehouseId = Convert.ToInt32(DataAccess.ScalarIn(conn, tx, "SELECT MIN(WarehouseID) FROM Warehouses"))
+        End If
+        For Each line In req.Lines
+            DataAccess.Exec(conn, tx,
+                "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand + @q WHERE ProductID = @p AND WarehouseID = @w AND BatchNumber = @b; " &
+                "IF @@ROWCOUNT = 0 INSERT INTO StockBatches (ProductID, WarehouseID, BatchNumber, QuantityOnHand) VALUES (@p, @w, @b, @q); " &
+                "INSERT INTO StockMovements (ProductID, WarehouseID, MovementType, Quantity, ReferenceType, ReferenceID, MovementDate, UserID) " &
+                "  VALUES (@p, @w, 'IN', @q, 'PurchaseOrder', @po, @d, @u); " &
+                "UPDATE Products SET CostPrice = CASE WHEN @cost > 0 THEN @cost ELSE CostPrice END, " &
+                "  Barcode = CASE WHEN Barcode IS NULL OR Barcode = '' THEN @bc ELSE Barcode END WHERE ProductID = @p;",
+                New Dictionary(Of String, Object) From {
+                    {"@p", line.ProductID}, {"@w", warehouseId}, {"@q", line.Quantity}, {"@b", money.PONumber},
+                    {"@po", money.POID}, {"@d", req.OrderDate.Date}, {"@u", userId},
+                    {"@cost", line.UnitCost}, {"@bc", Barcodes.MintInternalBarcode(line.ProductID)}})
+        Next
+        DataAccess.Exec(conn, tx, "UPDATE PurchaseOrders SET Status = 'Received' WHERE POID = @po",
+                        New Dictionary(Of String, Object) From {{"@po", money.POID}})
+    End Sub
 
 End Module

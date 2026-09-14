@@ -29,7 +29,14 @@ Public Class ucInventory
     Public Sub New(userId As Integer, Optional isAdminUser As Boolean = False)
         currentUserId = userId
         isAdmin = isAdminUser
-        cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Production history"})
+        ' Candid Purrfect buys everything it sells — stock comes in by purchase,
+        ' never by production. ChewyPets keeps its production screens.
+        If Buys Then
+            btnProduction.Text = "+ Record purchase"
+            cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Purchase history"})
+        Else
+            cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Production history"})
+        End If
         cboView.SelectedIndex = 0
 
         toolbar.Controls.Add(cboView)
@@ -93,7 +100,21 @@ Public Class ucInventory
         End Get
     End Property
 
+    ''' True for a business that stocks up by buying (Candid Purrfect).
+    Private Shared ReadOnly Property Buys As Boolean
+        Get
+            Return Not Company.Current.IsHome
+        End Get
+    End Property
+
     Private Sub btnProduction_Click(sender As Object, e As EventArgs)
+        If Buys Then
+            ' Saving the purchase books the goods into stock in the same step.
+            Using f As New frmNewPO(currentUserId)
+                If f.ShowDialog(FindForm()) = DialogResult.OK Then LoadGrid()
+            End Using
+            Return
+        End If
         Using f As New frmProduction(currentUserId)
             If f.ShowDialog(FindForm()) = DialogResult.OK Then LoadGrid()
         End Using
@@ -103,7 +124,36 @@ Public Class ucInventory
         Dim search = "%" & txtSearch.Text.Trim() & "%"
         Dim table As DataTable
 
-        If ByProduct Then
+        If ByProduct AndAlso Buys Then
+            ' Same view for a buying business, with what came in by purchase this month.
+            table = DataAccess.GetTable(
+                "SELECT cat.Name AS Category, p.ProductID, p.SKU, p.Name, p.Unit, " &
+                "ISNULL((SELECT SUM(QuantityOnHand) FROM StockBatches b WHERE b.ProductID = p.ProductID), 0) AS TotalQty, " &
+                "ISNULL((SELECT SUM(poi.Quantity) FROM PurchaseOrderItems poi JOIN PurchaseOrders po ON po.POID = poi.POID " &
+                "        WHERE poi.ProductID = p.ProductID AND po.Status = 'Received' " &
+                "        AND YEAR(po.OrderDate)=YEAR(GETDATE()) AND MONTH(po.OrderDate)=MONTH(GETDATE())),0) AS PurchasedThisMonth, " &
+                "p.ReorderLevel, p.CostPrice, p.PriceDistributor, p.PriceWholesaler, p.PriceRetail " &
+                "FROM Products p JOIN Categories cat ON cat.CategoryID = p.CategoryID " &
+                "WHERE p.IsActive = 1 AND (p.Name LIKE @s OR p.SKU LIKE @s) " &
+                "ORDER BY cat.Name, p.Name",
+                New Dictionary(Of String, Object) From {{"@s", search}})
+            grid.Bind(table, hiddenColumns:={"ProductID"})
+        ElseIf cboView.SelectedIndex = 2 AndAlso Buys Then
+            ' What was bought, from whom, when, how many and at what cost — newest first.
+            table = DataAccess.GetTable(
+                "SELECT po.OrderDate AS PurchasedOn, po.PONumber AS Purchase, s.Name AS Supplier, p.SKU, p.Name AS Product, " &
+                "cat.Name AS Category, poi.Quantity AS QtyBought, p.Unit, poi.UnitCost, (poi.Quantity * poi.UnitCost) AS LineCost, " &
+                "po.PaymentStatus AS Payment, ISNULL(u.FullName, '') AS RecordedBy " &
+                "FROM PurchaseOrderItems poi JOIN PurchaseOrders po ON po.POID = poi.POID " &
+                "JOIN Suppliers s ON s.SupplierID = po.SupplierID " &
+                "JOIN Products p ON p.ProductID = poi.ProductID " &
+                "JOIN Categories cat ON cat.CategoryID = p.CategoryID " &
+                "LEFT JOIN Users u ON u.UserID = po.CreatedByUserID " &
+                "WHERE po.Status = 'Received' AND (p.Name LIKE @s OR p.SKU LIKE @s OR s.Name LIKE @s OR po.PONumber LIKE @s) " &
+                "ORDER BY po.OrderDate DESC, po.POID DESC",
+                New Dictionary(Of String, Object) From {{"@s", search}})
+            grid.Bind(table)
+        ElseIf ByProduct Then
             table = DataAccess.GetTable(
                 "SELECT cat.Name AS Category, p.ProductID, p.SKU, p.Name, p.Unit, " &
                 "ISNULL((SELECT SUM(QuantityOnHand) FROM StockBatches b WHERE b.ProductID = p.ProductID), 0) AS TotalQty, " &

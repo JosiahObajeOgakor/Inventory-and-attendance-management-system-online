@@ -15,7 +15,7 @@ Imports System.Reflection
 <Assembly: System.Reflection.AssemblyCompanyAttribute("ChewyPetsFeed"),  _
  Assembly: System.Reflection.AssemblyConfigurationAttribute("Release"),  _
  Assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0"),  _
- Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c078375b8bcac3102dfbdc5eab3e24ec859f97f8"),  _
+ Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+85daf4de16280253883e29be8bbb33af3c2da5c9"),  _
  Assembly: System.Reflection.AssemblyProductAttribute("ChewyStock"),  _
  Assembly: System.Reflection.AssemblyTitleAttribute("ChewyStock"),  _
  Assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")> 

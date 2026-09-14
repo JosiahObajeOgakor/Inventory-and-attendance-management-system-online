@@ -26,10 +26,14 @@ Public Class frmNewPO
 
     Private lineItems As New DataTable()
     Private ReadOnly ConfiguredVatRate As Decimal = AppInfo.VatRate
+    ''' Candid Purrfect buys what it sells: saving a purchase puts the goods in
+    ''' stock straight away. ChewyPets orders now and receives later.
+    Private ReadOnly ReceivesOnSave As Boolean = Not Company.Current.IsHome
+    Private ReadOnly cboWarehouse As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 170}
 
     Public Sub New(userId As Integer)
         currentUserId = userId
-        Text = "New purchase order"
+        Text = If(ReceivesOnSave, "Record purchase", "New purchase order")
         Width = 700
         Height = 580
         StartPosition = FormStartPosition.CenterParent
@@ -58,6 +62,17 @@ Public Class frmNewPO
         supplierRow.Controls.Add(btnNewSupplier)
         supplierRow.Controls.Add(New Label() With {.Text = "  Purchase date:", .AutoSize = True, .Margin = New Padding(12, 8, 4, 0)})
         supplierRow.Controls.Add(dtpOrderDate)
+        If ReceivesOnSave Then
+            Dim warehouses = DataAccess.GetTable("SELECT WarehouseID, Name FROM Warehouses ORDER BY WarehouseID")
+            cboWarehouse.DataSource = warehouses
+            cboWarehouse.DisplayMember = "Name"
+            cboWarehouse.ValueMember = "WarehouseID"
+            ' Only worth asking when there's a choice to make.
+            If warehouses.Rows.Count > 1 Then
+                supplierRow.Controls.Add(New Label() With {.Text = "  Into:", .AutoSize = True, .Margin = New Padding(12, 8, 4, 0)})
+                supplierRow.Controls.Add(cboWarehouse)
+            End If
+        End If
         AddHandler btnNewSupplier.Click, Sub(s, e)
                                              Using f As New frmAddSupplier()
                                                  If f.ShowDialog() = DialogResult.OK Then
@@ -90,7 +105,7 @@ Public Class frmNewPO
         totalRow.Controls.Add(New Label() With {.Text = "Total:", .AutoSize = True, .Margin = New Padding(0, 6, 4, 0)})
         totalRow.Controls.Add(lblTotal)
 
-        UiHelpers.AddOkCancelRow(Me, "Save purchase order", AddressOf btnSave_Click)
+        UiHelpers.AddOkCancelRow(Me, If(ReceivesOnSave, "Save purchase & add to stock", "Save purchase order"), AddressOf btnSave_Click)
         Controls.Add(totalRow)
         Controls.Add(gridLines)
         Controls.Add(adviceRow)
@@ -201,7 +216,9 @@ Public Class frmNewPO
             .SupplierID = CInt(supplierRow("SupplierID")),
             .SupplierName = supplierRow("Name").ToString(),
             .OrderDate = dtpOrderDate.Value.Date,
-            .VatRate = If(chkVat.Checked, ConfiguredVatRate, 0D)}
+            .VatRate = If(chkVat.Checked, ConfiguredVatRate, 0D),
+            .ReceiveNow = ReceivesOnSave,
+            .WarehouseID = If(ReceivesOnSave AndAlso cboWarehouse.SelectedValue IsNot Nothing, Convert.ToInt32(cboWarehouse.SelectedValue), 0)}
         For Each r As DataRow In lineItems.Rows
             req.Lines.Add(New Purchasing.PurchaseLine() With {
                 .ProductID = CInt(r("ProductID")),
@@ -213,7 +230,11 @@ Public Class frmNewPO
         Try
             ' One transaction: header, lines and the ledger entry save together.
             Dim saved = Purchasing.Save(req, currentUserId)
-            AppUI.Toast($"Purchase order {saved.PONumber} saved — {AppInfo.Money(saved.Total)}.", AppUI.ToastKind.Success)
+            If ReceivesOnSave Then
+                AppUI.Toast($"Purchase {saved.PONumber} saved — {req.Lines.Sum(Function(l) l.Quantity):N0} unit(s) added to stock, {AppInfo.Money(saved.Total)}.", AppUI.ToastKind.Success)
+            Else
+                AppUI.Toast($"Purchase order {saved.PONumber} saved — {AppInfo.Money(saved.Total)}.", AppUI.ToastKind.Success)
+            End If
             Me.DialogResult = DialogResult.OK
             Me.Close()
         Catch ex As Exception

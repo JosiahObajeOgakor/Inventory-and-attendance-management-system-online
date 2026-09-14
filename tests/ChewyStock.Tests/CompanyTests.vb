@@ -258,6 +258,90 @@ Public Class CompanyTests
                       "ChewyPets' database gets no price book")
     End Sub
 
+    ' ===== candid buys, it doesn't produce =====
+
+    <TestMethod>
+    Public Sub A_candid_purchase_goes_straight_into_stock()
+        Dim r = SignIn(NewAccount("Warehouse Clerk"), "Passw0rd!2026", Company.CandidPurrfect)
+        Dim tag = Guid.NewGuid().ToString("N").Substring(0, 5)
+        Dim supplier = DataAccess.ExecuteScalarInsert("INSERT INTO Suppliers (Name) VALUES (@n)", TestDb.P("@n", "Pet Wholesale " & tag))
+        Dim product = TestDb.AddProduct("Bought Kibble " & tag, 0D)
+        TestDb.Exec("UPDATE Products SET Barcode = NULL WHERE ProductID = @p", TestDb.P("@p", product))
+        Dim req As New Purchasing.PurchaseRequest() With {
+            .SupplierID = supplier, .SupplierName = "Pet Wholesale " & tag, .OrderDate = Date.Today, .ReceiveNow = True}
+        req.Lines.Add(New Purchasing.PurchaseLine() With {.ProductID = product, .ProductName = "Bought Kibble", .Quantity = 40, .UnitCost = 2500D})
+
+        Dim saved = Purchasing.Save(req, r.UserID)
+
+        Assert.AreEqual(40, TestDb.Count("SELECT ISNULL(SUM(QuantityOnHand),0) FROM StockBatches WHERE ProductID = @p", TestDb.P("@p", product)),
+                        "the goods are on the shelf the moment the purchase is saved")
+        Assert.AreEqual(1, TestDb.Count("SELECT COUNT(*) FROM StockBatches WHERE ProductID = @p AND BatchNumber = @b", TestDb.P("@p", product, "@b", saved.PONumber)),
+                        "the batch traces back to the purchase")
+        Assert.AreEqual(1, TestDb.Count("SELECT COUNT(*) FROM StockMovements WHERE ProductID = @p AND MovementType = 'IN' AND ReferenceType = 'PurchaseOrder' AND ReferenceID = @po",
+                                        TestDb.P("@p", product, "@po", saved.POID)), "and shows in the stock history")
+        Assert.AreEqual("Received", Convert.ToString(TestDb.Scalar("SELECT Status FROM PurchaseOrders WHERE POID = @po", TestDb.P("@po", saved.POID))))
+        Assert.AreEqual(2500D, Convert.ToDecimal(TestDb.Scalar("SELECT CostPrice FROM Products WHERE ProductID = @p", TestDb.P("@p", product))),
+                        "cost becomes what was paid, so profit on the next sale is right")
+        Assert.AreEqual(Barcodes.MintInternalBarcode(product), Convert.ToString(TestDb.Scalar("SELECT Barcode FROM Products WHERE ProductID = @p", TestDb.P("@p", product))))
+        Assert.IsTrue(saved.PONumber.StartsWith("CandidPurrfect-"))
+
+        ' A second purchase tops the same product up rather than replacing it.
+        Dim again As New Purchasing.PurchaseRequest() With {
+            .SupplierID = supplier, .SupplierName = "Pet Wholesale " & tag, .OrderDate = Date.Today, .ReceiveNow = True}
+        again.Lines.Add(New Purchasing.PurchaseLine() With {.ProductID = product, .ProductName = "Bought Kibble", .Quantity = 10, .UnitCost = 2600D})
+        Purchasing.Save(again, r.UserID)
+        Assert.AreEqual(50, TestDb.Count("SELECT ISNULL(SUM(QuantityOnHand),0) FROM StockBatches WHERE ProductID = @p", TestDb.P("@p", product)))
+    End Sub
+
+    <TestMethod>
+    Public Sub A_chewypets_purchase_order_still_waits_to_be_received()
+        Company.Use(Company.ChewyPets)
+        Dim tag = Guid.NewGuid().ToString("N").Substring(0, 5)
+        Dim supplier = DataAccess.ExecuteScalarInsert("INSERT INTO Suppliers (Name) VALUES (@n)", TestDb.P("@n", "Grain Co " & tag))
+        Dim product = TestDb.AddProduct("Ordered Maize " & tag)
+        Dim user = TestDb.Count("SELECT MIN(UserID) FROM Users")
+        Dim req As New Purchasing.PurchaseRequest() With {.SupplierID = supplier, .SupplierName = "Grain Co " & tag}
+        req.Lines.Add(New Purchasing.PurchaseLine() With {.ProductID = product, .ProductName = "Maize", .Quantity = 40, .UnitCost = 900D})
+
+        Dim saved = Purchasing.Save(req, user)
+
+        Assert.AreEqual(0, TestDb.Count("SELECT COUNT(*) FROM StockBatches WHERE ProductID = @p", TestDb.P("@p", product)),
+                        "ChewyPets orders now and receives later, exactly as before")
+        Assert.AreEqual("Pending", Convert.ToString(TestDb.Scalar("SELECT Status FROM PurchaseOrders WHERE POID = @po", TestDb.P("@po", saved.POID))))
+    End Sub
+
+    <TestMethod>
+    Public Sub Candid_inventory_records_purchases_and_chewypets_keeps_production()
+        Company.Use(Company.ChewyPets)
+        Using screen As New ucInventory(1, isAdminUser:=False)
+            Assert.IsTrue(HasButton(screen, "+ Record production"))
+            Assert.IsFalse(HasButton(screen, "+ Record purchase"))
+        End Using
+
+        Dim r = SignIn(NewAccount("Warehouse Clerk"), "Passw0rd!2026", Company.CandidPurrfect)
+        Using screen As New ucInventory(r.UserID, isAdminUser:=False)
+            Assert.IsTrue(HasButton(screen, "+ Record purchase"), "Candid buys what it sells")
+            Assert.IsFalse(HasButton(screen, "+ Record production"), "Candid doesn't produce")
+            Dim views = FindCombo(screen).Items.Cast(Of Object)().Select(Function(o) o.ToString()).ToList()
+            Assert.IsTrue(views.Contains("Purchase history"))
+            Assert.IsFalse(views.Contains("Production history"))
+        End Using
+        Using f As New frmNewPO(r.UserID)
+            Assert.AreEqual("Record purchase", f.Text)
+            Assert.IsTrue(HasButton(f, "Save purchase & add to stock"))
+        End Using
+    End Sub
+
+    ''' The view picker specifically — the paged table has dropdowns of its own.
+    Private Shared Function FindCombo(root As Control) As ComboBox
+        For Each c As Control In root.Controls
+            If TypeOf c Is ComboBox AndAlso DirectCast(c, ComboBox).Items.Contains("Stock by product") Then Return DirectCast(c, ComboBox)
+            Dim inner = FindCombo(c)
+            If inner IsNot Nothing Then Return inner
+        Next
+        Return Nothing
+    End Function
+
     ' ===== price book =====
 
     <TestMethod>
