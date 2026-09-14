@@ -15,6 +15,9 @@ Public Class frmNewPO
     Private numQty As New NumericUpDown() With {.Minimum = 1, .Maximum = 100000, .Value = 1}
     Private numUnitCost As New NumericUpDown() With {.Maximum = 100000000, .DecimalPlaces = 2}
     Private btnAddLine As New Button() With {.Text = "Add line", .Tag = "primary", .AutoSize = True}
+    Private btnSuggest As New Button() With {.Text = "Suggest order", .AutoSize = True}
+    ''' What the forecast and the cost history have to say about this order.
+    Private lblAdvice As New Label() With {.AutoSize = True, .Visible = False, .Tag = "keepfont"}
     Private btnNewSupplier As New Button() With {.Text = "+ New", .AutoSize = True}
     Private gridLines As DataGridView = UiHelpers.NewGrid()
     Private chkVat As New CheckBox() With {.AutoSize = True, .Checked = False, .Margin = New Padding(0, 4, 24, 0)}
@@ -74,6 +77,11 @@ Public Class frmNewPO
         lineRow.Controls.Add(New Label() With {.Text = "Unit cost:", .AutoSize = True, .Margin = New Padding(12, 8, 8, 0)})
         lineRow.Controls.Add(numUnitCost)
         lineRow.Controls.Add(btnAddLine)
+        lineRow.Controls.Add(btnSuggest)
+
+        lblAdvice.MaximumSize = New Drawing.Size(720, 0)
+        Dim adviceRow As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(16, 0, 16, 4)}
+        adviceRow.Controls.Add(lblAdvice)
 
         chkVat.Text = $"Add VAT ({ConfiguredVatRate:0.##}%)"
         Dim totalRow As New FlowLayoutPanel() With {.Dock = DockStyle.Bottom, .AutoSize = True, .Padding = New Padding(16)}
@@ -85,6 +93,7 @@ Public Class frmNewPO
         UiHelpers.AddOkCancelRow(Me, "Save purchase order", AddressOf btnSave_Click)
         Controls.Add(totalRow)
         Controls.Add(gridLines)
+        Controls.Add(adviceRow)
         Controls.Add(lineRow)
         Controls.Add(supplierRow)
         ' Dock order: Save/Cancel at the very bottom, total row above it, grid fills the rest.
@@ -95,17 +104,76 @@ Public Class frmNewPO
                                                   End Sub
 
         AddHandler btnAddLine.Click, AddressOf btnAddLine_Click
+        AddHandler btnSuggest.Click, AddressOf Suggest_Click
         AddHandler chkVat.CheckedChanged, Sub(s, e) RecalcTotal()
         RecalcTotal()
         UiHelpers.FitToScreen(Me)
         Theme.Apply(Me)
     End Sub
 
+    ''' Fills the order from the demand forecast: everything this supplier
+    ''' carries that won't last the lead time, most urgent first. The buyer
+    ''' reviews and edits — the screen's job is to stop them starting from a
+    ''' blank sheet every month.
+    Private Sub Suggest_Click(sender As Object, e As EventArgs)
+        Dim supplier = TryCast(cboSupplier.SelectedItem, DataRowView)
+        If supplier Is Nothing Then Return
+        Dim supplierId = CInt(supplier("SupplierID"))
+
+        Dim suggestions As List(Of PurchaseAdvice.SuggestedLine)
+        Try
+            suggestions = PurchaseAdvice.SuggestOrder(supplierId)
+        Catch ex As Exception
+            AppUI.Toast("Could not work out a suggestion: " & ex.Message, AppUI.ToastKind.Error)
+            Return
+        End Try
+
+        If suggestions.Count = 0 Then
+            AppUI.Info(Me, "Nothing from this supplier is forecast to run short before a delivery could arrive.")
+            Return
+        End If
+
+        For Each s In suggestions
+            If lineItems.Select("ProductID = " & s.ProductID).Length > 0 Then Continue For
+            lineItems.Rows.Add(s.ProductID, s.ProductName, s.Quantity, s.UnitCost)
+        Next
+        RecalcTotal()
+
+        Dim first = suggestions.First()
+        Dim due = If(first.RunsOutOn.HasValue, $" {first.ProductName} runs out around {first.RunsOutOn.Value:dd MMM}.", "")
+        ShowAdvice($"Suggested {suggestions.Count} line(s) from the demand forecast.{due} Edit anything that doesn't look right.")
+    End Sub
+
+    ''' What the algorithms noticed about the order as it stands.
+    Private Sub ShowAdvice(message As String)
+        lblAdvice.Text = If(message, "")
+        lblAdvice.Visible = Not String.IsNullOrEmpty(message)
+    End Sub
+
     Private Sub btnAddLine_Click(sender As Object, e As EventArgs)
         Dim row = CType(cboProduct.SelectedItem, DataRowView)
         If row Is Nothing Then Return
-        lineItems.Rows.Add(CInt(row("ProductID")), row("Name").ToString(), CInt(numQty.Value), numUnitCost.Value)
+        Dim productId = CInt(row("ProductID"))
+        Dim supplier = TryCast(cboSupplier.SelectedItem, DataRowView)
+
+        ' A unit cost that doesn't belong with this supplier's others is either a
+        ' typo or a price rise, and both are worth a second look before ordering.
+        If supplier IsNot Nothing Then
+            Dim odd = PurchaseAdvice.CostLooksUnusual(CInt(supplier("SupplierID")), productId, numUnitCost.Value)
+            If odd IsNot Nothing AndAlso
+               Not AppUI.Confirm(Me, odd, "Check the unit cost", "Order at this price") Then Return
+        End If
+
+        lineItems.Rows.Add(productId, row("Name").ToString(), CInt(numQty.Value), numUnitCost.Value)
         RecalcTotal()
+
+        ' Half of a pair that sells together is stock that can't be sold as one.
+        Try
+            ShowAdvice(PurchaseAdvice.MissingPartner(
+                lineItems.AsEnumerable().Select(Function(r) CInt(r("ProductID"))).ToList()))
+        Catch
+            ShowAdvice(Nothing)
+        End Try
     End Sub
 
     Private Function Subtotal() As Decimal

@@ -48,8 +48,10 @@ Public Class frmClerkWelcome
     ''' True once she's chosen "Sign out instead" rather than checking in.
     Public ReadOnly Property SignedOut As Boolean
 
+    ''' The welcome clip is ChewyPets footage, so only ChewyPets plays it;
+    ''' Candid Purrfect's welcome shows its own logo instead.
     Public Shared Function VideoPath() As String
-        Return AppPaths.Asset("landingvideo.mp4")
+        Return If(Company.Current.IsHome, AppPaths.Asset("landingvideo.mp4"), "")
     End Function
 
     ''' Only warehouse clerks get the welcome clip (and the check-in card).
@@ -143,19 +145,28 @@ Public Class frmClerkWelcome
         card.Location = New Point(ClientSize.Width - card.Width - 32, 32)
     End Sub
 
+    ''' Every successful login asks for a check-in — including the second and
+    ''' third of the same day.
+    '''
+    ''' This used to hide the button once a check-in existed for today and show
+    ''' that first time instead, so signing back in after a break recorded
+    ''' nothing and the screen kept reporting whenever she first arrived. An
+    ''' earlier check-in is context, not a reason to stop asking.
     Private Sub RefreshCheckInState()
+        btnCheckIn.Visible = True
+        btnCheckIn.Enabled = True
+        btnSignOut.Visible = True
+        lblCheckState.ForeColor = Color.DimGray
+        lblCheckState.Font = New Font("Segoe UI", 9.5F, FontStyle.Regular)
+        lblCheckState.Text = ""
+
         Try
-            Dim existing = Attendance.TodayCheckIn(_userId)
-            If existing.HasValue Then
-                ShowCheckedIn(existing.Value)
-            Else
-                btnCheckIn.Visible = True
-                btnCheckIn.Enabled = True
-                btnSignOut.Visible = True
-                lblCheckState.Text = ""
+            Dim earlier = Attendance.LastCheckIn(_userId)
+            If earlier.HasValue Then
+                lblCheckState.Text = $"Last checked in today at {earlier.Value:HH:mm}. Check in again to start this session."
             End If
         Catch
-            ' If attendance can't be read, just let her check in normally on click.
+            ' If attendance can't be read, still let her check in on click.
         End Try
     End Sub
 
@@ -183,13 +194,23 @@ Public Class frmClerkWelcome
         Finish()
     End Sub
 
+    ''' Confirms the check-in just recorded — the time of this click, not an
+    ''' earlier one, and which check-in of the day it is so a repeat is visibly
+    ''' a repeat rather than looking like nothing happened.
     Private Sub ShowCheckedIn(at As DateTime)
         _CheckedIn = True
         btnCheckIn.Visible = False
         btnSignOut.Visible = False
         lblCheckState.ForeColor = Color.FromArgb(22, 163, 74)
         lblCheckState.Font = New Font("Segoe UI", 9.5F, FontStyle.Bold)
-        lblCheckState.Text = "✓ Checked In at " & at.ToString("HH:mm")
+
+        Dim today = 0
+        Try
+            today = Attendance.CheckInCountToday(_userId)
+        Catch
+        End Try
+        lblCheckState.Text = "✓ Checked In at " & at.ToString("HH:mm:ss") &
+                             If(today > 1, $"  ·  check-in {today} of today", "")
     End Sub
 
     Private Sub StartPlayback()
@@ -252,6 +273,17 @@ Public Class frmClerkWelcome
     Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
         MyBase.OnPaintBackground(e)
         If _host IsNot Nothing Then Return
+        If Not Company.Current.IsHome Then
+            e.Graphics.Clear(Color.Black)
+            Dim logo = Company.Current.Logo
+            If logo IsNot Nothing Then
+                Dim size = Math.Min(Width, Height) * 0.5F
+                Dim s = Math.Min(size / logo.Width, size / logo.Height)
+                Dim w = logo.Width * s, h = logo.Height * s
+                e.Graphics.DrawImage(logo, (Width - w) / 2, Height * 0.38F - h / 2, w, h)
+            End If
+            Return
+        End If
         Dim photo = AppPaths.Asset("landing.jpg")
         If File.Exists(photo) Then
             Try

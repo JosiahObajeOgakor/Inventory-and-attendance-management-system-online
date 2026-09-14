@@ -266,4 +266,59 @@ Public Module AppUI
         Return name.Replace(" ", "_")
     End Function
 
+    ''' Shows a generated image (a shelf label, a barcode) with Print and Save.
+    ''' The bitmap is copied, so the caller can Dispose theirs on the next line
+    ''' without the window going blank underneath it.
+    Public Sub ShowImagePreview(image As Drawing.Image, title As String, Optional owner As IWin32Window = Nothing)
+        If image Is Nothing Then Return
+        Dim copy = New Drawing.Bitmap(image)
+
+        Dim f As New Form() With {
+            .Text = title, .StartPosition = FormStartPosition.CenterParent,
+            .Width = Math.Max(420, copy.Width + 80), .Height = copy.Height + 190,
+            .MinimizeBox = False, .MaximizeBox = False, .FormBorderStyle = FormBorderStyle.FixedDialog}
+
+        Dim picture As New PictureBox() With {
+            .Image = copy, .SizeMode = PictureBoxSizeMode.CenterImage,
+            .Dock = DockStyle.Fill, .BackColor = Drawing.Color.White}
+
+        Dim bar As New FlowLayoutPanel() With {
+            .Dock = DockStyle.Bottom, .AutoSize = True, .FlowDirection = FlowDirection.RightToLeft, .Padding = New Padding(10)}
+        Dim btnClose As New Button() With {.Text = "Close", .AutoSize = True}
+        Dim btnPrint As New Button() With {.Text = "Print", .Tag = "primary", .AutoSize = True}
+        Dim btnSave As New Button() With {.Text = "Save as image", .AutoSize = True}
+        bar.Controls.Add(btnClose)
+        bar.Controls.Add(btnPrint)
+        bar.Controls.Add(btnSave)
+
+        AddHandler btnClose.Click, Sub(s, e) f.Close()
+        AddHandler btnSave.Click,
+            Sub(s, e)
+                Using dlg As New SaveFileDialog() With {
+                    .Filter = "PNG image|*.png", .FileName = Sanitize(title) & ".png"}
+                    If dlg.ShowDialog(f) = DialogResult.OK Then
+                        copy.Save(dlg.FileName, Drawing.Imaging.ImageFormat.Png)
+                        Toast("Saved " & Path.GetFileName(dlg.FileName), ToastKind.Success)
+                    End If
+                End Using
+            End Sub
+        AddHandler btnPrint.Click,
+            Sub(s, e)
+                Using doc As New Drawing.Printing.PrintDocument()
+                    AddHandler doc.PrintPage,
+                        Sub(ps, pe) pe.Graphics.DrawImage(copy, pe.MarginBounds.Left, pe.MarginBounds.Top)
+                    Using preview As New PrintPreviewDialog() With {.Document = doc, .Width = 800, .Height = 600}
+                        preview.ShowDialog(f)
+                    End Using
+                End Using
+            End Sub
+        AddHandler f.FormClosed, Sub(s, e) copy.Dispose()
+
+        f.Controls.Add(picture)
+        f.Controls.Add(bar)
+        Theme.Apply(f)
+        If owner Is Nothing Then f.ShowDialog() Else f.ShowDialog(owner)
+        f.Dispose()
+    End Sub
+
 End Module

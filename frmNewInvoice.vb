@@ -23,6 +23,14 @@ Public Class frmNewInvoice
     Private numQty As New NumericUpDown() With {.Minimum = 1, .Maximum = 1000000, .Value = 1}
     Private lblUnit As New Label() With {.AutoSize = True, .Tag = "keepfont", .Margin = New Padding(8, 8, 0, 0)}
     Private btnAddLine As New Button() With {.Text = "Add line", .Tag = "primary", .AutoSize = True}
+    ' A hand scanner is a keyboard: it types the code then presses Enter, so all
+    ' this box has to do is act on Enter.
+    Private txtScan As New TextBox() With {.Width = 260}
+    ' What the algorithms noticed about the sale being keyed — upsell, or a
+    ' warning that this leaves the shelf thin. Hidden until there is something.
+    Private lblAdvice As New Label() With {.AutoSize = True, .Visible = False, .Tag = "keepfont", .Padding = New Padding(4, 2, 4, 6)}
+    ' K-Means segment for the customer on this sale, from how they actually buy.
+    Private lblSegment As New Label() With {.AutoSize = True, .Visible = False, .Tag = "keepfont", .Margin = New Padding(8, 8, 0, 0)}
     Private gridLines As DataGridView = UiHelpers.NewGrid()
     Private btnRemoveLine As New Button() With {.Text = "Remove line", .AutoSize = True, .Enabled = False}
     Private cboPaymentMethod As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 160}
@@ -91,6 +99,7 @@ Public Class frmNewInvoice
         AddHandler cboWarehouse.SelectedIndexChanged, Sub(s, e) UpdateUnitHint()
         AddHandler btnNewCustomer.Click, AddressOf btnNewCustomer_Click
         AddHandler btnAddLine.Click, AddressOf btnAddLine_Click
+        AddHandler txtScan.KeyDown, AddressOf Scan_KeyDown
         AddHandler btnRemoveLine.Click, Sub(s, e)
                                             If gridLines.CurrentRow IsNot Nothing AndAlso gridLines.CurrentRow.Index < lineItems.Rows.Count Then
                                                 lineItems.Rows.RemoveAt(gridLines.CurrentRow.Index)
@@ -120,6 +129,20 @@ Public Class frmNewInvoice
         If row Is Nothing Then Return
         Dim t = Convert.ToString(row("CustomerType"))
         If cboTier.Items.Contains(t) Then cboTier.SelectedItem = t
+        ShowCustomerSegment(CInt(row("CustomerID")))
+    End Sub
+
+    ''' Which kind of customer this is, worked out from how they actually buy
+    ''' (how often, how much a time, how much in total) rather than from the
+    ''' tier someone typed on their record years ago.
+    Private Sub ShowCustomerSegment(customerId As Integer)
+        Try
+            Dim segment = SaleAdvice.CustomerSegment(customerId)
+            lblSegment.Text = If(segment Is Nothing, "", "This is " & segment)
+            lblSegment.Visible = segment IsNot Nothing
+        Catch
+            lblSegment.Visible = False
+        End Try
     End Sub
 
     Private Function TierPrice(productId As Integer) As Decimal
@@ -192,6 +215,8 @@ Public Class frmNewInvoice
         custRow.Controls.Add(btnNewCustomer)
         custRow.Controls.Add(New Label() With {.Text = "  Sale date:", .AutoSize = True, .Margin = New Padding(12, 8, 4, 0)})
         custRow.Controls.Add(dtpSaleDate)
+        lblSegment.ForeColor = Theme.Current.TextMuted
+        custRow.Controls.Add(lblSegment)
         AddRow(top, "Customer", custRow)
 
         Dim tierRow As New FlowLayoutPanel() With {.AutoSize = True}
@@ -207,6 +232,17 @@ Public Class frmNewInvoice
         lineRow.Controls.Add(lblUnit)
         lineRow.Controls.Add(btnAddLine)
         AddRow(top, "Add product", lineRow)
+
+        Dim scanRow As New FlowLayoutPanel() With {.AutoSize = True}
+        scanRow.Controls.Add(txtScan)
+        scanRow.Controls.Add(New Label() With {
+            .Text = "Scan a product barcode — it's added straight to the sale.",
+            .AutoSize = True, .Margin = New Padding(10, 8, 0, 0), .ForeColor = Theme.Current.TextMuted})
+        AddRow(top, "Scan", scanRow)
+
+        lblAdvice.MaximumSize = New Size(700, 0)
+        lblAdvice.ForeColor = Theme.Current.Primary
+        AddRow(top, "", lblAdvice)
 
         ' Two columns (inputs | totals) so the summary stays short on small screens.
         Dim summary As New TableLayoutPanel() With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 4, .RowCount = 5, .Padding = New Padding(16, 8, 16, 8)}
@@ -275,6 +311,33 @@ Public Class frmNewInvoice
         End Using
     End Sub
 
+    ''' A scanner types the code and presses Enter. Look the code up, select that
+    ''' product and add it — one scan is one unit, scan again for the next, which
+    ''' is how a till is expected to behave.
+    Private Sub Scan_KeyDown(sender As Object, e As KeyEventArgs)
+        If e.KeyCode <> Keys.Enter Then Return
+        ' Stop the Enter reaching the form's default button and saving the sale.
+        e.Handled = True
+        e.SuppressKeyPress = True
+
+        Dim scan = Barcodes.ReadScan(txtScan.Text)
+        txtScan.Clear()
+        If scan Is Nothing Then Return
+
+        Dim match = DataAccess.GetTable(
+            "SELECT TOP 1 ProductID, Name FROM Products WHERE Barcode = @code AND IsActive = 1",
+            New Dictionary(Of String, Object) From {{"@code", scan.Code}})
+        If match.Rows.Count = 0 Then
+            AppUI.Toast($"No product carries the barcode {scan.Code}.", AppUI.ToastKind.Warning)
+            Return
+        End If
+
+        cboProduct.SelectedValue = Convert.ToInt32(match.Rows(0)("ProductID"))
+        numQty.Value = 1
+        btnAddLine_Click(Nothing, EventArgs.Empty)
+        txtScan.Focus()
+    End Sub
+
     Private Sub btnAddLine_Click(sender As Object, e As EventArgs)
         Dim row = TryCast(cboProduct.SelectedItem, DataRowView)
         If row Is Nothing Then Return
@@ -286,6 +349,13 @@ Public Class frmNewInvoice
         ' they're still looking at it.
         If Not ConfirmLineIsInStock(productId, Convert.ToString(row("Name")), qty) Then Return
 
+        ' A quantity far outside what normally goes out for this product is more
+        ' often a keying slip than a big order, and after saving it has already
+        ' come off the shelf.
+        Dim odd = SaleAdvice.QuantityLooksUnusual(productId, qty)
+        If odd IsNot Nothing AndAlso
+           Not AppUI.Confirm(Me, odd, "Check the quantity", "Add it anyway") Then Return
+
         Dim existing = lineItems.Select("ProductID = " & productId)
         If existing.Length > 0 Then
             existing(0)("Qty") = CInt(existing(0)("Qty")) + qty
@@ -295,6 +365,24 @@ Public Class frmNewInvoice
         End If
         RecalculateTotals()
         UpdateUnitHint()
+        ShowSaleAdvice(productId, qty)
+    End Sub
+
+    ''' The advice line under the sale: what usually goes with what's just been
+    ''' added, and whether this sale leaves the shelf too thin. One line at a
+    ''' time — a panel of warnings at a till gets ignored wholesale.
+    Private Sub ShowSaleAdvice(productId As Integer, qty As Integer)
+        Try
+            Dim onSale = lineItems.AsEnumerable().Select(Function(r) CInt(r("ProductID"))).ToList()
+            Dim message = SaleAdvice.Upsell(onSale)
+            If message Is Nothing Then message = SaleAdvice.StockoutRiskAfterSale(productId, qty)
+
+            lblAdvice.Text = If(message, "")
+            lblAdvice.Visible = message IsNot Nothing
+        Catch
+            ' Advice is a courtesy — never let it stop a sale being keyed.
+            lblAdvice.Visible = False
+        End Try
     End Sub
 
     ''' True when the line can be added. Stock trouble is reported here with the

@@ -177,12 +177,21 @@ Public Class ucDashboard
         End Select
     End Function
 
-    ''' Her own today's check-in, as a card alongside the rest.
+    ''' Her own check-in, as a card alongside the rest.
+    '''
+    ''' The most recent one, not the first of the day — she has just clicked the
+    ''' button, and showing her whenever she happened to arrive at 1am instead
+    ''' makes it look like the click did nothing.
     Private Sub ShowAttendance()
         Try
-            Dim rec = Attendance.TodayRecord(userId)
-            Dim inAt As DateTime? = If(rec Is Nothing OrElse rec("CheckInAt") Is DBNull.Value, Nothing, CType(Convert.ToDateTime(rec("CheckInAt")), DateTime?))
-            AddCard("Your day", If(inAt.HasValue, $"Checked in {inAt.Value:HH:mm}", "Not checked in today"))
+            Dim latest = Attendance.LastCheckIn(userId)
+            If Not latest.HasValue Then
+                AddCard("Your day", "Not checked in today")
+                Return
+            End If
+
+            Dim today = Attendance.CheckInCountToday(userId)
+            AddCard("Your day", $"Checked in {latest.Value:HH:mm}" & If(today > 1, $" ({today} today)", ""))
         Catch
             ' Attendance is informational here — never let it break the Dashboard.
         End Try

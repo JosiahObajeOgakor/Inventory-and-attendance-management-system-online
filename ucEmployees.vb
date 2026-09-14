@@ -49,6 +49,7 @@ Public Class ucEmployees
     Private btnAttRefresh As New Button() With {.Text = "Refresh", .Tag = "primary", .AutoSize = True}
     Private btnExportAtt As New Button() With {.Text = "Export CSV", .AutoSize = True}
     Private ReadOnly gridAttendance As New PagedGrid() With {.PageSize = 5}
+    Private cboAttView As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 210}
 
     Public Sub New(userId As Integer)
         currentUserId = userId
@@ -117,6 +118,7 @@ Public Class ucEmployees
         AddHandler btnExportAtt.Click, Sub(s, e) AppUI.ExportCsv(gridAttendance.AllRows(), "attendance", FindForm())
         AddHandler dtpAttFrom.ValueChanged, Sub(s, e) LoadAttendance()
         AddHandler dtpAttTo.ValueChanged, Sub(s, e) LoadAttendance()
+        AddHandler cboAttView.SelectedIndexChanged, Sub(s, e) LoadAttendance()
 
         AddHandler Me.Load, Sub(s, e)
                                 LoadPayroll()
@@ -331,6 +333,10 @@ Public Class ucEmployees
         bar.Controls.Add(dtpAttTo)
         bar.Controls.Add(btnAttRefresh)
         bar.Controls.Add(btnExportAtt)
+        cboAttView.Items.AddRange({"Every check-in (audit trail)", "One line per day"})
+        cboAttView.SelectedIndex = 0
+        bar.Controls.Add(New Label() With {.Text = "Show:", .AutoSize = True, .Margin = New Padding(12, 6, 4, 0)})
+        bar.Controls.Add(cboAttView)
         Dim host As New Panel() With {.Dock = DockStyle.Fill}
         host.Controls.Add(gridAttendance)
         host.Controls.Add(bar)
@@ -338,8 +344,13 @@ Public Class ucEmployees
         Return tp
     End Function
 
+    ''' The trail by default — every check-in on its own line, so a day with
+    ''' three of them reads as three. The rolled-up view is there for payroll.
     Private Sub LoadAttendance()
-        gridAttendance.Bind(Attendance.ForDateRange(dtpAttFrom.Value.Date, dtpAttTo.Value.Date))
+        Dim [from] = dtpAttFrom.Value.Date, [to] = dtpAttTo.Value.Date
+        gridAttendance.Bind(If(cboAttView.SelectedIndex = 1,
+                               Attendance.DailySummary([from], [to]),
+                               Attendance.ForDateRange([from], [to])))
     End Sub
 
     Private Function SelectedEmployeeId() As Integer?

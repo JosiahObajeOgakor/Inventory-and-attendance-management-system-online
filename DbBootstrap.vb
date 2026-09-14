@@ -27,8 +27,9 @@ Public Module DbBootstrap
     End Function
 
     ''' Returns "" on success, or a human-readable error to show the user.
+    ''' Sets up the database of the business signed into (Company.Current).
     Public Function EnsureDatabase() As String
-        Dim csb As New SqlConnectionStringBuilder(ConfigurationManager.ConnectionStrings("StockDeskDB").ConnectionString)
+        Dim csb As New SqlConnectionStringBuilder(DataAccess.ConnString)
         Dim targetDb = csb.InitialCatalog
 
         ' LocalDB's named instance can need an explicit create/start on a brand new
@@ -103,7 +104,10 @@ Public Module DbBootstrap
                     If hasSchema.ExecuteScalar() IsNot DBNull.Value Then Return ""   ' re-attached an existing database
                 End Using
 
-                Dim script = File.ReadAllText(schemaPath)
+                ' Schema.sql names StockDeskDB (its CREATE/USE header, so it still runs
+                ' by hand in SSMS). Point it at the database actually being built —
+                ' otherwise a second business's schema lands on top of the first's.
+                Dim script = Regex.Replace(File.ReadAllText(schemaPath), "\bStockDeskDB\b", targetDb)
                 ' Split on lines that are exactly "GO" (sqlcmd/SSMS batch separator;
                 ' not valid inside a single SqlCommand, which only runs one batch).
                 For Each batch In Regex.Split(script, "(?im)^\s*GO\s*$")
@@ -176,6 +180,45 @@ Public Module DbBootstrap
             DataAccess.Execute(
                 "IF COL_LENGTH('dbo.Employees', 'MonthlySalary') IS NULL " &
                 "ALTER TABLE Employees ADD MonthlySalary DECIMAL(14,2) NOT NULL DEFAULT 0;")
+
+            ' Generated demo history is flagged rather than guessed at, so it can
+            ' be filtered out of reports and removed again cleanly.
+            DataAccess.Execute(
+                "IF COL_LENGTH('dbo.Invoices', 'IsSample') IS NULL " &
+                "ALTER TABLE Invoices ADD IsSample BIT NOT NULL DEFAULT 0;")
+            DataAccess.Execute(
+                "IF COL_LENGTH('dbo.PurchaseOrders', 'IsSample') IS NULL " &
+                "ALTER TABLE PurchaseOrders ADD IsSample BIT NOT NULL DEFAULT 0;")
+
+            ' Attendance became an append-only log. The old table kept one row
+            ' per user per day, so only a day's first check-in was ever stored.
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.AttendanceEvents', 'U') IS NULL " &
+                "CREATE TABLE AttendanceEvents (" &
+                "    EventID     INT IDENTITY(1,1) PRIMARY KEY," &
+                "    UserID      INT NOT NULL REFERENCES Users(UserID)," &
+                "    FullName    NVARCHAR(100) NOT NULL," &
+                "    EventType   NVARCHAR(10) NOT NULL CHECK (EventType IN ('In','Out','Declined'))," &
+                "    HappenedAt  DATETIME2 NOT NULL," &
+                "    WorkDate    AS CAST(HappenedAt AS DATE) PERSISTED" &
+                ");")
+            DataAccess.Execute(
+                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_AttendanceEvents_User_Date' AND object_id=OBJECT_ID('dbo.AttendanceEvents')) " &
+                "CREATE INDEX IX_AttendanceEvents_User_Date ON AttendanceEvents(UserID, WorkDate);")
+            DataAccess.Execute(
+                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_AttendanceEvents_Date' AND object_id=OBJECT_ID('dbo.AttendanceEvents')) " &
+                "CREATE INDEX IX_AttendanceEvents_Date ON AttendanceEvents(WorkDate);")
+
+            ' Carry the old daily rows across so nobody's history disappears.
+            ' Only when the log is still empty, so it can't double up on a rerun.
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.Attendance', 'U') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM AttendanceEvents) " &
+                "BEGIN " &
+                "  INSERT INTO AttendanceEvents (UserID, FullName, EventType, HappenedAt) " &
+                "    SELECT UserID, FullName, 'In', CheckInAt FROM Attendance WHERE CheckInAt IS NOT NULL; " &
+                "  INSERT INTO AttendanceEvents (UserID, FullName, EventType, HappenedAt) " &
+                "    SELECT UserID, FullName, 'Out', CheckOutAt FROM Attendance WHERE CheckOutAt IS NOT NULL; " &
+                "END;")
             ' Document numbers moved from "INV-260908-0001" to "ChewyStock-12092026-143205" —
             ' longer, so the old NVARCHAR(20)/(24) columns need widening first.
             DataAccess.Execute(
@@ -231,7 +274,7 @@ Public Module DbBootstrap
     ''' any SQL Server/LocalDB instance. Returns "" on success, else the error text.
     Public Function BackupTo(destinationPath As String) As String
         Try
-            Dim csb As New SqlConnectionStringBuilder(ConfigurationManager.ConnectionStrings("StockDeskDB").ConnectionString)
+            Dim csb As New SqlConnectionStringBuilder(DataAccess.ConnString)
             Using conn As New SqlConnection(csb.ConnectionString)
                 conn.Open()
                 Dim sql = $"BACKUP DATABASE [{csb.InitialCatalog}] TO DISK = @path"

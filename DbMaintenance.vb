@@ -159,7 +159,7 @@ Public Module DbMaintenance
         Directory.CreateDirectory(csvDir)
         Dim total = 0
 
-        Using conn As New SqlConnection(ConfigurationManager.ConnectionStrings("StockDeskDB").ConnectionString)
+        Using conn As New SqlConnection(DataAccess.ConnString)
             conn.Open()
             Using tx = conn.BeginTransaction(IsolationLevel.Serializable)
                 Try

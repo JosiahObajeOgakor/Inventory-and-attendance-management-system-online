@@ -23,6 +23,8 @@ Public Class TestDb
 
     <AssemblyCleanup>
     Public Shared Sub AssemblyDone()
+        Company.Use(Company.Home)
+        DropDatabase(Company.CandidPurrfect.DatabaseName)
         DropDatabase()
         LocalDb("stop", Instance)
         LocalDb("delete", Instance)
@@ -34,6 +36,7 @@ Public Class TestDb
 
     ''' Drops and rebuilds the schema — for tests that need a known-empty start.
     Public Shared Sub Rebuild()
+        Company.Use(Company.Home)
         DropDatabase()
         Assert.AreEqual("", DbBootstrap.EnsureDatabase())
     End Sub
@@ -49,12 +52,18 @@ Public Class TestDb
     End Sub
 
     Private Shared Sub DropDatabase()
+        DropDatabase("StockDeskDB")
+    End Sub
+
+    ''' Both businesses' databases live in the test instance; either can be reset.
+    Public Shared Sub DropDatabase(name As String)
+        SqlClient.SqlConnection.ClearAllPools()
         Try
             Dim csb As New SqlClient.SqlConnectionStringBuilder(ConnectionString()) With {.InitialCatalog = "master"}
             Using conn As New SqlClient.SqlConnection(csb.ConnectionString)
                 conn.Open()
                 Using cmd As New SqlClient.SqlCommand(
-                    "IF DB_ID('StockDeskDB') IS NOT NULL BEGIN ALTER DATABASE StockDeskDB SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE StockDeskDB; END", conn)
+                    $"IF DB_ID('{name}') IS NOT NULL BEGIN ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{name}]; END", conn)
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
@@ -62,7 +71,7 @@ Public Class TestDb
         End Try
         ' Leftover files would be re-attached by the bootstrap; clear them too.
         Try
-            For Each f In Directory.GetFiles(DbBootstrap.DataDirectory(), "StockDeskDB*")
+            For Each f In Directory.GetFiles(DbBootstrap.DataDirectory(), name & "*")
                 File.Delete(f)
             Next
         Catch

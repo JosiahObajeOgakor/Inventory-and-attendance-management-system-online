@@ -6,6 +6,9 @@ Public Class frmAddItem
 
     Private txtSku As New TextBox()
     Private txtName As New TextBox()
+    ' Scan the supplier's barcode straight into this box, or leave it blank and
+    ' let Save mint an in-store one.
+    Private txtBarcode As New TextBox()
     Private cboCategory As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList}
     Private cboWarehouse As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList}
     Private txtBatch As New TextBox()
@@ -26,6 +29,13 @@ Public Class frmAddItem
     Public Shadows ReadOnly Property ProductName As String
         Get
             Return txtName.Text.Trim()
+        End Get
+    End Property
+    ''' What was scanned in, or "" to have one minted after the product is saved
+    ''' (an in-store code needs the product's ID, which doesn't exist yet here).
+    Public ReadOnly Property Barcode As String
+        Get
+            Return txtBarcode.Text.Trim()
         End Get
     End Property
     Public ReadOnly Property CategoryID As Integer
@@ -114,6 +124,7 @@ Public Class frmAddItem
         Dim table = UiHelpers.NewFormTable()
         UiHelpers.AddLabeled(table, "SKU", txtSku)
         UiHelpers.AddLabeled(table, "Product name", txtName)
+        UiHelpers.AddLabeled(table, "Barcode (scan or leave blank)", txtBarcode)
         UiHelpers.AddLabeled(table, "Category", cboCategory)
         UiHelpers.AddLabeled(table, "Warehouse", cboWarehouse)
         UiHelpers.AddLabeled(table, "Batch #", txtBatch)

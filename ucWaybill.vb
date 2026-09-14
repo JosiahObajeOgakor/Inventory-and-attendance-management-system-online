@@ -269,6 +269,16 @@ Public Class ucWaybill
             d.SectionTitle("Notes")
             d.Text(s("Notes"), size:=9)
         End If
+        ' Candid Purrfect's delivery notes carry a scannable code like its
+        ' receipts do; ChewyPets' waybill layout is left as it was.
+        If Not Company.Current.IsHome Then
+            Try
+                d.Gap(6)
+                d.Barcode(Barcodes.Code128(number, heightPx:=52, moduleWidth:=2, showText:=False),
+                          "Scan to look this delivery up  ·  " & number)
+            Catch
+            End Try
+        End If
         d.Gap(14)
         d.Signatures("Dispatched by", "Driver", "Received by (customer)")
         d.Text("Received the goods listed above in good condition and complete.", size:=8, grey:=True)

@@ -9,7 +9,8 @@ Public Module Numbering
     Public Function NextNumber(conn As SqlConnection, tx As SqlTransaction, prefix As String,
                          table As String, column As String, [on] As Date) As String
         Dim now = DateTime.Now
-        Return $"ChewyStock-{now:ddMMyyyy}-{now:HHmmss}"
+        ' ChewyPets: "ChewyStock-…"; Candid Purrfect: "CandidPurrfect-…".
+        Return $"{Company.Current.DocumentPrefix}-{now:ddMMyyyy}-{now:HHmmss}"
     End Function
 
     ''' True for "that number is already taken" — worth retrying with the next one.

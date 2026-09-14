@@ -21,6 +21,8 @@ Public Class ucInventory
     Private btnEditPrices As New Button() With {.Text = "Edit prices", .AutoSize = True, .Enabled = False}
     Private btnExport As New Button() With {.Text = "Export CSV", .AutoSize = True}
     Private btnExportXlsx As New Button() With {.Text = "Export Excel", .AutoSize = True}
+    Private btnLabel As New Button() With {.Text = "Print shelf label", .AutoSize = True, .Enabled = False}
+    Private btnSerials As New Button() With {.Text = "Serial numbers", .AutoSize = True}
     Private btnDelete As New Button() With {.Text = "Delete item", .Tag = "danger", .AutoSize = True, .Enabled = False}
     Private toolbar As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(12)}
 
@@ -36,6 +38,18 @@ Public Class ucInventory
         toolbar.Controls.Add(btnProduction)
         toolbar.Controls.Add(btnAddItem)
         If isAdmin Then toolbar.Controls.Add(btnEditPrices)
+        toolbar.Controls.Add(btnLabel)
+        If isAdmin Then toolbar.Controls.Add(btnSerials)
+        ' Clerks can send a price list too — the Customers screen is admin-only.
+        If Company.Current.HasPriceLists Then
+            Dim btnPriceList As New Button() With {.Text = "Send price list…", .AutoSize = True}
+            AddHandler btnPriceList.Click, Sub(s, e)
+                                               Using f As New frmSendPriceList()
+                                                   f.ShowDialog(FindForm())
+                                               End Using
+                                           End Sub
+            toolbar.Controls.Add(btnPriceList)
+        End If
         toolbar.Controls.Add(btnExport)
         toolbar.Controls.Add(btnExportXlsx)
         If isAdmin Then toolbar.Controls.Add(btnDelete)
@@ -54,12 +68,20 @@ Public Class ucInventory
         AddHandler btnEditPrices.Click, Sub(s, e) EditPrices()
         AddHandler grid.Grid.CellDoubleClick, Sub(s, e) If isAdmin Then EditPrices()
         AddHandler btnExport.Click, Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "inventory", FindForm())
-        AddHandler btnExportXlsx.Click, Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Inventory", "ChewyPetsFeed_inventory", FindForm())
+        AddHandler btnExportXlsx.Click, Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Inventory", Company.Current.FilePrefix & "_inventory", FindForm())
         AddHandler btnDelete.Click, AddressOf btnDelete_Click
+        AddHandler btnLabel.Click, AddressOf PrintShelfLabel
+        AddHandler btnSerials.Click, Sub(s, e)
+                                         Using f As New frmSerials(currentUserId)
+                                             f.ShowDialog(FindForm())
+                                         End Using
+                                         LoadGrid()
+                                     End Sub
         AddHandler grid.Grid.SelectionChanged, Sub(s, e)
                                               Dim has = grid.Grid.SelectedRows.Count > 0
                                               btnDelete.Enabled = has
                                               btnEditPrices.Enabled = has AndAlso cboView.SelectedIndex = 0
+                                              btnLabel.Enabled = has AndAlso ByProduct
                                           End Sub
         AddHandler grid.PageBound, AddressOf HighlightRows
         AddHandler Me.Load, Sub(s, e) LoadGrid()
@@ -94,7 +116,8 @@ Public Class ucInventory
                 "WHERE p.IsActive = 1 AND (p.Name LIKE @s OR p.SKU LIKE @s) " &
                 "ORDER BY cat.Name, p.Name",
                 New Dictionary(Of String, Object) From {{"@s", search}})
-            grid.Bind(table, hiddenColumns:={"ProductID"})
+            ' Lawal and Shore are ChewyPets' warehouses; another business's stock never sits in them.
+            grid.Bind(table, hiddenColumns:=If(Company.Current.IsHome, {"ProductID"}, {"ProductID", "Lawal", "Shore"}))
         ElseIf cboView.SelectedIndex = 2 Then
             ' What was produced, when, and by whom — newest first.
             table = DataAccess.GetTable(
@@ -171,6 +194,34 @@ Public Class ucInventory
         End If
     End Sub
 
+    ''' A print-ready shelf label for the selected product: name, price and a
+    ''' Code 128 barcode. A product added before barcodes existed gets one minted
+    ''' here rather than sending the user back to the edit screen for it.
+    Private Sub PrintShelfLabel(sender As Object, e As EventArgs)
+        If grid.Grid.SelectedRows.Count = 0 OrElse Not ByProduct Then Return
+        Dim productId = CInt(grid.Grid.SelectedRows(0).Cells("ProductID").Value)
+
+        Dim row = DataAccess.GetTable(
+            "SELECT Name, SKU, Barcode, PriceRetail FROM Products WHERE ProductID = @id",
+            New Dictionary(Of String, Object) From {{"@id", productId}}).Rows(0)
+
+        Dim barcode = Convert.ToString(row("Barcode"))
+        If barcode = "" Then
+            barcode = Barcodes.MintInternalBarcode(productId)
+            DataAccess.Execute("UPDATE Products SET Barcode = @b WHERE ProductID = @id",
+                New Dictionary(Of String, Object) From {{"@b", barcode}, {"@id", productId}})
+        End If
+
+        Try
+            Using label = Barcodes.ShelfLabel(Convert.ToString(row("Name")), Convert.ToString(row("SKU")),
+                                              barcode, Convert.ToDecimal(row("PriceRetail")))
+                AppUI.ShowImagePreview(label, $"Shelf label — {row("Name")}", FindForm())
+            End Using
+        Catch ex As Exception
+            AppUI.Toast("Could not build the label: " & ex.Message, AppUI.ToastKind.Error)
+        End Try
+    End Sub
+
     Private Sub btnAddItem_Click(sender As Object, e As EventArgs)
         Using f As New frmAddItem()
             If f.ShowDialog() = DialogResult.OK Then
@@ -182,6 +233,12 @@ Public Class ucInventory
                         {"@unit", f.Unit}, {"@reorder", f.ReorderLevel}, {"@cost", f.CostPrice},
                         {"@retail", f.PriceRetail}, {"@whole", f.PriceWholesaler}, {"@dist", f.PriceDistributor}})
 
+                ' A scanned supplier code is kept as-is; an unlabelled product
+                ' gets an in-store one, which needs the ID we just got back.
+                Dim barcode = If(f.Barcode <> "", f.Barcode, Barcodes.MintInternalBarcode(newProductId))
+                DataAccess.Execute("UPDATE Products SET Barcode = @b WHERE ProductID = @id",
+                    New Dictionary(Of String, Object) From {{"@b", barcode}, {"@id", newProductId}})
+
                 DataAccess.Execute(
                     "INSERT INTO StockBatches (ProductID, WarehouseID, BatchNumber, ExpiryDate, QuantityOnHand) " &
                     "VALUES (@productId, @warehouseId, @batch, @expiry, @qty)",
@@ -189,7 +246,7 @@ Public Class ucInventory
                         {"@productId", newProductId}, {"@warehouseId", f.WarehouseID},
                         {"@batch", f.BatchNumber}, {"@expiry", f.ExpiryDate}, {"@qty", f.Quantity}})
 
-                AppUI.Toast($"Added {f.ProductName}.", AppUI.ToastKind.Success)
+                AppUI.Toast($"Added {f.ProductName} — barcode {barcode}.", AppUI.ToastKind.Success)
                 LoadGrid()
             End If
         End Using

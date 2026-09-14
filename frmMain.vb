@@ -257,7 +257,7 @@ Public Class frmMain
         Cursor = Cursors.WaitCursor
         Dim sheets = Exporter.BuildFullExport()
         Cursor = Cursors.Default
-        Exporter.SaveExcel(sheets, "ChewyPetsFeed_full_export_" & DateTime.Now.ToString("yyyyMMdd_HHmmss"), Me)
+        Exporter.SaveExcel(sheets, Company.Current.FilePrefix & "_full_export_" & DateTime.Now.ToString("yyyyMMdd_HHmmss"), Me)
     End Sub
 
     ''' Admin sessions get auto-signed-out after the configured idle minutes.
@@ -398,7 +398,9 @@ Public Class frmMain
                         New NavItem("Rebates", "Rebates", True)),
             New NavItem("Employees", "Employees", True),
             New NavItem("AI", "AI Assistant", True)
-        }
+        }.ToList()
+        ' Candid Purrfect keeps a price book; ChewyPets doesn't, so its tabs stay exactly as they were.
+        If Company.Current.HasPriceLists Then items.Insert(2, New NavItem("PriceList", "Price list", False))
 
         For Each item In items
             Dim children = item.Children.Where(Function(c) isAdmin OrElse Not c.AdminOnly).ToArray()
@@ -524,6 +526,7 @@ Public Class frmMain
             Case "Expenses" : uc = New ucExpenses(CurrentUserID)
             Case "Employees" : uc = New ucEmployees(CurrentUserID)
             Case "AI" : uc = New ucAIAssistant(CurrentUserRole)
+            Case "PriceList" : uc = New ucPriceList(CurrentUserID, isAdmin)
             Case Else : Return
         End Select
         pnlContent.AutoScrollPosition = Point.Empty

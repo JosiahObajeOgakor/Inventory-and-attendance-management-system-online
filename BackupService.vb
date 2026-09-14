@@ -38,7 +38,7 @@ Public Module BackupService
         Try
             Dim folder = BackupFolder()
             Directory.CreateDirectory(folder)
-            Dim file = Path.Combine(folder, $"ChewyStock_{Date.Now:yyyyMMdd_HHmmss}.bak")
+            Dim file = Path.Combine(folder, $"{FilePrefix()}_{Date.Now:yyyyMMdd_HHmmss}.bak")
             Dim err = DbBootstrap.BackupTo(file)
             If err <> "" Then
                 LastError = err
@@ -53,10 +53,16 @@ Public Module BackupService
         End Try
     End Function
 
+    ''' Each business's backups carry its own name, so keeping "the newest 14"
+    ''' never lets one business's backups push the other's out.
+    Private Function FilePrefix() As String
+        Return If(Company.Current.IsHome, "ChewyStock", Company.Current.FilePrefix)
+    End Function
+
     ''' Keeps the newest KeepCount backups and deletes the rest.
     Private Sub Prune(folder As String)
         Try
-            Dim old = New DirectoryInfo(folder).GetFiles("ChewyStock_*.bak").
+            Dim old = New DirectoryInfo(folder).GetFiles(FilePrefix() & "_*.bak").
                 OrderByDescending(Function(f) f.LastWriteTimeUtc).Skip(KeepCount).ToList()
             For Each f In old
                 Try
@@ -71,7 +77,7 @@ Public Module BackupService
     ''' Newest backup on this PC, or Nothing when there are none yet.
     Public Function LatestBackup() As FileInfo
         Try
-            Return New DirectoryInfo(BackupFolder()).GetFiles("ChewyStock_*.bak").
+            Return New DirectoryInfo(BackupFolder()).GetFiles(FilePrefix() & "_*.bak").
                 OrderByDescending(Function(f) f.LastWriteTimeUtc).FirstOrDefault()
         Catch
             Return Nothing

@@ -12,43 +12,40 @@ Public Module AppInfo
         Return v
     End Function
 
+    ''' Identity of the business signed into — see Company. ChewyPets reads the
+    ''' plain keys (CompanyName, BankName…); Candid Purrfect reads the same keys
+    ''' prefixed "Candid" (CandidCompanyAddress, CandidBankName…).
     Public ReadOnly Property CompanyName As String
         Get
-            Return Cfg("CompanyName", Theme.AppName)
+            Return Company.Current.DocumentName
         End Get
     End Property
 
     Public ReadOnly Property CompanyAddress As String
         Get
-            Return Cfg("CompanyAddress", "")
+            Return Company.Current.Setting("CompanyAddress", "")
         End Get
     End Property
     Public ReadOnly Property CompanyPhone As String
         Get
-            Return Cfg("CompanyPhone", "")
+            Return Company.Current.Setting("CompanyPhone", "")
         End Get
     End Property
     Public ReadOnly Property CompanyEmail As String
         Get
-            Return Cfg("CompanyEmail", "")
+            Return Company.Current.Setting("CompanyEmail", "")
         End Get
     End Property
     Public ReadOnly Property CompanyTaxID As String
         Get
-            Return Cfg("CompanyTaxID", "")
+            Return Company.Current.Setting("CompanyTaxID", "")
         End Get
     End Property
 
     ''' Bank accounts printed on receipts: BankName/BankAccountName/BankAccountNumber,
-    ''' then Bank2…, Bank3… in App.config. Blank entries are skipped.
+    ''' then Bank2…, Bank3… — for the business signed into. Blank entries are skipped.
     Public Function BankAccounts() As List(Of (Bank As String, AccountName As String, AccountNumber As String))
-        Dim list As New List(Of (Bank As String, AccountName As String, AccountNumber As String))
-        For Each prefix In {"Bank", "Bank2", "Bank3"}
-            Dim number = Cfg(prefix & "AccountNumber", "")
-            If number = "" Then Continue For
-            list.Add((Cfg(prefix & "Name", ""), Cfg(prefix & "AccountName", ""), number))
-        Next
-        Return list
+        Return Company.Current.BankAccounts()
     End Function
 
     Public ReadOnly Property CurrencySymbol As String

@@ -189,7 +189,7 @@ Public Class PresentationTests
 
     <TestMethod>
     Public Sub Branding_files_ship_with_the_app()
-        For Each fileName In {"logo.png", "signature.png", "landing.jpg", "landingvideo.mp4", "app.ico"}
+        For Each fileName In {"logo.png", "signature.jpeg", "candidPurffect.jpeg", "landing.jpg", "landingvideo.mp4", "app.ico"}
             Assert.IsTrue(IO.File.Exists(AppPaths.Asset(fileName)), "missing asset: " & fileName)
         Next
         Assert.IsNotNull(Theme.Logo, "the logo must load")

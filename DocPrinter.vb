@@ -62,6 +62,47 @@ Public NotInheritable Class DocPrinter
 
     ' ===== blocks =====
 
+    ''' A barcode or QR symbol, centred, scaled down if it would overrun the
+    ''' column but never scaled up — enlarging a symbol past its natural size
+    ''' blurs the bars and scanners start missing it.
+    Private Class BarcodeBlock
+        Inherits Block
+
+        Public Symbol As Image
+        Public Caption As String
+        Public CaptionFont As Font
+        Public CaptionColour As Color
+
+        Public Overrides Function Render(g As Graphics, x As Single, y As Single, w As Single, draw As Boolean) As Single
+            If Symbol Is Nothing Then Return 0
+
+            Dim scale = Math.Min(1.0F, w / CSng(Symbol.Width))
+            Dim sw = Symbol.Width * scale
+            Dim sh = Symbol.Height * scale
+            Dim sx = x + (w - sw) / 2
+
+            Dim captionH As Single = 0
+            If Not String.IsNullOrEmpty(Caption) Then captionH = CaptionFont.GetHeight(g) + 2
+
+            If draw Then
+                ' Nearest-neighbour: smoothing a barcode softens the bar edges,
+                ' which is exactly what a scanner needs kept sharp.
+                Dim previous = g.InterpolationMode
+                g.InterpolationMode = Drawing2D.InterpolationMode.NearestNeighbor
+                g.DrawImage(Symbol, sx, y, sw, sh)
+                g.InterpolationMode = previous
+
+                If captionH > 0 Then
+                    Using b As New SolidBrush(CaptionColour),
+                          sf As New StringFormat() With {.Alignment = StringAlignment.Center}
+                        g.DrawString(Caption, CaptionFont, b, New RectangleF(x, y + sh + 1, w, captionH), sf)
+                    End Using
+                End If
+            End If
+            Return sh + captionH + 6
+        End Function
+    End Class
+
     Private MustInherit Class Block
         ''' Lays out at (x, y) within width w — and paints when draw=True.
         ''' Returns the height used, identical in both modes.
@@ -544,6 +585,16 @@ Public NotInheritable Class DocPrinter
                                         .Align = StringAlignment.Center, .Colour = If(grey, Muted, Ink)})
         Return Me
     End Function
+    ''' A scannable symbol centred on the page, with its text under it so the
+    ''' number can still be read out or typed when a scanner isn't to hand.
+    ''' Takes ownership of the bitmap and disposes it with the document.
+    Public Function Barcode(image As Image, Optional caption As String = Nothing) As DocPrinter
+        _blocks.Add(New BarcodeBlock With {
+            .Symbol = image, .Caption = caption,
+            .CaptionFont = New Font(Face, 8), .CaptionColour = Muted})
+        Return Me
+    End Function
+
     Public Function Rule(Optional accentLine As Boolean = False) As DocPrinter
         _blocks.Add(New RuleBlock With {.Colour = If(accentLine, Accent, Hairline), .Thickness = If(accentLine, 1.5F, 1)})
         Return Me

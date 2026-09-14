@@ -51,6 +51,13 @@ Public Class frmProductPrices
     End Sub
 
     Private Sub Save_Click(sender As Object, e As EventArgs)
+        ' Candid Purrfect's price changes go through its price book so they're
+        ' in the history too; ChewyPets saves exactly as before.
+        If Company.Current.HasPriceLists Then
+            PriceBook.Apply({New PriceBook.PriceUpdate With {
+                .ProductID = _productId, .Distributor = numDist.Value, .Wholesaler = numWhole.Value, .Retail = numRetail.Value}},
+                userId:=0, note:="Edited from Inventory")
+        End If
         DataAccess.Execute(
             "UPDATE Products SET CostPrice=@c, PriceDistributor=@d, PriceWholesaler=@w, PriceRetail=@r, SellingPrice=@r, ReorderLevel=@ro WHERE ProductID=@id",
             New Dictionary(Of String, Object) From {

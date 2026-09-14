@@ -25,7 +25,6 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Release\net48\Sto
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Release\net48\StockDesk.vbproj.Up2Date
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\logo.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\app.ico
-C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\signature.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\ChewyStock.exe.config
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\ChewyStock.exe
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\ChewyStock.pdb
@@ -34,3 +33,8 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Release\net48\Che
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Release\net48\ChewyStock.pdb
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\landing.jpg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\landingvideo.mp4
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\QRCoder.dll
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\candidPurffect.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\signature.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\candidPurffectlogo.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Release\net48\Assets\chewypetfeedslogo.jpeg

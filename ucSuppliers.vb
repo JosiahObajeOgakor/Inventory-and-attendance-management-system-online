@@ -159,6 +159,15 @@ Public Class ucSuppliers
         For Each row In items.AsEnumerable()
             Dim productId = CInt(row("ProductID"))
             Dim qty = CInt(row("Quantity"))
+
+            ' Goods arriving from a supplier who ships them unlabelled get an
+            ' in-store barcode as they're booked in, so they can be scanned at
+            ' the till the moment they reach the shelf rather than waiting for
+            ' someone to notice they have none.
+            DataAccess.Execute(
+                "UPDATE Products SET Barcode = @b WHERE ProductID = @p AND (Barcode IS NULL OR Barcode = '')",
+                New Dictionary(Of String, Object) From {
+                    {"@b", Barcodes.MintInternalBarcode(productId)}, {"@p", productId}})
             DataAccess.Execute(
                 "IF EXISTS (SELECT 1 FROM StockBatches WHERE ProductID=@p AND WarehouseID=@w AND BatchNumber='PO-RECEIPT') " &
                 "  UPDATE StockBatches SET QuantityOnHand = QuantityOnHand + @qty WHERE ProductID=@p AND WarehouseID=@w AND BatchNumber='PO-RECEIPT' " &

@@ -42,9 +42,7 @@ Public Class frmSetPassword
 
     Private Sub Save_Click(sender As Object, e As EventArgs)
         If _requireOld Then
-            Dim stored = Convert.ToString(DataAccess.GetTable(
-                "SELECT PasswordHash FROM Users WHERE UserID = @id",
-                New Dictionary(Of String, Object) From {{"@id", _userId}}).Rows(0)(0))
+            Dim stored = Auth.StoredHash(_userId)
             If Security.IsRealHash(stored) AndAlso Not Security.VerifyPassword(txtOld.Text, stored) Then
                 Fail("Current password is wrong.")
                 Return

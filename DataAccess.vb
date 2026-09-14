@@ -7,11 +7,42 @@ Imports System.Configuration
 ''' App.config (StockDeskDB) — edit that file to point at your SQL Server.
 Public Class DataAccess
 
-    Private Shared ReadOnly ConnString As String =
-        ConfigurationManager.ConnectionStrings("StockDeskDB").ConnectionString
+    ''' The database of the business signed into (see Company). Everything below
+    ''' reads it per call, so switching business at sign-in switches every screen.
+    Public Shared ReadOnly Property ConnString As String
+        Get
+            Return Company.Current.ConnectionString
+        End Get
+    End Property
 
     Private Shared Function NewConnection() As SqlConnection
         Return New SqlConnection(ConnString)
+    End Function
+
+    ' ===== sign-in accounts =====
+    ' Accounts are shared by both businesses and always live in the home
+    ' database, whichever business is signed into.
+
+    Public Shared Function AccountsTable(sql As String, Optional params As Dictionary(Of String, Object) = Nothing) As DataTable
+        Using conn As New SqlConnection(Company.Home.ConnectionString)
+            Using cmd As New SqlCommand(sql, conn)
+                AddParams(cmd, params)
+                conn.Open()
+                Dim table As New DataTable()
+                table.Load(cmd.ExecuteReader())
+                Return table
+            End Using
+        End Using
+    End Function
+
+    Public Shared Function AccountsExecute(sql As String, Optional params As Dictionary(Of String, Object) = Nothing) As Integer
+        Using conn As New SqlConnection(Company.Home.ConnectionString)
+            Using cmd As New SqlCommand(sql, conn)
+                AddParams(cmd, params)
+                conn.Open()
+                Return cmd.ExecuteNonQuery()
+            End Using
+        End Using
     End Function
 
     ''' Runs a SELECT and returns a DataTable.

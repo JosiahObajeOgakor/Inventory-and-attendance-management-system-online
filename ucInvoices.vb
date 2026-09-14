@@ -9,6 +9,9 @@ Public Class ucInvoices
     Private ReadOnly isAdmin As Boolean
     Private ReadOnly grid As New PagedGrid() With {.PageSize = 5}
     Private txtSearch As New TextBox() With {.Width = 200}
+    ' Scan the code off a printed receipt to pull that sale straight back up —
+    ' a return or a query at the counter, without hunting through the list.
+    Private txtScanReceipt As New TextBox() With {.Width = 200}
     Private btnNewInvoice As New Button() With {.Text = "+ New invoice", .Tag = "primary", .AutoSize = True}
     Private btnReceipt As New Button() With {.Text = "View receipt / PDF", .AutoSize = True, .Enabled = False}
     Private btnExport As New Button() With {.Text = "Export CSV", .AutoSize = True}
@@ -24,6 +27,8 @@ Public Class ucInvoices
         If isAdmin Then toolbar.Controls.Add(btnDelete)
         toolbar.Controls.Add(txtSearch)
         toolbar.Controls.Add(New Label() With {.Text = "Search:", .AutoSize = True, .Margin = New Padding(6, 8, 6, 0)})
+        toolbar.Controls.Add(txtScanReceipt)
+        toolbar.Controls.Add(New Label() With {.Text = "Scan receipt:", .AutoSize = True, .Margin = New Padding(12, 8, 6, 0)})
         Controls.Add(grid)
         Controls.Add(toolbar)
         AddHandler btnNewInvoice.Click, AddressOf btnNewInvoice_Click
@@ -31,6 +36,7 @@ Public Class ucInvoices
         AddHandler btnExport.Click, Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "invoices", FindForm())
         AddHandler btnDelete.Click, AddressOf btnDelete_Click
         AddHandler txtSearch.TextChanged, Sub(s, e) LoadGrid()
+        AddHandler txtScanReceipt.KeyDown, AddressOf ScanReceipt_KeyDown
         AddHandler grid.Grid.SelectionChanged, Sub(s, e)
                                               Dim has = grid.Grid.SelectedRows.Count > 0
                                               btnReceipt.Enabled = has
@@ -64,6 +70,31 @@ Public Class ucInvoices
         Catch ex As Exception
             AppUI.Toast("Delete failed: " & ex.Message, AppUI.ToastKind.Error)
         End Try
+    End Sub
+
+    ''' A receipt scanned at the counter opens that sale's receipt directly.
+    ''' Accepts the plain invoice number a Code 128 symbol carries and the
+    ''' "CS|I|…" payload of a QR tag, since both are printed on our documents.
+    Private Sub ScanReceipt_KeyDown(sender As Object, e As KeyEventArgs)
+        If e.KeyCode <> Keys.Enter Then Return
+        e.Handled = True
+        e.SuppressKeyPress = True
+
+        Dim scan = Barcodes.ReadScan(txtScanReceipt.Text)
+        txtScanReceipt.Clear()
+        If scan Is Nothing Then Return
+
+        Dim match = DataAccess.GetTable(
+            "SELECT TOP 1 InvoiceID FROM Invoices WHERE InvoiceNumber = @n",
+            New Dictionary(Of String, Object) From {{"@n", scan.Code}})
+        If match.Rows.Count = 0 Then
+            AppUI.Toast($"No sale on file for {scan.Code}.", AppUI.ToastKind.Warning)
+            Return
+        End If
+
+        Using f As New frmInvoiceReceipt(Convert.ToInt32(match.Rows(0)("InvoiceID")))
+            f.ShowDialog(Me)
+        End Using
     End Sub
 
     ''' Opens the receipt review (print preview + plain-English money breakdown)

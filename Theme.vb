@@ -10,25 +10,19 @@ Imports System.IO
 Public Module Theme
 
     ' ===== Branding =====
-    Public ReadOnly Property AppName As String = "ChewyStock"
+    ''' "ChewyStock" for ChewyPets, "Candid Purrfect" once Candid is signed into.
+    Public ReadOnly Property AppName As String
+        Get
+            Return Company.Current.AppName
+        End Get
+    End Property
 
-    ''' The company logo, loaded once from Assets\logo.png next to the exe.
-    ''' Drop the artwork there (any size; 512px square works well). If it's
-    ''' missing the app falls back to a drawn wordmark, so this never crashes.
-    Private _logo As Image
-    Private _logoTried As Boolean
+    ''' The signed-in business's logo (Assets\logo.png for ChewyPets,
+    ''' Assets\candid-logo.png for Candid Purrfect). Nothing when there's no
+    ''' file — screens and documents then show the name alone, never crash.
     Public ReadOnly Property Logo As Image
         Get
-            If Not _logoTried Then
-                _logoTried = True
-                Try
-                    Dim logoPath As String = AppPaths.Asset("logo.png")
-                    If File.Exists(logoPath) Then _logo = Image.FromFile(logoPath)
-                Catch
-                    _logo = Nothing
-                End Try
-            End If
-            Return _logo
+            Return Company.Current.Logo
         End Get
     End Property
 
@@ -46,21 +40,11 @@ Public Module Theme
         End Get
     End Property
 
-    ''' The company stamp + signature printed on receipts (Assets\signature.png).
-    Private _signature As Image
-    Private _signatureTried As Boolean
+    ''' The signed-in business's stamp + signature printed on receipts
+    ''' (Assets\signature.jpeg for ChewyPets, Assets\candidPurffect.jpeg for Candid).
     Public ReadOnly Property Signature As Image
         Get
-            If Not _signatureTried Then
-                _signatureTried = True
-                Try
-                    Dim p = AppPaths.Asset("signature.png")
-                    If File.Exists(p) Then _signature = Image.FromFile(p)
-                Catch
-                    _signature = Nothing
-                End Try
-            End If
-            Return _signature
+            Return Company.Current.Signature
         End Get
     End Property
 

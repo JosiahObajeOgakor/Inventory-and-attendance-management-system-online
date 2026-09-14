@@ -94,7 +94,7 @@ Public Class ScreenTests
     ''' clear beforehand — otherwise an earlier test's check-in makes the screen
     ''' think she's already checked in today.
     Private Shared Sub ClearTodayAttendance(userId As Integer)
-        TestDb.Exec("DELETE FROM Attendance WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
+        TestDb.Exec("DELETE FROM AttendanceEvents WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
     End Sub
 
     ''' Clicking anywhere, pressing a key, or the safety timeout must NOT hand
@@ -494,7 +494,7 @@ Public Class ScreenTests
     <TestMethod>
     Public Sub Attendance_tab_shows_a_recorded_check_in()
         Dim userId = TestDb.Count("SELECT MIN(UserID) FROM Users")
-        TestDb.Exec("DELETE FROM Attendance WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
+        TestDb.Exec("DELETE FROM AttendanceEvents WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
         Try
             Attendance.CheckIn(userId, "Attendance Screen Test")
             Using host As New Form()
@@ -513,7 +513,7 @@ Public Class ScreenTests
                 host.Close()
             End Using
         Finally
-            TestDb.Exec("DELETE FROM Attendance WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
+            TestDb.Exec("DELETE FROM AttendanceEvents WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
         End Try
     End Sub
 
@@ -578,7 +578,7 @@ Public Class ScreenTests
     <TestMethod>
     Public Sub Clerks_dashboard_shows_her_own_check_in()
         Dim userId = TestDb.Count("SELECT MIN(UserID) FROM Users")
-        TestDb.Exec("DELETE FROM Attendance WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
+        TestDb.Exec("DELETE FROM AttendanceEvents WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
         Try
             Attendance.CheckIn(userId, "Dashboard Test Clerk")
             Using host As New Form()
@@ -591,7 +591,7 @@ Public Class ScreenTests
                 host.Close()
             End Using
         Finally
-            TestDb.Exec("DELETE FROM Attendance WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
+            TestDb.Exec("DELETE FROM AttendanceEvents WHERE UserID=@u AND WorkDate=@d", TestDb.P("@u", userId, "@d", Date.Today))
         End Try
     End Sub
 

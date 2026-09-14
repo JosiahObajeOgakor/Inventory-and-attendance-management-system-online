@@ -58,7 +58,7 @@ Public Class ucExpenses
         exportMenu.Items.Add("Expenses (CSV)…", Nothing,
             Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "expenses", FindForm()))
         exportMenu.Items.Add("Expenses (Excel)…", Nothing,
-            Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Expenses", "ChewyPetsFeed_expenses", FindForm()))
+            Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Expenses", Company.Current.FilePrefix & "_expenses", FindForm()))
         AddHandler btnExport.Click, Sub(s, e) exportMenu.Show(btnExport, New Point(0, btnExport.Height))
         AddHandler Me.Load, Sub(s, e) LoadGrid()
     End Sub

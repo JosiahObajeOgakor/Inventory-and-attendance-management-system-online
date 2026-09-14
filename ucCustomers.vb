@@ -30,6 +30,19 @@ Public Class ucCustomers
         toolbar.Controls.Add(btnEdit)
         toolbar.Controls.Add(btnRecordPayment)
         toolbar.Controls.Add(btnViewMetrics)
+        ' Catalogues go out from the business that sends them (Candid Purrfect).
+        If Company.Current.HasPriceLists Then
+            Dim btnPriceList As New Button() With {.Text = "Send price list…", .AutoSize = True}
+            AddHandler btnPriceList.Click,
+                Sub(s, e)
+                    Dim selected As Integer? = Nothing
+                    If grid.Grid.SelectedRows.Count > 0 Then selected = CInt(grid.Grid.SelectedRows(0).Cells("CustomerID").Value)
+                    Using f As New frmSendPriceList(selected)
+                        f.ShowDialog(FindForm())
+                    End Using
+                End Sub
+            toolbar.Controls.Add(btnPriceList)
+        End If
         toolbar.Controls.Add(btnExport)
         toolbar.Controls.Add(btnExportXlsx)
         toolbar.Controls.Add(btnDelete)
@@ -49,7 +62,7 @@ Public Class ucCustomers
         AddHandler btnRecordPayment.Click, AddressOf btnRecordPayment_Click
         AddHandler btnViewMetrics.Click, AddressOf btnViewMetrics_Click
         AddHandler btnExport.Click, Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "customers", FindForm())
-        AddHandler btnExportXlsx.Click, Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Customers", "ChewyPetsFeed_customers", FindForm())
+        AddHandler btnExportXlsx.Click, Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Customers", Company.Current.FilePrefix & "_customers", FindForm())
         AddHandler btnDelete.Click, AddressOf btnDelete_Click
         AddHandler txtSearch.TextChanged, Sub(s, e) LoadGrid()
         AddHandler Me.Load, Sub(s, e) LoadGrid()

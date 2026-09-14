@@ -28,7 +28,7 @@ Public Class frmLogin
     ''' the sign-in card always looks the same regardless of the shop's chosen palette.
     Private Shared ReadOnly FloatingBg As Color = Color.FromArgb(231, 233, 236)
 
-    Private ReadOnly card As New CardPanel() With {.CardColor = Color.White, .Size = New Size(420, 500)}
+    Private ReadOnly card As New CardPanel() With {.CardColor = Color.White, .Size = New Size(420, 590)}
     Private ReadOnly lblClose As New Label() With {.Text = "✕", .AutoSize = True, .Cursor = Cursors.Hand, .Tag = "keepfont", .Font = New Font("Segoe UI", 11), .ForeColor = Color.FromArgb(120, 124, 130)}
     Private ReadOnly lblBrand As New Label() With {.AutoSize = True, .Tag = "heading", .Margin = New Padding(0, 4, 0, 0)}
     Private ReadOnly lblCaption As New Label() With {.AutoSize = True, .Tag = "keepfont", .ForeColor = Color.FromArgb(112, 118, 126), .Font = New Font("Segoe UI", 9.5F), .TextAlign = ContentAlignment.MiddleCenter, .MaximumSize = New Size(320, 0), .Anchor = AnchorStyles.None}
@@ -39,16 +39,31 @@ Public Class frmLogin
     Private ReadOnly lblError As New Label() With {.ForeColor = Color.Firebrick, .AutoSize = True, .Tag = "keepfont", .MaximumSize = New Size(320, 0), .Margin = New Padding(0, 4, 0, 4)}
     Private ReadOnly btnLogin As New Button() With {.Text = "Sign in", .Tag = "primary", .Height = 42, .Margin = New Padding(0, 10, 0, 18)}
 
+    ''' Which business to sign into. Every account can open either one.
+    Private ReadOnly lblCompanyCaption As New Label() With {.Text = "SIGN IN TO", .AutoSize = True, .Tag = "keepfont", .ForeColor = Color.FromArgb(142, 148, 156), .Font = New Font("Segoe UI", 8, FontStyle.Bold), .Margin = New Padding(0, 0, 0, 4)}
+    Private ReadOnly companyRow As New TableLayoutPanel() With {.ColumnCount = 2, .RowCount = 1, .Dock = DockStyle.Fill, .AutoSize = True, .Margin = New Padding(0, 0, 0, 16)}
+    Private ReadOnly companyChoices As New Dictionary(Of Company, RadioButton)
+    Private ReadOnly picBrand As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom, .Size = New Size(48, 48), .Margin = New Padding(0, 0, 10, 0)}
+    Private _company As Company = Company.LastUsed()
+
     Public Property LoggedInUserID As Integer
     Public Property LoggedInFullName As String
     Public Property LoggedInRole As String
+    Public ReadOnly Property SelectedCompany As Company
+        Get
+            Return _company
+        End Get
+    End Property
 
     Public Sub New()
+        ' Sign-in always starts from the home database, where accounts live —
+        ' even when the previous session (before a sign-out) was the other business.
+        Company.Use(Company.Home)
         Text = Theme.AppName & " — Sign in"
         FormBorderStyle = FormBorderStyle.None
         StartPosition = FormStartPosition.CenterScreen
         Width = 560
-        Height = 680
+        Height = 770
         ShowInTaskbar = True
         KeyPreview = True
 
@@ -101,14 +116,14 @@ Public Class frmLogin
         AddHandler table.MouseDown, AddressOf DragForm   ' the table (not the card) actually receives clicks on the blank card surface
 
         lblBrand.Text = Theme.AppName
-        lblCaption.Text = $"Capture sensitive data and keep records clean on {Theme.AppName}."
-        lblCaption.Margin = New Padding(0, 10, 0, 28)
+        lblCaption.Text = $"Choose the business, then sign in. One account works for both."
+        lblCaption.Margin = New Padding(0, 10, 0, 22)
+        BuildCompanyPicker()
 
         Dim brandRow As New FlowLayoutPanel() With {.AutoSize = True, .FlowDirection = FlowDirection.LeftToRight, .WrapContents = False, .Anchor = AnchorStyles.None}
-        If Theme.Logo IsNot Nothing Then
-            brandRow.Controls.Add(New PictureBox() With {.Image = Theme.Logo, .SizeMode = PictureBoxSizeMode.Zoom, .Size = New Size(40, 40), .Margin = New Padding(0, 0, 10, 0)})
-        End If
+        brandRow.Controls.Add(picBrand)
         brandRow.Controls.Add(lblBrand)
+        ShowBrand()
 
         txtUsername.Dock = DockStyle.Fill
         txtPassword.Dock = DockStyle.Fill
@@ -118,13 +133,62 @@ Public Class frmLogin
         langRow.Controls.Add(New Label() With {.Text = "Language:", .AutoSize = True, .Tag = "keepfont", .ForeColor = Color.FromArgb(142, 148, 156), .Font = New Font("Segoe UI", 8.5F), .Margin = New Padding(0, 6, 8, 0)})
         langRow.Controls.Add(UiHelpers.LanguagePicker(Sub() Theme.Apply(Me)))
 
-        Dim rows As Control() = {brandRow, lblCaption, lblUserCaption, txtUsername, lblPassCaption, txtPassword, lblError, btnLogin, langRow}
+        Dim rows As Control() = {brandRow, lblCaption, lblCompanyCaption, companyRow, lblUserCaption, txtUsername, lblPassCaption, txtPassword, lblError, btnLogin, langRow}
         For i = 0 To rows.Length - 1
             table.RowStyles.Add(New RowStyle(SizeType.AutoSize))
             table.Controls.Add(rows(i), 0, i)
         Next
 
         card.Controls.Add(table)
+    End Sub
+
+    ''' Two big side-by-side choices rather than a dropdown: which business the
+    ''' day's sales land in is the one thing on this screen that must not be
+    ''' picked by accident, so both options are always in plain view.
+    Private Sub BuildCompanyPicker()
+        companyRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
+        companyRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
+        Dim column = 0
+        For Each c In Company.All
+            Dim choice As New RadioButton() With {
+                .Text = c.DisplayName, .Appearance = Appearance.Button, .FlatStyle = FlatStyle.Flat,
+                .TextAlign = ContentAlignment.MiddleCenter, .Dock = DockStyle.Fill, .Height = 50,
+                .Tag = "keepfont", .Font = New Font("Segoe UI", 10, FontStyle.Bold), .Cursor = Cursors.Hand,
+                .Margin = New Padding(If(column = 0, 0, 6), 0, If(column = 0, 6, 0), 0),
+                .Checked = c Is _company}
+            Dim picked = c
+            AddHandler choice.CheckedChanged, Sub(s, e)
+                                                  If choice.Checked Then _company = picked
+                                                  StyleCompanyChoices()
+                                              End Sub
+            companyChoices(c) = choice
+            companyRow.Controls.Add(choice, column, 0)
+            column += 1
+        Next
+        StyleCompanyChoices()
+    End Sub
+
+    ''' The card wears the chosen business's logo and app name as soon as it's
+    ''' picked. Only the look changes here — the app itself switches business
+    ''' after a successful sign-in.
+    Private Sub ShowBrand()
+        picBrand.Image = _company.Logo
+        picBrand.Visible = _company.Logo IsNot Nothing
+        lblBrand.Text = _company.AppName
+        Text = _company.AppName & " — Sign in"
+    End Sub
+
+    Private Sub StyleCompanyChoices()
+        ShowBrand()
+        For Each kv In companyChoices
+            Dim b = kv.Value
+            Dim on_ = b.Checked
+            b.BackColor = If(on_, Theme.Current.Primary, Color.White)
+            b.ForeColor = If(on_, Theme.Current.PrimaryFg, Color.FromArgb(60, 66, 74))
+            b.FlatAppearance.BorderColor = If(on_, Theme.Current.Primary, Color.FromArgb(206, 210, 216))
+            b.FlatAppearance.BorderSize = If(on_, 2, 1)
+            b.FlatAppearance.CheckedBackColor = Theme.Current.Primary
+        Next
     End Sub
 
     Private Sub btnLogin_Click(sender As Object, e As EventArgs)
@@ -157,6 +221,11 @@ Public Class frmLogin
     End Sub
 
     Private Sub Finish(r As Auth.LoginResult)
+        Dim problem = Auth.EnterCompany(r, _company)
+        If problem <> "" Then
+            lblError.Text = problem
+            Return
+        End If
         LoggedInUserID = r.UserID
         LoggedInFullName = r.FullName
         LoggedInRole = r.Role

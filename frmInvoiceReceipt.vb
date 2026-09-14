@@ -136,6 +136,18 @@ Public Class frmInvoiceReceipt
         End If
 
         d.Gap(4)
+        ' Every receipt carries its own scannable code. The invoice number is
+        ' already unique per sale, so the symbol is unique per receipt without
+        ' inventing a second identifier that could drift out of step with it.
+        ' Scanning it at the Receipts screen pulls this sale straight back up —
+        ' for a return, a warranty claim, or a customer query at the counter.
+        Try
+            d.Barcode(Barcodes.Code128(number, heightPx:=52, moduleWidth:=2, showText:=False),
+                      "Scan to look this receipt up  ·  " & number)
+        Catch
+            ' A symbol is a convenience; never lose the receipt over one.
+        End Try
+
         d.Stamp()
         d.BrandFooter("Thanks for your patronage.")
         Return d

@@ -25,7 +25,6 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Debug\net48\Stock
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Schema.sql
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\logo.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\app.ico
-C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\signature.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\ChewyStock.exe.config
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\ChewyStock.exe
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\ChewyStock.pdb
@@ -35,3 +34,7 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\obj\Debug\net48\Chewy
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\landing.jpg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\landingvideo.mp4
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\QRCoder.dll
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\candidPurffect.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\signature.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\candidPurffectlogo.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\chewypetfeedslogo.jpeg

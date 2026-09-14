@@ -67,8 +67,11 @@ CREATE TABLE Products (
     PriceDistributor DECIMAL(12,2) NOT NULL DEFAULT 0,
     PriceWholesaler  DECIMAL(12,2) NOT NULL DEFAULT 0,
     PriceRetail      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    Barcode       NVARCHAR(64) NULL,      -- EAN/UPC from the supplier, or one we mint
+    TracksSerial  BIT NOT NULL DEFAULT 0, -- serialised goods (scales, feeders) vs. loose feed
     IsActive      BIT NOT NULL DEFAULT 1
 );
+CREATE UNIQUE INDEX UQ_Products_Barcode ON Products(Barcode) WHERE Barcode IS NOT NULL;
 
 CREATE TABLE StockBatches (
     BatchID       INT IDENTITY(1,1) PRIMARY KEY,
@@ -113,7 +116,8 @@ CREATE TABLE PurchaseOrders (
     Status       NVARCHAR(20) NOT NULL DEFAULT 'Pending', -- Pending, Ordered, Received, Cancelled
     PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- Unpaid, Paid — drives Accounts Payable
     TotalAmount  DECIMAL(14,2) NOT NULL DEFAULT 0,
-    CreatedByUserID INT NOT NULL REFERENCES Users(UserID)
+    CreatedByUserID INT NOT NULL REFERENCES Users(UserID),
+    IsSample     BIT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE PurchaseOrderItems (
@@ -159,7 +163,10 @@ CREATE TABLE Invoices (
     PriceTier       NVARCHAR(20)  NOT NULL DEFAULT 'Retailer',
     WarehouseID     INT NULL REFERENCES Warehouses(WarehouseID),
     CreatedByUserID INT NOT NULL REFERENCES Users(UserID),
-    CreatedAt       DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+    CreatedAt       DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    -- Generated demo history, so it can be told apart from real trading and
+    -- removed again without guesswork.
+    IsSample        BIT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE InvoiceItems (
@@ -171,6 +178,25 @@ CREATE TABLE InvoiceItems (
     UnitCost      DECIMAL(12,2) NOT NULL DEFAULT 0, -- Products.CostPrice captured AT TIME OF SALE — enables exact COGS/profit per invoice
     LineTotal     DECIMAL(14,2) NOT NULL
 );
+
+-- One row per physical serialised unit. Status walks In Stock -> Sold, and can
+-- also land on Returned or Written Off; InvoiceID ties a warranty claim back to
+-- the sale. Declared after Invoices because it points at it.
+CREATE TABLE ProductSerials (
+    SerialID     INT IDENTITY(1,1) PRIMARY KEY,
+    ProductID    INT NOT NULL REFERENCES Products(ProductID),
+    SerialNumber NVARCHAR(80) NOT NULL,
+    BatchID      INT NULL REFERENCES StockBatches(BatchID),
+    WarehouseID  INT NULL REFERENCES Warehouses(WarehouseID),
+    Status       NVARCHAR(20) NOT NULL DEFAULT 'In Stock'
+                 CHECK (Status IN ('In Stock','Sold','Returned','Written Off')),
+    ReceivedAt   DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    SoldAt       DATETIME2 NULL,
+    InvoiceID    INT NULL REFERENCES Invoices(InvoiceID),
+    Notes        NVARCHAR(200) NULL,
+    CONSTRAINT UQ_ProductSerial UNIQUE (ProductID, SerialNumber)
+);
+CREATE INDEX IX_ProductSerials_Status ON ProductSerials(ProductID, Status);
 
 CREATE TABLE Expenses (
     ExpenseID       INT IDENTITY(1,1) PRIMARY KEY,
@@ -294,15 +320,22 @@ CREATE TABLE Waybills (
 -- ===== Attendance =====
 -- One row per user per day. Written by the clerk "Checked In" card shown while
 -- the welcome clip plays (CheckInAt), and by sign-out/idle-logout (CheckOutAt).
-CREATE TABLE Attendance (
-    AttendanceID INT IDENTITY(1,1) PRIMARY KEY,
-    UserID       INT NOT NULL REFERENCES Users(UserID),
-    FullName     NVARCHAR(100) NOT NULL,
-    WorkDate     DATE NOT NULL DEFAULT CAST(SYSDATETIME() AS DATE),
-    CheckInAt    DATETIME2 NULL,
-    CheckOutAt   DATETIME2 NULL,
-    CONSTRAINT UQ_Attendance UNIQUE (UserID, WorkDate)
+-- Attendance is an append-only log: one row per check-in, check-out or
+-- declined check-in, stamped with the moment it happened. Never one row per
+-- day -- a clerk who signs in after lunch is checked in again, and both times
+-- have to survive. WorkDate is computed from HappenedAt so the date and the
+-- time can never drift apart.
+CREATE TABLE AttendanceEvents (
+    EventID     INT IDENTITY(1,1) PRIMARY KEY,
+    UserID      INT NOT NULL REFERENCES Users(UserID),
+    FullName    NVARCHAR(100) NOT NULL,
+    EventType   NVARCHAR(10) NOT NULL CHECK (EventType IN ('In','Out','Declined')),
+    HappenedAt  DATETIME2 NOT NULL,
+    WorkDate    AS CAST(HappenedAt AS DATE) PERSISTED
 );
+
+CREATE INDEX IX_AttendanceEvents_User_Date ON AttendanceEvents(UserID, WorkDate);
+CREATE INDEX IX_AttendanceEvents_Date ON AttendanceEvents(WorkDate);
 
 CREATE INDEX IX_StockBatches_Product ON StockBatches(ProductID);
 CREATE INDEX IX_Invoices_Customer ON Invoices(CustomerID);

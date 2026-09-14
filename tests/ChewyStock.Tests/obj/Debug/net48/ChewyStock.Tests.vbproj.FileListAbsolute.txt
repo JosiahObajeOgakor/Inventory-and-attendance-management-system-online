@@ -12,7 +12,6 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Test
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\landingvideo.mp4
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\logo.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\README.txt
-C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\signature.png
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.dll
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Microsoft.VisualStudio.TestPlatform.MSTestAdapter.PlatformServices.dll
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Microsoft.TestPlatform.AdapterUtilities.dll
@@ -148,3 +147,7 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Test
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\obj\Debug\net48\ChewyStock.Tests.dll
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\obj\Debug\net48\ChewyStock.Tests.pdb
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\QRCoder.dll
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\candidPurffect.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\signature.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\candidPurffectlogo.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\tests\ChewyStock.Tests\bin\Debug\net48\Assets\chewypetfeedslogo.jpeg

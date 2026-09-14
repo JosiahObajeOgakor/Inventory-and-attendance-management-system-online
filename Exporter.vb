@@ -15,13 +15,13 @@ Public Module Exporter
             If dlg.ShowDialog(owner) <> DialogResult.OK Then Return
             Dim sheets = BuildReport(dlg.SelectedYear, dlg.SelectedMonth)
             Dim label = AppInfo.PeriodLabel(dlg.SelectedYear, dlg.SelectedMonth)
-            Dim baseName = "ChewyPetsFeed_report_" &
+            Dim baseName = Company.Current.FilePrefix & "_report_" &
                 If(dlg.SelectedMonth.HasValue, $"{dlg.SelectedYear:0000}-{dlg.SelectedMonth.Value:00}", $"{dlg.SelectedYear:0000}")
 
             If dlg.AsExcel Then
                 SaveExcel(sheets, baseName, owner)
             Else
-                PreviewPdf(owner, "ChewyPetsFeed — Report — " & label, label, sheets)
+                PreviewPdf(owner, Company.Current.DisplayName & " — Report — " & label, label, sheets)
             End If
         End Using
     End Sub
