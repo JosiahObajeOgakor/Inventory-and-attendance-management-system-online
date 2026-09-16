@@ -43,11 +43,17 @@ Public Class frmNewInvoice
     ' VAT is only charged when the user ticks this — off by default.
     Private chkVat As New CheckBox() With {.AutoSize = True, .Checked = False}
     Private lblTotal As New Label() With {.AutoSize = True, .Tag = "keepfont", .Font = New Font("Segoe UI", 13, FontStyle.Bold)}
+    Private lblPrevBalance As New Label() With {.AutoSize = True, .Tag = "keepfont"}
     Private lblBalance As New Label() With {.AutoSize = True, .Tag = "keepfont"}
 
     Private lineItems As New DataTable()
     Private prices As DataTable   ' ProductID, Name, CostPrice, PriceDistributor, PriceWholesaler, PriceRetail
     Private ReadOnly ConfiguredVatRate As Decimal = AppInfo.VatRate
+    ''' What the selected customer already owed before this sale — fetched
+    ''' whenever the customer changes, so it's never left out of what's shown
+    ''' or what's suggested to collect. The save itself re-reads this fresh
+    ''' (and locked) inside the transaction; this copy is only for the screen.
+    Private _customerBalance As Decimal = 0D
 
     Private ReadOnly Property VatRate As Decimal
         Get
@@ -126,11 +132,32 @@ Public Class frmNewInvoice
 
     Private Sub SyncTierToCustomer()
         Dim row = TryCast(cboCustomer.SelectedItem, DataRowView)
-        If row Is Nothing Then Return
+        If row Is Nothing Then
+            _customerBalance = 0D
+            RecalculateTotals()
+            Return
+        End If
+        ' Fetched before the tier is applied, so if setting the tier fires its
+        ' own recalculation, it already sees this customer's balance and not
+        ' whichever customer was picked before.
+        _customerBalance = FetchCustomerBalance(CInt(row("CustomerID")))
         Dim t = Convert.ToString(row("CustomerType"))
         If cboTier.Items.Contains(t) Then cboTier.SelectedItem = t
         ShowCustomerSegment(CInt(row("CustomerID")))
+        RecalculateTotals()
     End Sub
+
+    ''' What this customer already owes, so a new sale never quietly leaves an
+    ''' old debt out of what the seller is shown or asked to collect.
+    Private Function FetchCustomerBalance(customerId As Integer) As Decimal
+        Try
+            Dim t = DataAccess.GetTable("SELECT Balance FROM Customers WHERE CustomerID = @id",
+                New Dictionary(Of String, Object) From {{"@id", customerId}})
+            Return If(t.Rows.Count = 0, 0D, Convert.ToDecimal(t.Rows(0)(0)))
+        Catch
+            Return 0D
+        End Try
+    End Function
 
     ''' Which kind of customer this is, worked out from how they actually buy
     ''' (how often, how much a time, how much in total) rather than from the
@@ -245,12 +272,12 @@ Public Class frmNewInvoice
         AddRow(top, "", lblAdvice)
 
         ' Two columns (inputs | totals) so the summary stays short on small screens.
-        Dim summary As New TableLayoutPanel() With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 4, .RowCount = 5, .Padding = New Padding(16, 8, 16, 8)}
+        Dim summary As New TableLayoutPanel() With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 4, .RowCount = 6, .Padding = New Padding(16, 8, 16, 8)}
         summary.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         summary.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
         summary.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         summary.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 50))
-        For i = 1 To 5
+        For i = 1 To 6
             summary.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         Next
         chkVat.Text = $"Add VAT ({ConfiguredVatRate:0.##}%)"
@@ -262,8 +289,11 @@ Public Class frmNewInvoice
         AddPair(summary, 0, 2, "Subtotal", lblSubtotal)
         AddPair(summary, 1, 2, "Discount", lblDiscount)
         AddPair(summary, 2, 2, "VAT amount", lblVat)
-        AddPair(summary, 3, 2, "TOTAL", lblTotal)
-        AddPair(summary, 4, 2, "Outstanding", lblBalance)
+        AddPair(summary, 3, 2, "TOTAL (this sale)", lblTotal)
+        ' Previous balance is never left off the summary — this is exactly the
+        ' figure a clerk needs to know they should also be collecting.
+        AddPair(summary, 4, 2, "Previous balance owed", lblPrevBalance)
+        AddPair(summary, 5, 2, "Balance after this sale", lblBalance)
 
         Dim gridHost As New Panel() With {.Dock = DockStyle.Fill}
         gridHost.Controls.Add(gridLines)
@@ -413,23 +443,31 @@ Public Class frmNewInvoice
         Dim vatable = subtotal - discountAmt
         Dim vat = vatable * (VatRate / 100D)
         _total = vatable + vat
+        ' Previous debt is added into what's being asked for, not left for the
+        ' clerk to notice on their own — the whole point of showing it at all.
+        Dim combinedDue = _customerBalance + _total
 
         If cboPaymentMethod.Text = "Credit" Then
             ' leave numPaidNow as the user set it (0 by default)
-        ElseIf numPaidNow.Value = 0D OrElse numPaidNow.Value = _lastTotal Then
-            numPaidNow.Value = Math.Min(_total, numPaidNow.Maximum)
+        ElseIf numPaidNow.Value = 0D OrElse numPaidNow.Value = _lastAutoFilled Then
+            numPaidNow.Value = Math.Min(combinedDue, numPaidNow.Maximum)
         End If
-        _lastTotal = _total
+        _lastAutoFilled = numPaidNow.Value
 
-        Dim outstanding = Math.Max(0D, _total - numPaidNow.Value)
+        ' Today's sale is settled first out of whatever's paid; anything left
+        ' over after that is what still remains, old debt included.
+        Dim balanceAfter = Math.Max(0D, combinedDue - numPaidNow.Value)
         lblSubtotal.Text = AppInfo.Money(subtotal)
         lblDiscount.Text = AppInfo.Money(discountAmt)
         lblVat.Text = If(chkVat.Checked, AppInfo.Money(vat), "not charged")
         lblTotal.Text = AppInfo.Money(_total)
-        lblBalance.Text = AppInfo.Money(outstanding)
-        dtpDue.Enabled = outstanding > 0
+        lblPrevBalance.Text = AppInfo.Money(_customerBalance)
+        lblPrevBalance.ForeColor = If(_customerBalance > 0, Theme.Current.Danger, Theme.Current.TextMuted)
+        lblBalance.Text = AppInfo.Money(balanceAfter)
+        lblBalance.ForeColor = If(balanceAfter > 0, Theme.Current.Danger, Theme.Current.TextPrimary)
+        dtpDue.Enabled = balanceAfter > 0
     End Sub
-    Private _lastTotal As Decimal = -1
+    Private _lastAutoFilled As Decimal = -1
 
     Private Sub btnSave_Click(sender As Object, e As EventArgs)
         Dim customerRow = TryCast(cboCustomer.SelectedItem, DataRowView)
@@ -474,7 +512,7 @@ Public Class frmNewInvoice
             ' all save together or not at all.
             Dim saved = Sales.Save(req, currentUserId)
             _SavedInvoiceId = saved.InvoiceID
-            AppUI.Toast($"Sale {saved.InvoiceNumber} saved — {AppInfo.Money(saved.Total)}.", AppUI.ToastKind.Success)
+            AppUI.Toast(SaleSummary(saved), AppUI.ToastKind.Success)
             Me.DialogResult = DialogResult.OK
             Me.Close()
         Catch ex As Sales.InsufficientStockException
@@ -484,4 +522,22 @@ Public Class frmNewInvoice
             AppUI.Toast("Could not save sale: " & ex.Message, AppUI.ToastKind.Error)
         End Try
     End Sub
+
+    ''' A one-line, but complete, account of what just happened — so a customer
+    ''' with old debt is never quietly waved through as "Paid" while the debt
+    ''' sits untouched and unmentioned.
+    Private Shared Function SaleSummary(saved As Sales.SaleResult) As String
+        Dim msg = $"Sale {saved.InvoiceNumber} saved — {AppInfo.Money(saved.Total)}."
+        If saved.PreviousBalance > 0 Then
+            If saved.AppliedToPreviousBalance > 0 Then
+                msg &= $" {AppInfo.Money(saved.AppliedToPreviousBalance)} of the payment cleared part of their previous balance."
+            End If
+            msg &= If(saved.RemainingBalance > 0,
+                $" They still owe {AppInfo.Money(saved.RemainingBalance)} in total (including earlier purchases).",
+                " Their account is now fully settled.")
+        ElseIf saved.Outstanding > 0 Then
+            msg &= $" {AppInfo.Money(saved.Outstanding)} still owed on this sale."
+        End If
+        Return msg
+    End Function
 End Class

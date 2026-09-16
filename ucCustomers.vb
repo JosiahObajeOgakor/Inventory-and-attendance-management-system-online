@@ -133,6 +133,10 @@ Public Class ucCustomers
         End If
     End Sub
 
+    ''' Spreads the payment across whatever this customer still owes, oldest
+    ''' invoice first, each capped at what it actually owes — the same rule a
+    ''' new sale's overpayment follows, so one payment can never over-pay a
+    ''' single invoice while an older one is left untouched.
     Private Sub btnRecordPayment_Click(sender As Object, e As EventArgs)
         If grid.Grid.SelectedRows.Count = 0 Then Return
         Dim c = SelectedCustomer()
@@ -142,16 +146,16 @@ Public Class ucCustomers
         End If
         Using f As New frmRecordPayment(c.Name, c.Balance)
             If f.ShowDialog() = DialogResult.OK Then
-                DataAccess.ExecuteTransaction(New List(Of (Sql As String, Params As Dictionary(Of String, Object))) From {
-                    ("UPDATE Customers SET Balance = Balance - @amount WHERE CustomerID = @id",
-                     New Dictionary(Of String, Object) From {{"@amount", f.Amount}, {"@id", c.Id}}),
-                    ("UPDATE Invoices SET AmountPaid = AmountPaid + @amount, " &
-                     "[Status] = CASE WHEN AmountPaid + @amount >= TotalAmount THEN 'Paid' ELSE 'Partial' END " &
-                     "WHERE InvoiceID = (SELECT TOP 1 InvoiceID FROM Invoices WHERE CustomerID=@id AND [Status]<>'Paid' ORDER BY InvoiceDate)",
-                     New Dictionary(Of String, Object) From {{"@amount", f.Amount}, {"@id", c.Id}}),
-                    ("INSERT INTO Ledger (AccountType, AccountName, EntryType, Amount, Reference) VALUES ('Customer', @name, 'Credit', @amount, 'Payment')",
-                     New Dictionary(Of String, Object) From {{"@name", c.Name}, {"@amount", f.Amount}})
-                })
+                DataAccess.InTransaction(
+                    Function(conn, tx) As Boolean
+                        Sales.ApplyPaymentToOutstandingInvoices(conn, tx, c.Id, f.Amount, Date.Today, "Cash", currentUserId)
+                        DataAccess.Exec(conn, tx, "UPDATE Customers SET Balance = Balance - @amount WHERE CustomerID = @id",
+                            New Dictionary(Of String, Object) From {{"@amount", f.Amount}, {"@id", c.Id}})
+                        DataAccess.Exec(conn, tx,
+                            "INSERT INTO Ledger (EntryDate, AccountType, AccountName, EntryType, Amount, Reference) VALUES (@d, 'Customer', @name, 'Credit', @amount, 'Payment')",
+                            New Dictionary(Of String, Object) From {{"@d", Date.Today}, {"@name", c.Name}, {"@amount", f.Amount}})
+                        Return True
+                    End Function)
                 AppUI.Toast($"Payment of {AppInfo.Money(f.Amount)} recorded.", AppUI.ToastKind.Success)
                 LoadGrid()
             End If

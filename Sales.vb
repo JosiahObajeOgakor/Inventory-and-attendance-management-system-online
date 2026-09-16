@@ -5,6 +5,13 @@ Imports System.Data.SqlClient
 ''' the payment and the rebate — is written in ONE transaction. If anything goes
 ''' wrong (or the PC dies mid-save) the whole sale is rolled back, so there is
 ''' never an invoice with no stock deducted, or stock gone with no invoice.
+'''
+''' A customer who already owes from an earlier sale is never quietly skipped:
+''' whatever they still owe is read (locked) before this sale is priced, today's
+''' invoice is settled first out of whatever is paid, and anything paid beyond
+''' that chips away at the old debt — oldest invoice first, same rule the
+''' Customers screen's "Record payment" button follows. Whatever's still unpaid,
+''' old or new, stays on the customer's running Balance and on the ledger.
 Public Module Sales
 
     Public Class SaleLine
@@ -43,8 +50,20 @@ Public Module Sales
         Public Property DiscountAmount As Decimal
         Public Property VatAmount As Decimal
         Public Property Total As Decimal
+        ''' What's left unpaid on THIS invoice alone (Total minus what was
+        ''' applied to it) — unrelated to any older debt.
         Public Property Outstanding As Decimal
+        ''' This invoice's own status: Paid / Partial / Unpaid.
         Public Property Status As String
+        ''' What the customer already owed, from earlier invoices, before this
+        ''' sale — read fresh at save time so it can never be stale.
+        Public Property PreviousBalance As Decimal
+        ''' How much of what was paid went toward that earlier debt rather than
+        ''' today's invoice (only ever > 0 once today's invoice is settled first).
+        Public Property AppliedToPreviousBalance As Decimal
+        ''' What the customer owes in total after this sale: old debt not yet
+        ''' cleared, plus whatever's left unpaid on this invoice.
+        Public Property RemainingBalance As Decimal
     End Class
 
     ''' One product on a sale that the shelf can't cover, with the restocking
@@ -89,6 +108,48 @@ Public Module Sales
         End Function
     End Class
 
+    ''' Spreads `amount` across a customer's outstanding invoices, oldest first,
+    ''' each capped at what it still owes — so one invoice can never be marked
+    ''' paid past its own total while an older one sits untouched. Writes a
+    ''' Payments row against each invoice it actually touches. Returns how much
+    ''' was actually applied (never more than `amount`, and never more than the
+    ''' customer's outstanding invoices can absorb).
+    '''
+    ''' Deliberately does NOT touch Customers.Balance or write a Ledger entry —
+    ''' every caller already owns one consistent Balance update and Ledger
+    ''' record for its own transaction, and doing it here too would double it up.
+    Public Function ApplyPaymentToOutstandingInvoices(conn As SqlConnection, tx As SqlTransaction,
+                                                       customerId As Integer, amount As Decimal,
+                                                       paymentDate As Date, method As String, userId As Integer,
+                                                       Optional excludeInvoiceId As Integer = 0) As Decimal
+        If amount <= 0 Then Return 0D
+        Dim remaining = amount
+        Dim invoices = DataAccess.TableIn(conn, tx,
+            "SELECT InvoiceID, TotalAmount, AmountPaid FROM Invoices WITH (UPDLOCK, HOLDLOCK) " &
+            "WHERE CustomerID = @c AND [Status] <> 'Paid' AND InvoiceID <> @ex ORDER BY InvoiceDate, InvoiceID",
+            New Dictionary(Of String, Object) From {{"@c", customerId}, {"@ex", excludeInvoiceId}})
+
+        For Each row As DataRow In invoices.Rows
+            If remaining <= 0 Then Exit For
+            Dim invoiceId = Convert.ToInt32(row("InvoiceID"))
+            Dim owed = Convert.ToDecimal(row("TotalAmount")) - Convert.ToDecimal(row("AmountPaid"))
+            If owed <= 0 Then Continue For
+            Dim apply = Math.Min(owed, remaining)
+
+            DataAccess.Exec(conn, tx,
+                "UPDATE Invoices SET AmountPaid = AmountPaid + @a, " &
+                "[Status] = CASE WHEN AmountPaid + @a >= TotalAmount THEN 'Paid' ELSE 'Partial' END WHERE InvoiceID = @id",
+                New Dictionary(Of String, Object) From {{"@a", apply}, {"@id", invoiceId}})
+            DataAccess.Exec(conn, tx,
+                "INSERT INTO Payments (InvoiceID, PaymentDate, Amount, Method, ReceivedByUserID) VALUES (@i, @d, @a, @m, @u)",
+                New Dictionary(Of String, Object) From {
+                    {"@i", invoiceId}, {"@d", paymentDate.Date}, {"@a", apply}, {"@m", method}, {"@u", userId}})
+
+            remaining -= apply
+        Next
+        Return amount - remaining
+    End Function
+
     ''' Checks a sale against what's on the shelf without saving anything — used
     ''' by the sale screen so the seller is told before they hit Save.
     Public Function FindShortfalls(req As SaleRequest) As List(Of Shortfall)
@@ -126,28 +187,48 @@ Public Module Sales
         If req.Lines.Count = 0 Then Throw New InvalidOperationException("Add at least one product line.")
 
         Dim money = Totals(req)
-        Dim paidNow = Math.Min(req.PaidNow, money.Total)
 
         ' The invoice number is stamped with the current second, so two sales
         ' saved within the same second would clash — wait a full second past
         ' the clash so the retry lands in the next second and gets its own number.
         For attempt = 1 To 4
             Try
-                Return SaveOnce(req, userId, money, paidNow)
+                Return SaveOnce(req, userId, money)
             Catch ex As SqlException When attempt < 4 AndAlso Numbering.IsDuplicate(ex)
                 Threading.Thread.Sleep(1000)
             End Try
         Next
-        Return SaveOnce(req, userId, money, paidNow)
+        Return SaveOnce(req, userId, money)
     End Function
 
-    Private Function SaveOnce(req As SaleRequest, userId As Integer, money As SaleResult, paidNow As Decimal) As SaleResult
+    Private Function SaveOnce(req As SaleRequest, userId As Integer, money As SaleResult) As SaleResult
         Return DataAccess.InTransaction(
             Function(conn As SqlConnection, tx As SqlTransaction) As SaleResult
                 ' Locked read of every product on the order before anything is
                 ' written, so a second till can't sell the same units at the
                 ' same moment and leave both invoices half-covered.
                 AssertStockAvailable(conn, tx, req)
+
+                ' What this customer already owed, read fresh and locked so two
+                ' sales for the same customer at the same moment can't both act
+                ' on a stale figure. This is the "former debt" a new sale must
+                ' never quietly leave untouched.
+                Dim prevBalance = Convert.ToDecimal(DataAccess.ScalarIn(conn, tx,
+                    "SELECT Balance FROM Customers WITH (UPDLOCK, HOLDLOCK) WHERE CustomerID = @id",
+                    New Dictionary(Of String, Object) From {{"@id", req.CustomerID}}))
+                money.PreviousBalance = prevBalance
+
+                ' Today's invoice is settled first out of whatever is paid; only
+                ' what's left over after that goes toward the old debt. Capped at
+                ' what's owed in total (old debt + this sale) — a payment can now
+                ' cover both, not just today's goods.
+                Dim combinedDue = prevBalance + money.Total
+                Dim paidNow = Math.Max(0D, Math.Min(req.PaidNow, combinedDue))
+                Dim appliedToInvoice = Math.Min(paidNow, money.Total)
+                Dim overflow = paidNow - appliedToInvoice
+
+                money.Outstanding = money.Total - appliedToInvoice
+                money.Status = If(appliedToInvoice >= money.Total, "Paid", If(appliedToInvoice > 0, "Partial", "Unpaid"))
 
                 money.InvoiceNumber = Numbering.NextNumber(conn, tx, "INV", "Invoices", "InvoiceNumber", req.SaleDate)
                 money.InvoiceID = DataAccess.InsertReturningId(conn, tx,
@@ -157,7 +238,7 @@ Public Module Sales
                     New Dictionary(Of String, Object) From {
                         {"@num", money.InvoiceNumber}, {"@cust", req.CustomerID}, {"@date", req.SaleDate.Date},
                         {"@sub", money.Subtotal}, {"@discPct", req.DiscountPct}, {"@disc", money.DiscountAmount},
-                        {"@vatRate", req.VatRate}, {"@vat", money.VatAmount}, {"@total", money.Total}, {"@paid", paidNow},
+                        {"@vatRate", req.VatRate}, {"@vat", money.VatAmount}, {"@total", money.Total}, {"@paid", appliedToInvoice},
                         {"@due", If(money.Outstanding > 0 AndAlso req.DueDate.HasValue, CObj(req.DueDate.Value.Date), DBNull.Value)},
                         {"@tier", req.PriceTier}, {"@wh", req.WarehouseID}, {"@method", req.PaymentMethod},
                         {"@status", money.Status}, {"@user", userId}})
@@ -172,20 +253,43 @@ Public Module Sales
                     DeductStock(conn, tx, line, req.WarehouseID, money.InvoiceID, req.SaleDate, userId)
                 Next
 
+                ' Whatever was paid beyond today's own invoice pays down what was
+                ' already owed — oldest invoice first, same rule the Customers
+                ' screen's "Record payment" button follows.
+                Dim appliedToOldDebt = ApplyPaymentToOutstandingInvoices(
+                    conn, tx, req.CustomerID, overflow, req.SaleDate, req.PaymentMethod, userId, excludeInvoiceId:=money.InvoiceID)
+                money.AppliedToPreviousBalance = appliedToOldDebt
+                money.RemainingBalance = (prevBalance - appliedToOldDebt) + money.Outstanding
+
+                ' One Balance update for the whole transaction: today's sale adds
+                ' to what's owed, everything just paid (this invoice and any old
+                ' debt) comes off — correct even if two sales race on this customer.
+                DataAccess.Exec(conn, tx, "UPDATE Customers SET Balance = Balance - @paid + @total WHERE CustomerID = @id",
+                    New Dictionary(Of String, Object) From {{"@paid", paidNow}, {"@total", money.Total}, {"@id", req.CustomerID}})
+
+                If appliedToOldDebt > 0 Then
+                    ' Reference is the SAME invoice number as any debit below —
+                    ' it's this sale's payment that reached back and cleared the
+                    ' old debt, so the trail should read as one event, not two.
+                    ' (Ledger.Reference is NVARCHAR(30); the invoice number already
+                    ' fills most of that, so no room for extra wording here.)
+                    DataAccess.Exec(conn, tx,
+                        "INSERT INTO Ledger (EntryDate, AccountType, AccountName, EntryType, Amount, Reference) VALUES (@d, 'Customer', @name, 'Credit', @amt, @ref)",
+                        New Dictionary(Of String, Object) From {
+                            {"@d", req.SaleDate.Date}, {"@name", req.CustomerName}, {"@amt", appliedToOldDebt}, {"@ref", money.InvoiceNumber}})
+                End If
                 If money.Outstanding > 0 Then
-                    DataAccess.Exec(conn, tx, "UPDATE Customers SET Balance = Balance + @amt WHERE CustomerID = @id",
-                        New Dictionary(Of String, Object) From {{"@amt", money.Outstanding}, {"@id", req.CustomerID}})
                     DataAccess.Exec(conn, tx,
                         "INSERT INTO Ledger (EntryDate, AccountType, AccountName, EntryType, Amount, Reference) VALUES (@d, 'Customer', @name, 'Debit', @amt, @ref)",
                         New Dictionary(Of String, Object) From {
                             {"@d", req.SaleDate.Date}, {"@name", req.CustomerName}, {"@amt", money.Outstanding}, {"@ref", money.InvoiceNumber}})
                 End If
 
-                If paidNow > 0 Then
+                If appliedToInvoice > 0 Then
                     DataAccess.Exec(conn, tx,
                         "INSERT INTO Payments (InvoiceID, PaymentDate, Amount, Method, ReceivedByUserID) VALUES (@i, @d, @a, @m, @u)",
                         New Dictionary(Of String, Object) From {
-                            {"@i", money.InvoiceID}, {"@d", req.SaleDate.Date}, {"@a", paidNow}, {"@m", req.PaymentMethod}, {"@u", userId}})
+                            {"@i", money.InvoiceID}, {"@d", req.SaleDate.Date}, {"@a", appliedToInvoice}, {"@m", req.PaymentMethod}, {"@u", userId}})
                 End If
 
                 ' Rebate accrues on net sales for everyone except walk-ins.

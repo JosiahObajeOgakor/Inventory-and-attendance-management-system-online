@@ -5,15 +5,18 @@ Imports System.Data
 ''' Receipt / invoice for one sale. Left tab: a designed, printable receipt with
 ''' the company logo, address & contact, bank details in bold, invoice number,
 ''' the customer's name / address / Tax ID, line items, amount paid, balance
-''' still owed, expected pay-off date, the customer's rebate balance and a
-''' thank-you. Right tab: a plain-English breakdown of the money.
-''' "Save as PDF" from the receipt view's print dialog.
+''' still owed, expected pay-off date, any balance owed from earlier purchases,
+''' the customer's rebate balance and a thank-you. Right tab: a plain-English
+''' breakdown of the money. "Save as PDF" from the receipt view's print dialog.
 Public Class frmInvoiceReceipt
     Inherits Form
 
     Private ReadOnly _header As DataRow
     Private ReadOnly _items As DataTable
     Private ReadOnly _rebate As Decimal
+    ''' What this customer owes right now, across every invoice — always ≥ this
+    ''' invoice's own balance due, since that's one component of it.
+    Private ReadOnly _customerBalance As Decimal
 
     Public Sub New(invoiceId As Integer)
         _header = DataAccess.GetTable(
@@ -22,7 +25,7 @@ Public Class frmInvoiceReceipt
             "ISNULL(w.Name,'') AS Warehouse, " &
             "c.CustomerID, c.Name AS CustomerName, c.ContactName, c.Phone AS CustomerPhone, c.Email AS CustomerEmail, " &
             "ISNULL(c.[Address],'') AS CustomerAddress, ISNULL(c.Location,'') AS CustomerLocation, ISNULL(c.TaxID,'') AS CustomerTaxID, " &
-            "c.CustomerType, ISNULL(u.FullName,'') AS CreatedBy, " &
+            "c.CustomerType, ISNULL(u.FullName,'') AS CreatedBy, c.Balance AS CustomerBalance, " &
             "ISNULL((SELECT SUM(ii.Quantity*ii.UnitCost) FROM InvoiceItems ii WHERE ii.InvoiceID=i.InvoiceID),0) AS TotalCost " &
             "FROM Invoices i JOIN Customers c ON c.CustomerID=i.CustomerID " &
             "LEFT JOIN Warehouses w ON w.WarehouseID=i.WarehouseID " &
@@ -37,6 +40,8 @@ Public Class frmInvoiceReceipt
         _rebate = Convert.ToDecimal(DataAccess.GetTable(
             "SELECT ISNULL(RebateAvailable,0) AS R FROM vw_CustomerRebate WHERE CustomerID=@c",
             New Dictionary(Of String, Object) From {{"@c", _header("CustomerID")}}).Rows(0)("R"))
+
+        _customerBalance = Convert.ToDecimal(_header("CustomerBalance"))
 
         Text = AppInfo.CompanyName & " — Receipt " & Convert.ToString(_header("InvoiceNumber"))
         Width = 1000
@@ -54,6 +59,12 @@ Public Class frmInvoiceReceipt
 
     Private Function Bal() As Decimal
         Return Convert.ToDecimal(_header("TotalAmount")) - Convert.ToDecimal(_header("AmountPaid"))
+    End Function
+
+    ''' Owed from OTHER invoices — the customer's total balance minus this
+    ''' invoice's own share of it. Clamped at zero against any rounding drift.
+    Private Function OtherBalance() As Decimal
+        Return Math.Max(0D, _customerBalance - Bal())
     End Function
 
     ' ===== Receipt document =====
@@ -115,11 +126,21 @@ Public Class frmInvoiceReceipt
         End If
         totals.Add(("TOTAL", AppInfo.Money2(_header("TotalAmount")), 1))
         totals.Add(("Amount paid", AppInfo.Money2(_header("AmountPaid")), 0))
-        totals.Add(("Balance due", AppInfo.Money2(Bal()), If(Bal() > 0, 2, 0)))
+        totals.Add(("Balance due (this invoice)", AppInfo.Money2(Bal()), If(Bal() > 0, 2, 0)))
+        ' Never buried — a customer's earlier debt is shown right alongside
+        ' today's balance, with the combined figure spelled out underneath it.
+        Dim owedElsewhere = OtherBalance()
+        If owedElsewhere > 0 Then
+            totals.Add(("Owed from earlier purchases", AppInfo.Money2(owedElsewhere), 2))
+            totals.Add(("TOTAL NOW OWED (all invoices)", AppInfo.Money2(Bal() + owedElsewhere), 2))
+        End If
         d.Totals(totals, {
             ($"{n} product line(s) · {units:#,0} unit(s)", False),
             ($"Paid by {s("PaymentMethod")} · status {s("Status")}", False),
             (If(due = "", "", $"Balance to be paid by {due}"), True),
+            (If(owedElsewhere > 0,
+                $"This customer also owes {AppInfo.Money2(owedElsewhere)} from earlier purchases — please collect the full amount owed where possible.",
+                ""), True),
             ($"Rebate balance with us: {AppInfo.Money2(_rebate)} (redeemable as goods)", False)})
 
         Dim banks = AppInfo.BankAccounts()
@@ -199,7 +220,13 @@ Public Class frmInvoiceReceipt
             $"4. VAT (government tax): {AppInfo.Money(vat)} — collected for the government, not your earnings.",
             "4. VAT: none charged on this sale."))
         sb.AppendLine()
-        sb.AppendLine($"5. CUSTOMER PAYS IN TOTAL: {AppInfo.Money(total)}  (paid now {AppInfo.Money(_header("AmountPaid"))}, still owes {AppInfo.Money(Bal())})")
+        sb.AppendLine($"5. CUSTOMER PAYS IN TOTAL: {AppInfo.Money(total)}  (paid now {AppInfo.Money(_header("AmountPaid"))}, still owes {AppInfo.Money(Bal())} on this invoice)")
+        Dim owedElsewhere = OtherBalance()
+        If owedElsewhere > 0 Then
+            sb.AppendLine()
+            sb.AppendLine($"5b. THIS CUSTOMER ALSO OWES {AppInfo.Money(owedElsewhere)} FROM EARLIER PURCHASES.")
+            sb.AppendLine($"    Total owed across everything: {AppInfo.Money(Bal() + owedElsewhere)}.")
+        End If
         sb.AppendLine()
         sb.AppendLine($"6. WHAT THE GOODS COST YOU: {AppInfo.Money(cost)}")
         sb.AppendLine()
