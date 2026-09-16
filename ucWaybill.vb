@@ -280,7 +280,11 @@ Public Class ucWaybill
             End Try
         End If
         d.Gap(14)
-        d.Signatures("Dispatched by", "Driver", "Received by (customer)")
+        ' "Dispatched by" is stamped by the business itself (its own "confirmed
+        ' and released" mark) rather than left as a blank signature/date for
+        ' someone to fill in by hand; driver and the receiving customer still
+        ' sign for themselves.
+        d.DispatchSignatures(Company.Current.WaybillStamp, "Driver", "Received by (customer)")
         d.Text("Received the goods listed above in good condition and complete.", size:=8, grey:=True)
         d.BrandFooter("Thanks for your patronage.")
         Return d

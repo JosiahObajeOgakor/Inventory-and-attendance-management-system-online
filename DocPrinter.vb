@@ -476,6 +476,55 @@ Public NotInheritable Class DocPrinter
         End Function
     End Class
 
+    ''' A waybill's dispatch row: our own column carries only a Name line plus
+    ''' the business's pre-signed "confirmed and released" stamp — no blank
+    ''' Signature/Date for someone to fill in by hand, since the stamp already
+    ''' carries both. The remaining columns (driver, receiving customer) are
+    ''' still ordinary blank Name/Signature/Date lines, exactly as
+    ''' SignatureBlock draws them, since those are signed by someone outside
+    ''' the business.
+    Private Class DispatchBlock
+        Inherits Block
+        Public StampImg As Image
+        Public StampTitle As String = "Dispatched by"
+        Public OtherTitles As New List(Of String)
+        Private ReadOnly _title As New Font(Face, 8.5F, FontStyle.Bold)
+        Private ReadOnly _k As New Font(Face, 8)
+        Private Const GapX As Single = 22
+        Private Const StampMaxH As Single = 70
+
+        Public Overrides Function Render(g As Graphics, x As Single, y As Single, w As Single, draw As Boolean) As Single
+            Dim n = 1 + Math.Max(1, OtherTitles.Count)
+            Dim pw = (w - GapX * (n - 1)) / n
+            Dim h As Single = 0
+
+            Dim px = x, py = y
+            py += Put(g, draw, StampTitle.ToUpperInvariant(), _title, Accent, px, py, pw) + 14
+            Dim lh = Put(g, draw, "Name", _k, Muted, px, py, 56)
+            If draw Then HLine(g, Color.FromArgb(150, 150, 160), px + 58, px + pw, py + lh - 1)
+            py += lh + 16
+            If StampImg IsNot Nothing Then
+                Dim s = Math.Min(StampMaxH / StampImg.Height, pw / StampImg.Width)
+                Dim iw = StampImg.Width * s, ih = StampImg.Height * s
+                If draw Then g.DrawImage(StampImg, px, py, iw, ih)
+                py += ih + 4
+            End If
+            h = Math.Max(h, py - y)
+
+            For i = 0 To OtherTitles.Count - 1
+                Dim cx = x + (i + 1) * (pw + GapX), cy = y
+                cy += Put(g, draw, OtherTitles(i).ToUpperInvariant(), _title, Accent, cx, cy, pw) + 14
+                For Each lbl In {"Name", "Signature", "Date"}
+                    Dim clh = Put(g, draw, lbl, _k, Muted, cx, cy, 56)
+                    If draw Then HLine(g, Color.FromArgb(150, 150, 160), cx + 58, cx + pw, cy + clh - 1)
+                    cy += clh + 16
+                Next
+                h = Math.Max(h, cy - y)
+            Next
+            Return h + 4
+        End Function
+    End Class
+
     ''' Company stamp + signature, right-aligned, over an "Authorised signature" caption.
     Private Class StampBlock
         Inherits Block
@@ -635,6 +684,14 @@ Public NotInheritable Class DocPrinter
         Dim b As New SignatureBlock()
         b.Titles.AddRange(titles)
         _blocks.Add(b)
+        Return Me
+    End Function
+
+    ''' A waybill's dispatch row: our own column (stampImage) gets a Name line
+    ''' plus the business's own pre-signed stamp; `otherTitles` (driver,
+    ''' receiving customer) get ordinary blank Name/Signature/Date lines.
+    Public Function DispatchSignatures(stampImage As Image, ParamArray otherTitles As String()) As DocPrinter
+        _blocks.Add(New DispatchBlock With {.StampImg = stampImage, .OtherTitles = otherTitles.ToList()})
         Return Me
     End Function
 

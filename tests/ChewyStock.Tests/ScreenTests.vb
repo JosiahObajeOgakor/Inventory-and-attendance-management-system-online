@@ -513,6 +513,140 @@ Public Class ScreenTests
         End Using
     End Sub
 
+    ' ===== a supplier we already owe gets special handling (New Purchase Order) =====
+
+    <TestMethod>
+    Public Sub An_indebted_supplier_is_flagged_right_in_the_picker()
+        Dim owing = DataAccess.ExecuteScalarInsert("INSERT INTO Suppliers (Name) VALUES (@n)",
+            New Dictionary(Of String, Object) From {{"@n", "Owing Picker Supplier " & Guid.NewGuid().ToString("N").Substring(0, 5)}})
+        TestDb.Exec("UPDATE Suppliers SET Balance = 22000 WHERE SupplierID=@s", TestDb.P("@s", owing))
+        Dim clean = DataAccess.ExecuteScalarInsert("INSERT INTO Suppliers (Name) VALUES (@n)",
+            New Dictionary(Of String, Object) From {{"@n", "Clean Picker Supplier " & Guid.NewGuid().ToString("N").Substring(0, 5)}})
+
+        Using f As New frmNewPO(1)
+            f.Show()
+            Application.DoEvents()
+            Dim rows = DirectCast(DirectCast(Field(f, "cboSupplier"), ComboBox).DataSource, DataTable).AsEnumerable().ToList()
+            Dim owingRow = rows.Single(Function(r) Convert.ToInt32(r("SupplierID")) = owing)
+            Dim cleanRow = rows.Single(Function(r) Convert.ToInt32(r("SupplierID")) = clean)
+
+            StringAssert.Contains(Convert.ToString(owingRow("DisplayName")), "we owe", "an indebted supplier must stand out in the list itself")
+            StringAssert.Contains(Convert.ToString(owingRow("DisplayName")), "22,000")
+            Assert.AreEqual(Convert.ToString(cleanRow("Name")), Convert.ToString(cleanRow("DisplayName")),
+                            "a supplier we owe nothing is shown plainly, with no clutter")
+            f.Close()
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Opening_the_purchase_screen_never_blocks_on_the_previous_balance_prompt()
+        Dim owing = DataAccess.ExecuteScalarInsert("INSERT INTO Suppliers (Name) VALUES (@n)",
+            New Dictionary(Of String, Object) From {{"@n", "AAA Opens First Supplier " & Guid.NewGuid().ToString("N").Substring(0, 5)}})
+        TestDb.Exec("UPDATE Suppliers SET Balance = 9000 WHERE SupplierID=@s", TestDb.P("@s", owing))
+
+        Using f As New frmNewPO(1)
+            f.Show()
+            Application.DoEvents()
+            Assert.IsTrue(CBool(Field(f, "_formReady")), "the form must finish constructing without waiting on any dialog")
+            f.Close()
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub The_suggested_payment_only_includes_what_was_actually_chosen_for_the_old_supplier_debt()
+        Using f As New frmNewPO(1)
+            f.Show()
+            Application.DoEvents()
+            Dim lineItems = DirectCast(Field(f, "lineItems"), DataTable)
+            f.GetType().GetField("_supplierBalance", NonPublicInstance).SetValue(f, 12000D)
+
+            lineItems.Rows.Add(1, "Test Product", 1, 5000D)
+            f.GetType().GetField("_debtToPayNow", NonPublicInstance).SetValue(f, 0D)
+            Invoke(f, "RecalcTotal")
+            Assert.AreEqual(5000D, DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value,
+                            "an old debt that wasn't chosen must not be folded in silently")
+
+            lineItems.Rows.Clear()
+            lineItems.Rows.Add(1, "Test Product", 1, 6000D)
+            DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value = 0D
+            f.GetType().GetField("_debtToPayNow", NonPublicInstance).SetValue(f, 4000D)
+            Invoke(f, "RecalcTotal")
+            Assert.AreEqual(10000D, DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value,
+                            "the suggested payment is this order plus exactly what was chosen for the old debt")
+            f.Close()
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub The_previous_supplier_balance_prompt_reports_the_debt_and_defaults_to_paying_all_of_it()
+        Using f As New frmPreviousSupplierDebt("Test Supplier", 8000D, 2, Date.Today.AddDays(-30))
+            StringAssert.Contains(f.Text, "Test Supplier")
+            Dim body = DirectCast(Field(f, "lblInfo"), Label).Text
+            StringAssert.Contains(body, "8,000")
+            StringAssert.Contains(body, "2 earlier unpaid order")
+            Assert.AreEqual(8000D, DirectCast(Field(f, "numAmount"), NumericUpDown).Value, "defaults to paying the whole balance")
+            Assert.AreEqual(8000D, DirectCast(Field(f, "numAmount"), NumericUpDown).Maximum, "can never be asked to pay more than is owed")
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Including_the_prompted_supplier_amount_reports_exactly_what_was_chosen()
+        Using f As New frmPreviousSupplierDebt("Test Supplier", 8000D, 1, Nothing)
+            f.Show()
+            Application.DoEvents()
+            DirectCast(Field(f, "numAmount"), NumericUpDown).Value = 3000D
+            DirectCast(Field(f, "btnInclude"), Button).PerformClick()
+
+            Assert.IsTrue(f.WillPay)
+            Assert.AreEqual(3000D, f.Amount)
+            Assert.AreEqual(DialogResult.OK, f.DialogResult)
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Skipping_the_supplier_prompt_leaves_nothing_to_pay()
+        Using f As New frmPreviousSupplierDebt("Test Supplier", 8000D, 1, Nothing)
+            f.Show()
+            Application.DoEvents()
+            DirectCast(Field(f, "numAmount"), NumericUpDown).Value = 5000D
+            DirectCast(Field(f, "btnSkip"), Button).PerformClick()
+
+            Assert.IsFalse(f.WillPay)
+            Assert.AreEqual(0D, f.Amount, "skipping must never leave a half-entered amount behind")
+        End Using
+    End Sub
+
+    ' ===== the waybill's own stamp (not the receipt one) =====
+
+    <TestMethod>
+    Public Sub Each_business_has_its_own_waybill_stamp_distinct_from_its_receipt_stamp()
+        Assert.IsNotNull(Company.ChewyPets.WaybillStamp, "ChewyPets waybill stamp must load")
+        Assert.IsNotNull(Company.CandidPurrfect.WaybillStamp, "Candid waybill stamp must load")
+        Assert.AreNotSame(Company.ChewyPets.WaybillStamp, Company.CandidPurrfect.WaybillStamp)
+        Assert.AreNotSame(Company.ChewyPets.WaybillStamp, Company.ChewyPets.Signature,
+                          "the waybill stamp is its own artwork, not the receipt signature reused")
+        Assert.AreNotSame(Company.CandidPurrfect.WaybillStamp, Company.CandidPurrfect.Signature)
+    End Sub
+
+    <TestMethod>
+    Public Sub The_waybill_dispatch_row_carries_the_company_stamp_not_a_blank_signature_line()
+        Dim h As New DataTable()
+        For Each c In {"WaybillNumber", "IssueDate", "InvoiceID", "InvoiceNumber", "InvoiceDate", "Customer", "Contact", "Phone",
+                       "DestinationAddress", "Warehouse", "WarehouseLocation", "IssuedBy", "DriverName", "DriverPhone", "VehiclePlate", "Notes"}
+            h.Columns.Add(c, If(c = "InvoiceID", GetType(Integer), GetType(String)))
+        Next
+        h.Rows.Add("WB-TEST-1", Date.Today, 0, "INV-TEST-1", Date.Today, "Cust", "", "", "", "", "", "", "", "", "", "")
+
+        ' BuildWaybillDoc is Friend Shared — reached the same way frmInvoiceReceipt's
+        ' private BuildReceiptDoc is elsewhere in this file: through reflection.
+        Dim method = GetType(ucWaybill).GetMethod("BuildWaybillDoc", BindingFlags.NonPublic Or BindingFlags.Static)
+        Dim doc = DirectCast(method.Invoke(Nothing, {h.Rows(0)}), DocPrinter)
+        Dim blocks = DirectCast(GetType(DocPrinter).GetField("_blocks", NonPublicInstance).GetValue(doc), IEnumerable)
+        Dim names = blocks.Cast(Of Object)().Select(Function(b) b.GetType().Name).ToList()
+        Assert.IsTrue(names.Contains("DispatchBlock"), "the dispatch row must use the stamped block: " & String.Join(", ", names))
+        Assert.IsFalse(names.Contains("SignatureBlock"), "the old three-way blank-signature block must be gone")
+    End Sub
+
     ' ===== finance / employees =====
 
     <TestMethod>

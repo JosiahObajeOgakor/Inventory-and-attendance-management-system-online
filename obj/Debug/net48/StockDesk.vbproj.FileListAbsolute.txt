@@ -38,3 +38,5 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Asset
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\signature.jpeg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\candidPurffectlogo.jpeg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\chewypetfeedslogo.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\waybillrecipt for candid.jpeg
+C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\waybillrecipt for chewypet.jpeg

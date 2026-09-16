@@ -33,6 +33,7 @@ Public NotInheritable Class Company
     ''' App.config key prefix for this company's address/phone/bank settings.
     Private ReadOnly _settingsPrefix As String
     Private ReadOnly _signatureFile As String
+    Private ReadOnly _waybillStampFile As String
     Private ReadOnly _logoFiles As String()
     Private ReadOnly _defaultBanks As (Bank As String, AccountName As String, AccountNumber As String)()
     ''' Whether this business keeps a price book (price updates with history)
@@ -42,7 +43,8 @@ Public NotInheritable Class Company
     Private Sub New(key As String, displayName As String, appName As String, legalName As String, documentPrefix As String,
                     database As String, settingsPrefix As String, signatureFile As String, logoFiles As String(),
                     hasPriceLists As Boolean,
-                    defaultBanks As (Bank As String, AccountName As String, AccountNumber As String)())
+                    defaultBanks As (Bank As String, AccountName As String, AccountNumber As String)(),
+                    Optional waybillStampFile As String = Nothing)
         Me.Key = key
         Me.DisplayName = displayName
         Me.AppName = appName
@@ -51,6 +53,7 @@ Public NotInheritable Class Company
         _database = database
         _settingsPrefix = settingsPrefix
         _signatureFile = signatureFile
+        _waybillStampFile = If(waybillStampFile, signatureFile)
         _logoFiles = logoFiles
         Me.HasPriceLists = hasPriceLists
         _defaultBanks = defaultBanks
@@ -59,7 +62,8 @@ Public NotInheritable Class Company
     Public Shared ReadOnly ChewyPets As New Company(
         "chewypets", "ChewyPets Feed", appName:="ChewyStock", legalName:="ChewyPets Farm & Feeds Company Ltd",
         documentPrefix:="ChewyStock", database:=Nothing, settingsPrefix:="", signatureFile:="signature.jpeg",
-        logoFiles:={"chewypetfeedslogo.jpeg", "logo.png"}, hasPriceLists:=False, defaultBanks:={})
+        logoFiles:={"chewypetfeedslogo.jpeg", "logo.png"}, hasPriceLists:=False, defaultBanks:={},
+        waybillStampFile:="waybillrecipt for chewypet.jpeg")
 
     Public Shared ReadOnly CandidPurrfect As New Company(
         "candid", "Candid Purrfect", appName:="Candid Purrfect", legalName:="Candid Purrfect Pets Company Ltd",
@@ -67,7 +71,8 @@ Public NotInheritable Class Company
         signatureFile:="candidPurffect.jpeg", logoFiles:={"candidPurffectlogo.jpeg"}, hasPriceLists:=True,
         defaultBanks:={
             ("Sterling Bank PLC", "Candid Purrfect Pets Company Ltd", "0097166161"),
-            ("First Bank PLC", "Candid Purrfect Pets Company Ltd", "2045958847")})
+            ("First Bank PLC", "Candid Purrfect Pets Company Ltd", "2045958847")},
+        waybillStampFile:="waybillrecipt for candid.jpeg")
 
     Public Shared ReadOnly Property All As Company() = {ChewyPets, CandidPurrfect}
 
@@ -198,6 +203,21 @@ Public NotInheritable Class Company
     Public ReadOnly Property SignatureFile As String
         Get
             Return _signatureFile
+        End Get
+    End Property
+
+    Private _waybillStamp As Image
+    Private _waybillStampTried As Boolean
+    ''' The "confirmed and released" stamp printed on this business's waybills
+    ''' only — distinct from the receipt Signature, so a delivery note can be
+    ''' company-stamped without the sales-receipt artwork bleeding into it.
+    Public ReadOnly Property WaybillStamp As Image
+        Get
+            If Not _waybillStampTried Then
+                _waybillStampTried = True
+                _waybillStamp = LoadImage(_waybillStampFile, trim:=True)
+            End If
+            Return _waybillStamp
         End Get
     End Property
 

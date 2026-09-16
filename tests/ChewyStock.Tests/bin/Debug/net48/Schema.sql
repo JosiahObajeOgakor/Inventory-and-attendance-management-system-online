@@ -105,7 +105,11 @@ CREATE TABLE Suppliers (
     Phone        NVARCHAR(30)  NULL,
     Email        NVARCHAR(100) NULL,
     [Address]    NVARCHAR(200) NULL,
-    TaxID        NVARCHAR(40)  NULL
+    TaxID        NVARCHAR(40)  NULL,
+    -- Running total of what we owe this supplier across every purchase order —
+    -- the mirror of Customers.Balance. Kept in step with PurchaseOrders.AmountPaid
+    -- by Purchasing.Save and "Mark paid", never recomputed from a scan.
+    Balance      DECIMAL(14,2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE PurchaseOrders (
@@ -114,8 +118,10 @@ CREATE TABLE PurchaseOrders (
     SupplierID   INT NOT NULL REFERENCES Suppliers(SupplierID),
     OrderDate    DATE NOT NULL DEFAULT CAST(SYSDATETIME() AS DATE),
     Status       NVARCHAR(20) NOT NULL DEFAULT 'Pending', -- Pending, Ordered, Received, Cancelled
-    PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- Unpaid, Paid — drives Accounts Payable
+    PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- Paid, Partial, Unpaid — drives Accounts Payable
     TotalAmount  DECIMAL(14,2) NOT NULL DEFAULT 0,
+    -- What we've actually paid toward THIS order — mirrors Invoices.AmountPaid.
+    AmountPaid   DECIMAL(14,2) NOT NULL DEFAULT 0,
     CreatedByUserID INT NOT NULL REFERENCES Users(UserID),
     -- Generated demo history, so it can be told apart from real trading and
     -- removed again without guesswork.
@@ -384,12 +390,13 @@ GROUP BY YEAR(i.InvoiceDate), MONTH(i.InvoiceDate);
 GO
 
 -- Outstanding balance owed TO suppliers (Accounts Payable).
+-- Suppliers.Balance is the maintained running total (kept in step by
+-- Purchasing.Save and "Mark paid"); this view just exposes it per supplier,
+-- for anything still reading Accounts Payable the old way.
 CREATE VIEW vw_AccountsPayable AS
-SELECT s.SupplierID, s.Name AS Supplier, SUM(po.TotalAmount) AS AmountOwed
-FROM PurchaseOrders po
-JOIN Suppliers s ON s.SupplierID = po.SupplierID
-WHERE po.PaymentStatus = 'Unpaid'
-GROUP BY s.SupplierID, s.Name;
+SELECT s.SupplierID, s.Name AS Supplier, s.Balance AS AmountOwed
+FROM Suppliers s
+WHERE s.Balance > 0;
 GO
 
 -- Rebate accrued (not yet collected) vs redeemed, per customer.

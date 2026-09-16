@@ -263,6 +263,32 @@ Public Module DbBootstrap
             DataAccess.Execute(
                 "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_ProductSerials_Status' AND object_id=OBJECT_ID('dbo.ProductSerials')) " &
                 "CREATE INDEX IX_ProductSerials_Status ON ProductSerials(ProductID, Status);")
+
+            ' Accounts payable, mirroring the customer side: a running balance
+            ' per supplier and how much of each order has actually been paid.
+            DataAccess.Execute(
+                "IF COL_LENGTH('dbo.Suppliers', 'Balance') IS NULL " &
+                "ALTER TABLE Suppliers ADD Balance DECIMAL(14,2) NOT NULL DEFAULT 0;")
+            DataAccess.Execute(
+                "IF COL_LENGTH('dbo.PurchaseOrders', 'AmountPaid') IS NULL " &
+                "ALTER TABLE PurchaseOrders ADD AmountPaid DECIMAL(14,2) NOT NULL DEFAULT 0;")
+            ' Older databases marked a PO 'Paid' with no AmountPaid to match —
+            ' true it up once so Balance starts from a correct figure below.
+            DataAccess.Execute(
+                "UPDATE PurchaseOrders SET AmountPaid = TotalAmount WHERE PaymentStatus = 'Paid' AND AmountPaid <> TotalAmount;")
+            ' Suppliers.Balance replaces vw_AccountsPayable's old on-the-fly scan;
+            ' seed it once from whatever's still outstanding, then Purchasing.Save
+            ' and "Mark paid" keep it correct from here on. Only runs while every
+            ' supplier is still at the column's own default (0), so it can't
+            ' double up on a database that's already been through this.
+            DataAccess.Execute(
+                "IF NOT EXISTS (SELECT 1 FROM Suppliers WHERE Balance <> 0) " &
+                "UPDATE s SET Balance = o.Owed " &
+                "FROM Suppliers s JOIN (SELECT SupplierID, SUM(TotalAmount - AmountPaid) AS Owed FROM PurchaseOrders " &
+                "                       WHERE PaymentStatus <> 'Paid' GROUP BY SupplierID) o ON o.SupplierID = s.SupplierID;")
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.vw_AccountsPayable', 'V') IS NOT NULL " &
+                "EXEC('ALTER VIEW vw_AccountsPayable AS SELECT s.SupplierID, s.Name AS Supplier, s.Balance AS AmountOwed FROM Suppliers s WHERE s.Balance > 0');")
             Return ""
         Catch ex As Exception
             Return ex.Message

@@ -89,7 +89,7 @@ Public Class ucSuppliers
         Dim p As New Dictionary(Of String, Object) From {{"@s", If(term = "", CObj(DBNull.Value), "%" & term & "%")}}
         gridSuppliers.Bind(DataAccess.GetTable(
             "SELECT s.SupplierID, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.[Address], s.TaxID, " &
-            "ISNULL((SELECT SUM(po.TotalAmount) FROM PurchaseOrders po WHERE po.SupplierID = s.SupplierID AND po.PaymentStatus = 'Unpaid'), 0) AS OwedAP " &
+            "s.Balance AS OwedAP " &
             "FROM Suppliers s " &
             "WHERE (@s IS NULL OR s.Name LIKE @s OR s.ContactName LIKE @s OR s.Phone LIKE @s OR s.Email LIKE @s OR s.Category LIKE @s OR s.TaxID LIKE @s) " &
             "ORDER BY s.Name", p), hiddenColumns:={"SupplierID"})
@@ -126,7 +126,7 @@ Public Class ucSuppliers
         Dim p As New Dictionary(Of String, Object) From {{"@s", If(term = "", CObj(DBNull.Value), "%" & term & "%")}}
         gridPurchaseOrders.Bind(DataAccess.GetTable(sql, p), hiddenColumns:={"POID", "SupplierID"})
 
-        Dim ap = DataAccess.GetTable("SELECT ISNULL(SUM(AmountOwed),0) AS Total FROM vw_AccountsPayable").Rows(0)("Total")
+        Dim ap = DataAccess.GetTable("SELECT ISNULL(SUM(Balance),0) AS Total FROM Suppliers").Rows(0)("Total")
         lblAP.Text = "Total owed to suppliers: " & AppInfo.Money(ap)
         UpdatePoButtons()
     End Sub
@@ -181,17 +181,33 @@ Public Class ucSuppliers
         LoadPurchaseOrders()
     End Sub
 
+    ''' Clears whatever is left owing on this one order — not its full total
+    ''' again if part of it was already paid when it was created — and brings
+    ''' the supplier's running Balance down by exactly that much.
     Private Sub btnMarkPaid_Click(sender As Object, e As EventArgs)
         Dim row = gridPurchaseOrders.Grid.SelectedRows(0)
         Dim poId = CInt(row.Cells("POID").Value)
+        Dim supplierId = CInt(row.Cells("SupplierID").Value)
         Dim supplierName = row.Cells("Supplier").Value.ToString()
-        Dim total = Convert.ToDecimal(row.Cells("TotalAmount").Value)
+        Dim number = row.Cells("PONumber").Value.ToString()
 
-        DataAccess.ExecuteTransaction(New List(Of (Sql As String, Params As Dictionary(Of String, Object))) From {
-            ("UPDATE PurchaseOrders SET PaymentStatus = 'Paid' WHERE POID = @id", New Dictionary(Of String, Object) From {{"@id", poId}}),
-            ("INSERT INTO Ledger (AccountType, AccountName, EntryType, Amount, Reference) VALUES ('Supplier', @name, 'Debit', @amount, @ref)",
-             New Dictionary(Of String, Object) From {{"@name", supplierName}, {"@amount", total}, {"@ref", row.Cells("PONumber").Value.ToString()}})
-        })
+        DataAccess.InTransaction(
+            Function(conn, tx) As Boolean
+                Dim r = DataAccess.TableIn(conn, tx, "SELECT TotalAmount, AmountPaid FROM PurchaseOrders WITH (UPDLOCK) WHERE POID = @id",
+                                           New Dictionary(Of String, Object) From {{"@id", poId}})
+                If r.Rows.Count = 0 Then Return False
+                Dim outstanding = Convert.ToDecimal(r.Rows(0)("TotalAmount")) - Convert.ToDecimal(r.Rows(0)("AmountPaid"))
+                If outstanding <= 0 Then Return True
+
+                DataAccess.Exec(conn, tx, "UPDATE PurchaseOrders SET AmountPaid = TotalAmount, PaymentStatus = 'Paid' WHERE POID = @id",
+                    New Dictionary(Of String, Object) From {{"@id", poId}})
+                DataAccess.Exec(conn, tx, "UPDATE Suppliers SET Balance = Balance - @amt WHERE SupplierID = @sid",
+                    New Dictionary(Of String, Object) From {{"@amt", outstanding}, {"@sid", supplierId}})
+                DataAccess.Exec(conn, tx,
+                    "INSERT INTO Ledger (AccountType, AccountName, EntryType, Amount, Reference) VALUES ('Supplier', @name, 'Debit', @amount, @ref)",
+                    New Dictionary(Of String, Object) From {{"@name", supplierName}, {"@amount", outstanding}, {"@ref", number}})
+                Return True
+            End Function)
         LoadPurchaseOrders()
     End Sub
 
