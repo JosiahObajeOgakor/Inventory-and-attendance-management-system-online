@@ -116,7 +116,10 @@ CREATE TABLE PurchaseOrders (
     Status       NVARCHAR(20) NOT NULL DEFAULT 'Pending', -- Pending, Ordered, Received, Cancelled
     PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- Unpaid, Paid — drives Accounts Payable
     TotalAmount  DECIMAL(14,2) NOT NULL DEFAULT 0,
-    CreatedByUserID INT NOT NULL REFERENCES Users(UserID)
+    CreatedByUserID INT NOT NULL REFERENCES Users(UserID),
+    -- Generated demo history, so it can be told apart from real trading and
+    -- removed again without guesswork.
+    IsSample     BIT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE PurchaseOrderItems (

@@ -54,6 +54,16 @@ Public Class frmNewInvoice
     ''' or what's suggested to collect. The save itself re-reads this fresh
     ''' (and locked) inside the transaction; this copy is only for the screen.
     Private _customerBalance As Decimal = 0D
+    ''' What the seller chose, in frmPreviousDebt, to collect toward that old
+    ''' balance alongside today's sale. 0 unless they explicitly said to.
+    Private _debtToCollectNow As Decimal = 0D
+    ''' The customer last prompted about — so switching tiers or re-triggering
+    ''' a sync doesn't re-open the same prompt on top of itself.
+    Private _lastPromptedCustomerId As Integer = -1
+    ''' False until the constructor finishes — an indebted customer being the
+    ''' default selection shouldn't pop a dialog before the form itself is even
+    ''' visible; the prompt is for a customer the seller actually picked.
+    Private _formReady As Boolean = False
 
     Private ReadOnly Property VatRate As Decimal
         Get
@@ -122,11 +132,20 @@ Public Class frmNewInvoice
         UpdateUnitHint()
         UiHelpers.FitToScreen(Me)
         Theme.Apply(Me)
+        _formReady = True
     End Sub
 
+    ''' A customer who already owes is flagged right in the list — "special
+    ''' preference" starts before they're even selected, not after.
     Private Sub ReloadCustomers()
-        cboCustomer.DataSource = DataAccess.GetTable("SELECT CustomerID, Name, CustomerType FROM Customers ORDER BY Name")
-        cboCustomer.DisplayMember = "Name"
+        Dim t = DataAccess.GetTable("SELECT CustomerID, Name, CustomerType, Balance FROM Customers ORDER BY Name")
+        t.Columns.Add("DisplayName", GetType(String))
+        For Each r As DataRow In t.Rows
+            Dim bal = Convert.ToDecimal(r("Balance"))
+            r("DisplayName") = If(bal > 0, $"{r("Name")}  —  owes {AppInfo.Money(bal)}", Convert.ToString(r("Name")))
+        Next
+        cboCustomer.DataSource = t
+        cboCustomer.DisplayMember = "DisplayName"
         cboCustomer.ValueMember = "CustomerID"
     End Sub
 
@@ -134,16 +153,27 @@ Public Class frmNewInvoice
         Dim row = TryCast(cboCustomer.SelectedItem, DataRowView)
         If row Is Nothing Then
             _customerBalance = 0D
+            _debtToCollectNow = 0D
             RecalculateTotals()
             Return
         End If
+        Dim customerId = CInt(row("CustomerID"))
         ' Fetched before the tier is applied, so if setting the tier fires its
         ' own recalculation, it already sees this customer's balance and not
         ' whichever customer was picked before.
-        _customerBalance = FetchCustomerBalance(CInt(row("CustomerID")))
+        _customerBalance = FetchCustomerBalance(customerId)
         Dim t = Convert.ToString(row("CustomerType"))
         If cboTier.Items.Contains(t) Then cboTier.SelectedItem = t
-        ShowCustomerSegment(CInt(row("CustomerID")))
+        ShowCustomerSegment(customerId)
+
+        ' A customer who already owes is put in front of the seller right away —
+        ' not left as a quiet figure they might not think to check.
+        If _customerBalance <= 0 Then
+            _debtToCollectNow = 0D
+        ElseIf _formReady AndAlso customerId <> _lastPromptedCustomerId Then
+            PromptForPreviousDebt(customerId, Convert.ToString(row("Name")))
+        End If
+
         RecalculateTotals()
     End Sub
 
@@ -158,6 +188,46 @@ Public Class frmNewInvoice
             Return 0D
         End Try
     End Function
+
+    ''' How many of this customer's invoices are still unpaid, and the oldest of
+    ''' them — the context that turns "they owe ₦40,000" into something the
+    ''' seller can actually act on.
+    Private Function FetchDebtContext(customerId As Integer) As (Count As Integer, Oldest As Date?)
+        Try
+            Dim t = DataAccess.GetTable(
+                "SELECT COUNT(*) AS N, MIN(InvoiceDate) AS Oldest FROM Invoices WHERE CustomerID = @id AND [Status] <> 'Paid'",
+                New Dictionary(Of String, Object) From {{"@id", customerId}})
+            If t.Rows.Count = 0 OrElse t.Rows(0)("N") Is DBNull.Value Then Return (0, Nothing)
+            Dim oldest As Date? = If(t.Rows(0)("Oldest") Is DBNull.Value, CType(Nothing, Date?), Convert.ToDateTime(t.Rows(0)("Oldest")))
+            Return (Convert.ToInt32(t.Rows(0)("N")), oldest)
+        Catch
+            Return (0, Nothing)
+        End Try
+    End Function
+
+    ''' Shows the previous-balance prompt for a customer just picked. Marks them
+    ''' as prompted either way, so switching tiers or re-syncing doesn't nag
+    ''' twice — and if the seller skips it, says precisely what that means for
+    ''' this customer rather than leaving it to be inferred.
+    Private Sub PromptForPreviousDebt(customerId As Integer, customerName As String)
+        _lastPromptedCustomerId = customerId
+        Dim ctx = FetchDebtContext(customerId)
+        Using f As New frmPreviousDebt(customerName, _customerBalance, ctx.Count, ctx.Oldest)
+            f.ShowDialog(Me)
+            If f.WillCollect Then
+                _debtToCollectNow = f.Amount
+                AppUI.Toast($"{AppInfo.Money(f.Amount)} of {customerName}'s previous balance will be collected with this sale.", AppUI.ToastKind.Success)
+            Else
+                _debtToCollectNow = 0D
+                Dim since = If(ctx.Oldest.HasValue, $" The oldest is from {ctx.Oldest.Value:dd MMM yyyy}.", "")
+                AppUI.Info(Me,
+                    $"{customerName} still owes {AppInfo.Money(_customerBalance)} from {ctx.Count} earlier unpaid invoice(s).{since}" &
+                    vbCrLf & vbCrLf &
+                    "This sale will go ahead without collecting it — the balance stays exactly as it is on their account.",
+                    "Previous balance left as is")
+            End If
+        End Using
+    End Sub
 
     ''' Which kind of customer this is, worked out from how they actually buy
     ''' (how often, how much a time, how much in total) rather than from the
@@ -443,14 +513,17 @@ Public Class frmNewInvoice
         Dim vatable = subtotal - discountAmt
         Dim vat = vatable * (VatRate / 100D)
         _total = vatable + vat
-        ' Previous debt is added into what's being asked for, not left for the
-        ' clerk to notice on their own — the whole point of showing it at all.
         Dim combinedDue = _customerBalance + _total
+        ' Suggested payment is today's sale plus whatever the seller explicitly
+        ' chose, in the previous-balance prompt, to collect toward the old debt —
+        ' not the whole old balance by default. The prompt is what decides that;
+        ' this only carries the decision through as lines are added.
+        Dim suggestedPaid = _total + _debtToCollectNow
 
         If cboPaymentMethod.Text = "Credit" Then
             ' leave numPaidNow as the user set it (0 by default)
         ElseIf numPaidNow.Value = 0D OrElse numPaidNow.Value = _lastAutoFilled Then
-            numPaidNow.Value = Math.Min(combinedDue, numPaidNow.Maximum)
+            numPaidNow.Value = Math.Min(suggestedPaid, numPaidNow.Maximum)
         End If
         _lastAutoFilled = numPaidNow.Value
 

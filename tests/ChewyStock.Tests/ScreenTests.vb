@@ -398,6 +398,121 @@ Public Class ScreenTests
                         "no VAT unless it was ticked")
     End Sub
 
+    ' ===== a customer who already owes gets special handling =====
+
+    <TestMethod>
+    Public Sub An_indebted_customer_is_flagged_right_in_the_picker()
+        Dim owing = TestDb.AddCustomer("Owing Picker Customer " & Guid.NewGuid().ToString("N").Substring(0, 5))
+        TestDb.Exec("UPDATE Customers SET Balance = 15000 WHERE CustomerID=@c", TestDb.P("@c", owing))
+        Dim clean = TestDb.AddCustomer("Clean Picker Customer " & Guid.NewGuid().ToString("N").Substring(0, 5))
+
+        Using f As New frmNewInvoice(1)
+            f.Show()
+            Application.DoEvents()
+            Dim rows = DirectCast(DirectCast(Field(f, "cboCustomer"), ComboBox).DataSource, DataTable).AsEnumerable().ToList()
+            Dim owingRow = rows.Single(Function(r) Convert.ToInt32(r("CustomerID")) = owing)
+            Dim cleanRow = rows.Single(Function(r) Convert.ToInt32(r("CustomerID")) = clean)
+
+            StringAssert.Contains(Convert.ToString(owingRow("DisplayName")), "owes", "an indebted customer must stand out in the list itself")
+            StringAssert.Contains(Convert.ToString(owingRow("DisplayName")), "15,000")
+            Assert.AreEqual(Convert.ToString(cleanRow("Name")), Convert.ToString(cleanRow("DisplayName")),
+                            "a customer who owes nothing is shown plainly, with no clutter")
+            f.Close()
+        End Using
+    End Sub
+
+    ''' The default customer the combo lands on when the screen opens must never
+    ''' pop a dialog before the seller has done anything — even when, as here,
+    ''' that customer happens to owe money. Constructing (and Show()ing) the
+    ''' screen would hang the test forever if that guard were ever lost.
+    <TestMethod>
+    Public Sub Opening_the_sale_screen_never_blocks_on_the_previous_balance_prompt()
+        Dim owing = TestDb.AddCustomer("AAA Opens First " & Guid.NewGuid().ToString("N").Substring(0, 5))
+        TestDb.Exec("UPDATE Customers SET Balance = 9000 WHERE CustomerID=@c", TestDb.P("@c", owing))
+
+        Using f As New frmNewInvoice(1)
+            f.Show()
+            Application.DoEvents()
+            Assert.IsTrue(CBool(Field(f, "_formReady")), "the form must finish constructing without waiting on any dialog")
+            f.Close()
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub The_suggested_payment_only_includes_what_was_actually_chosen_for_the_old_debt()
+        Using f As New frmNewInvoice(1)
+            f.Show()
+            Application.DoEvents()
+            ' RecalculateTotals derives _total from the line items grid itself,
+            ' not from a field that can just be poked directly — so a real line
+            ' has to go in for the sum to come out to something specific.
+            Dim lineItems = DirectCast(Field(f, "lineItems"), DataTable)
+            f.GetType().GetField("_customerBalance", NonPublicInstance).SetValue(f, 12000D)
+
+            ' Declined the previous-balance prompt (or it was never shown) — the
+            ' suggested payment must be today's sale only, not the old debt too.
+            lineItems.Rows.Add(1, "Test Product", 1, 5000D, 5000D)
+            f.GetType().GetField("_debtToCollectNow", NonPublicInstance).SetValue(f, 0D)
+            Invoke(f, "RecalculateTotals")
+            Assert.AreEqual(5000D, DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value,
+                            "an old debt that wasn't chosen must not be folded in silently")
+
+            ' Chose to collect 4000 of the old debt alongside a fresh 6000 sale —
+            ' reset numPaidNow first so the auto-fill actually re-engages.
+            lineItems.Rows.Clear()
+            lineItems.Rows.Add(1, "Test Product", 1, 6000D, 6000D)
+            DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value = 0D
+            f.GetType().GetField("_debtToCollectNow", NonPublicInstance).SetValue(f, 4000D)
+            Invoke(f, "RecalculateTotals")
+            Assert.AreEqual(10000D, DirectCast(Field(f, "numPaidNow"), NumericUpDown).Value,
+                            "the suggested payment is today's sale plus exactly what was chosen for the old debt")
+            f.Close()
+        End Using
+    End Sub
+
+    ' ===== the previous-balance prompt itself =====
+
+    <TestMethod>
+    Public Sub The_previous_balance_prompt_reports_the_debt_and_defaults_to_collecting_all_of_it()
+        Using f As New frmPreviousDebt("Test Customer", 8000D, 2, Date.Today.AddDays(-30))
+            StringAssert.Contains(f.Text, "Test Customer")
+            Dim body = DirectCast(Field(f, "lblInfo"), Label).Text
+            StringAssert.Contains(body, "8,000")
+            StringAssert.Contains(body, "2 earlier unpaid invoice")
+            Assert.AreEqual(8000D, DirectCast(Field(f, "numAmount"), NumericUpDown).Value, "defaults to collecting the whole balance")
+            Assert.AreEqual(8000D, DirectCast(Field(f, "numAmount"), NumericUpDown).Maximum, "can never be asked to collect more than is owed")
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Including_the_prompted_amount_reports_exactly_what_was_chosen()
+        Using f As New frmPreviousDebt("Test Customer", 8000D, 1, Nothing)
+            ' PerformClick is a no-op on a button whose form was never shown
+            ' (CanSelect requires the whole ancestor chain to be Visible).
+            f.Show()
+            Application.DoEvents()
+            DirectCast(Field(f, "numAmount"), NumericUpDown).Value = 3000D
+            DirectCast(Field(f, "btnInclude"), Button).PerformClick()
+
+            Assert.IsTrue(f.WillCollect)
+            Assert.AreEqual(3000D, f.Amount)
+            Assert.AreEqual(DialogResult.OK, f.DialogResult)
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Skipping_the_prompt_leaves_nothing_to_collect()
+        Using f As New frmPreviousDebt("Test Customer", 8000D, 1, Nothing)
+            f.Show()
+            Application.DoEvents()
+            DirectCast(Field(f, "numAmount"), NumericUpDown).Value = 5000D   ' typed an amount, then changed their mind
+            DirectCast(Field(f, "btnSkip"), Button).PerformClick()
+
+            Assert.IsFalse(f.WillCollect)
+            Assert.AreEqual(0D, f.Amount, "skipping must never leave a half-entered amount behind")
+        End Using
+    End Sub
+
     ' ===== finance / employees =====
 
     <TestMethod>
