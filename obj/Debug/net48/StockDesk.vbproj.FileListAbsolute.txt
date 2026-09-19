@@ -40,3 +40,18 @@ C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Asset
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\chewypetfeedslogo.jpeg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\waybillrecipt for candid.jpeg
 C:\Users\Josiah.Obaje\Desktop\candid\Inventory\dev-handoff\bin\Debug\net48\Assets\waybillrecipt for chewypet.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\app.ico
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\candidPurffect.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\candidPurffectlogo.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\chewypetfeedslogo.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\landing.jpg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\landingvideo.mp4
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\logo.png
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\README.txt
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\signature.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\waybillrecipt for candid.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Assets\waybillrecipt for chewypet.jpeg
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\Schema.sql
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\ChewyStock.exe.config
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\ChewyStock.exe
+C:\Users\JOSIAH~1.OBA\AppData\Local\Temp\claude\c--Users-Josiah-Obaje-Desktop-candid-Inventory-dev-handoff\883dbb20-3bbc-47a0-9329-f436daffd0f9\scratchpad\buildcheck\ChewyStock.pdb

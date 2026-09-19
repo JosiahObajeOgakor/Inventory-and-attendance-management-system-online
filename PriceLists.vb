@@ -46,6 +46,7 @@ Public Module PriceLists
         Dim d As New DocPrinter() With {
             .DocTitle = $"{Company.Current.DisplayName} price list {today:dd MMM yyyy}" &
                         If(String.IsNullOrWhiteSpace(customerName), "", " - " & customerName),
+            .Watermark = True,
             .FooterText = $"{AppInfo.CompanyName}   ·   Price list ({tier})   ·   {today:dd MMM yyyy}"}
 
         Dim updated = If(PriceBook.HasTables(), PriceBook.LastUpdated(), CType(Nothing, Date?))

@@ -84,6 +84,7 @@ Public Class frmNewWaybill
                 {"@d", NullIf(txtDriver)}, {"@dp", NullIf(txtDriverPhone)}, {"@pl", NullIf(txtPlate)},
                 {"@dest", NullIf(txtDestination)}, {"@note", NullIf(txtNotes)}, {"@u", _userId}})
         AppUI.Toast("Waybill " & number & " created.", AppUI.ToastKind.Success)
+        Anim.SuccessTick(If(Owner, Me), "Waybill created")
         DialogResult = DialogResult.OK
         Close()
     End Sub

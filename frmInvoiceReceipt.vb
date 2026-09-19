@@ -25,11 +25,12 @@ Public Class frmInvoiceReceipt
             "ISNULL(w.Name,'') AS Warehouse, " &
             "c.CustomerID, c.Name AS CustomerName, c.ContactName, c.Phone AS CustomerPhone, c.Email AS CustomerEmail, " &
             "ISNULL(c.[Address],'') AS CustomerAddress, ISNULL(c.Location,'') AS CustomerLocation, ISNULL(c.TaxID,'') AS CustomerTaxID, " &
-            "c.CustomerType, ISNULL(u.FullName,'') AS CreatedBy, c.Balance AS CustomerBalance, " &
+            "c.CustomerType, ISNULL(u.FullName,'') AS CreatedBy, ISNULL(ro.RoleName,'') AS CreatedByRole, c.Balance AS CustomerBalance, " &
             "ISNULL((SELECT SUM(ii.Quantity*ii.UnitCost) FROM InvoiceItems ii WHERE ii.InvoiceID=i.InvoiceID),0) AS TotalCost " &
             "FROM Invoices i JOIN Customers c ON c.CustomerID=i.CustomerID " &
             "LEFT JOIN Warehouses w ON w.WarehouseID=i.WarehouseID " &
-            "LEFT JOIN Users u ON u.UserID=i.CreatedByUserID WHERE i.InvoiceID=@id",
+            "LEFT JOIN Users u ON u.UserID=i.CreatedByUserID " &
+            "LEFT JOIN Roles ro ON ro.RoleID=u.RoleID WHERE i.InvoiceID=@id",
             New Dictionary(Of String, Object) From {{"@id", invoiceId}}).Rows(0)
 
         _items = DataAccess.GetTable(
@@ -74,7 +75,7 @@ Public Class frmInvoiceReceipt
         Dim s = Function(col As String) Convert.ToString(_header(col))
         ' Always exactly one A4 page — the whole receipt scales down to fit, nothing is cut.
         Dim d As New DocPrinter() With {
-            .DocTitle = "Receipt " & number, .FitToOnePage = True,
+            .DocTitle = "Receipt " & number, .FitToOnePage = True, .Watermark = True,
             .FooterText = $"{AppInfo.CompanyName}   ·   Receipt {number}   ·   computer-generated {DateTime.Now:dd MMM yyyy HH:mm}"}
 
         d.Letterhead("SALES RECEIPT", {
@@ -84,6 +85,12 @@ Public Class frmInvoiceReceipt
 
         Dim due = If(Bal() > 0 AndAlso _header("DueDate") IsNot DBNull.Value,
                      Convert.ToDateTime(_header("DueDate")).ToString("dd MMM yyyy"), "")
+        ' A clerk login is shared front-desk staff, not one named person, and its
+        ' stored FullName can carry the other business's branding (it's mirrored
+        ' between companies — see Company/Auth.MirrorAccount). So a clerk sale is
+        ' shown as "<company> (Clerk)" instead of that stored name; only an Admin
+        ' sale prints the actual person's name.
+        Dim servedBy = If(s("CreatedByRole") = "Warehouse Clerk", $"{AppInfo.CompanyName} (Clerk)", s("CreatedBy"))
         d.Panels(
             ("Bill to", {
                 ("Customer", s("CustomerName"), True),
@@ -97,7 +104,7 @@ Public Class frmInvoiceReceipt
                 ("Price tier", s("PriceTier"), False),
                 ("Warehouse", s("Warehouse"), False),
                 ("Payment", s("PaymentMethod"), False),
-                ("Served by", s("CreatedBy"), False),
+                ("Served by", servedBy, False),
                 ("Due date", due, True)}))
 
         ' Items — numbered, money right-aligned in fixed columns.

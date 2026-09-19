@@ -50,7 +50,20 @@ Public Module AppUI
 
         _openToasts.Add(f)
         AddHandler f.FormClosed, Sub(s, e) _openToasts.Remove(f)
-        f.Show()
+        If Anim.Enabled Then
+            ' Glide up from below with a slight bounce while fading in.
+            Const drop = 36
+            f.Opacity = 0
+            f.Location = New Point(x, y + drop)
+            f.Show()
+            Anim.Tween(380, Sub(t)
+                                If f.IsDisposed Then Throw New ObjectDisposedException("toast")
+                                f.Top = y + CInt(drop * (1 - t))
+                                f.Opacity = Math.Min(1.0, Math.Max(0, t * 1.4))
+                            End Sub, ease:=AddressOf Anim.EaseOutBack)
+        Else
+            f.Show()
+        End If
     End Sub
 
     ''' Borderless auto-fading notification window. Shown without stealing focus.
@@ -173,6 +186,7 @@ Public Module AppUI
 
         f.Controls.Add(msg)
         f.Controls.Add(bar)
+        Anim.PopIn(f)
         Return f
     End Function
 

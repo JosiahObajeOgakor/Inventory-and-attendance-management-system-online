@@ -194,6 +194,13 @@ Public Class ScreenTests
     End Sub
 
     <TestMethod>
+    Public Sub Idle_warning_signs_out_by_itself_when_the_countdown_runs_out()
+        Using f As New frmIdleWarning(TimeSpan.FromSeconds(1))
+            Assert.AreEqual(DialogResult.Abort, f.ShowDialog())
+        End Using
+    End Sub
+
+    <TestMethod>
     Public Sub Production_screen_defaults_to_today_and_a_dated_batch_number()
         Using f As New frmProduction(1)
             f.Show()
@@ -632,10 +639,10 @@ Public Class ScreenTests
     Public Sub The_waybill_dispatch_row_carries_the_company_stamp_not_a_blank_signature_line()
         Dim h As New DataTable()
         For Each c In {"WaybillNumber", "IssueDate", "InvoiceID", "InvoiceNumber", "InvoiceDate", "Customer", "Contact", "Phone",
-                       "DestinationAddress", "Warehouse", "WarehouseLocation", "IssuedBy", "DriverName", "DriverPhone", "VehiclePlate", "Notes"}
+                       "DestinationAddress", "Warehouse", "WarehouseLocation", "IssuedBy", "IssuedByRole", "DriverName", "DriverPhone", "VehiclePlate", "Notes"}
             h.Columns.Add(c, If(c = "InvoiceID", GetType(Integer), GetType(String)))
         Next
-        h.Rows.Add("WB-TEST-1", Date.Today, 0, "INV-TEST-1", Date.Today, "Cust", "", "", "", "", "", "", "", "", "", "")
+        h.Rows.Add("WB-TEST-1", Date.Today, 0, "INV-TEST-1", Date.Today, "Cust", "", "", "", "", "", "", "", "", "", "", "")
 
         ' BuildWaybillDoc is Friend Shared — reached the same way frmInvoiceReceipt's
         ' private BuildReceiptDoc is elsewhere in this file: through reflection.

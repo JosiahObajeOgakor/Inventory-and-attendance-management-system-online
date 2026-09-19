@@ -15,7 +15,7 @@ Imports System.Reflection
 <Assembly: System.Reflection.AssemblyCompanyAttribute("ChewyStock.Tests"),  _
  Assembly: System.Reflection.AssemblyConfigurationAttribute("Debug"),  _
  Assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0"),  _
- Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f6a4521b0864fb1fe68feb204b1eceaeae10e4c0"),  _
+ Assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b33624db310f6bea3c1365bfbbaa12c7a862b0ba"),  _
  Assembly: System.Reflection.AssemblyProductAttribute("ChewyStock.Tests"),  _
  Assembly: System.Reflection.AssemblyTitleAttribute("ChewyStock.Tests"),  _
  Assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")> 

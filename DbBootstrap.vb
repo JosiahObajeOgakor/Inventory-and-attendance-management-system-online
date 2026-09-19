@@ -289,6 +289,53 @@ Public Module DbBootstrap
             DataAccess.Execute(
                 "IF OBJECT_ID('dbo.vw_AccountsPayable', 'V') IS NOT NULL " &
                 "EXEC('ALTER VIEW vw_AccountsPayable AS SELECT s.SupplierID, s.Name AS Supplier, s.Balance AS AmountOwed FROM Suppliers s WHERE s.Balance > 0');")
+
+            ' Quotations: a price computation that never touches stock/ledger/
+            ' balance until explicitly converted into a real sale.
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.Quotations', 'U') IS NULL " &
+                "CREATE TABLE Quotations (" &
+                "    QuotationID        INT IDENTITY(1,1) PRIMARY KEY," &
+                "    QuotationNumber    NVARCHAR(40) NOT NULL UNIQUE," &
+                "    CustomerID         INT NOT NULL REFERENCES Customers(CustomerID)," &
+                "    QuotationDate      DATE NOT NULL DEFAULT CAST(SYSDATETIME() AS DATE)," &
+                "    Subtotal           DECIMAL(14,2) NOT NULL DEFAULT 0," &
+                "    DiscountPct        DECIMAL(5,2)  NOT NULL DEFAULT 0," &
+                "    DiscountAmount     DECIMAL(14,2) NOT NULL DEFAULT 0," &
+                "    VATRate            DECIMAL(5,2)  NOT NULL DEFAULT 0," &
+                "    VATAmount          DECIMAL(14,2) NOT NULL DEFAULT 0," &
+                "    TotalAmount        DECIMAL(14,2) NOT NULL DEFAULT 0," &
+                "    PriceTier          NVARCHAR(20)  NOT NULL DEFAULT 'Retailer'," &
+                "    Status             NVARCHAR(20)  NOT NULL DEFAULT 'Open'," &
+                "    ConvertedInvoiceID INT NULL REFERENCES Invoices(InvoiceID)," &
+                "    CreatedByUserID    INT NOT NULL REFERENCES Users(UserID)," &
+                "    CreatedAt          DATETIME2 NOT NULL DEFAULT SYSDATETIME()" &
+                ");")
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.QuotationItems', 'U') IS NULL " &
+                "CREATE TABLE QuotationItems (" &
+                "    QuotationItemID INT IDENTITY(1,1) PRIMARY KEY," &
+                "    QuotationID     INT NOT NULL REFERENCES Quotations(QuotationID)," &
+                "    ProductID       INT NOT NULL REFERENCES Products(ProductID)," &
+                "    Quantity        INT NOT NULL," &
+                "    UnitPrice       DECIMAL(12,2) NOT NULL," &
+                "    LineTotal       DECIMAL(14,2) NOT NULL" &
+                ");")
+            ' Audit trail for manual price overrides on a sale or quotation line.
+            ' No FKs to Invoices/Quotations on purpose — either can be deleted,
+            ' and this history has to survive that.
+            DataAccess.Execute(
+                "IF OBJECT_ID('dbo.PriceOverrides', 'U') IS NULL " &
+                "CREATE TABLE PriceOverrides (" &
+                "    OverrideID    INT IDENTITY(1,1) PRIMARY KEY," &
+                "    DocType       NVARCHAR(10) NOT NULL CHECK (DocType IN ('Invoice','Quotation'))," &
+                "    DocNumber     NVARCHAR(40) NOT NULL," &
+                "    ProductName   NVARCHAR(150) NOT NULL," &
+                "    StandardPrice DECIMAL(12,2) NOT NULL," &
+                "    OverridePrice DECIMAL(12,2) NOT NULL," &
+                "    ChangedByName NVARCHAR(100) NOT NULL," &
+                "    ChangedAt     DATETIME2 NOT NULL DEFAULT SYSDATETIME()" &
+                ");")
             Return ""
         Catch ex As Exception
             Return ex.Message

@@ -386,6 +386,7 @@ Public Class frmNewPO
                     " The account with this supplier is now fully settled."))
             End If
             AppUI.Toast(msg.ToString(), AppUI.ToastKind.Success)
+            Anim.SuccessTick(If(Owner, Me), "Purchase saved")
             Me.DialogResult = DialogResult.OK
             Me.Close()
         Catch ex As Exception

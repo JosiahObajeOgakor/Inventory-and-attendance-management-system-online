@@ -211,9 +211,10 @@ Public Class ucWaybill
             "SELECT wb.WaybillNumber, wb.IssueDate, wb.DriverName, wb.DriverPhone, wb.VehiclePlate, " &
             "wb.DestinationAddress, wb.Notes, wb.InvoiceID, i.InvoiceNumber, i.InvoiceDate, c.Name AS Customer, ISNULL(c.Phone,'') AS Phone, " &
             "ISNULL(c.ContactName,'') AS Contact, ISNULL(w.Name,'') AS Warehouse, ISNULL(w.Location,'') AS WarehouseLocation, " &
-            "ISNULL(u.FullName,'') AS IssuedBy " &
+            "ISNULL(u.FullName,'') AS IssuedBy, ISNULL(ro.RoleName,'') AS IssuedByRole " &
             "FROM Waybills wb JOIN Invoices i ON i.InvoiceID=wb.InvoiceID JOIN Customers c ON c.CustomerID=i.CustomerID " &
-            "LEFT JOIN Warehouses w ON w.WarehouseID=i.WarehouseID LEFT JOIN Users u ON u.UserID=wb.CreatedByUserID WHERE wb.WaybillID=@id",
+            "LEFT JOIN Warehouses w ON w.WarehouseID=i.WarehouseID LEFT JOIN Users u ON u.UserID=wb.CreatedByUserID " &
+            "LEFT JOIN Roles ro ON ro.RoleID=u.RoleID WHERE wb.WaybillID=@id",
             New Dictionary(Of String, Object) From {{"@id", waybillId}}).Rows(0)
 
         BuildWaybillDoc(h).ShowPreview(FindForm())
@@ -236,8 +237,14 @@ Public Class ucWaybill
         Dim number = s("WaybillNumber")
         ' Always exactly one A4 page — scales down to fit, nothing is cut.
         Dim d As New DocPrinter() With {
-            .DocTitle = "Waybill " & number, .FitToOnePage = True,
+            .DocTitle = "Waybill " & number, .FitToOnePage = True, .Watermark = True,
             .FooterText = $"{AppInfo.CompanyName}   ·   Waybill {number}   ·   computer-generated {DateTime.Now:dd MMM yyyy HH:mm}"}
+
+        ' A clerk login is shared front-desk staff, not one named person, and its
+        ' stored FullName can carry the other business's branding (it's mirrored
+        ' between companies). So a clerk-issued waybill shows "<company> (Clerk)"
+        ' instead of that stored name; only an Admin issue prints the real name.
+        Dim issuedBy = If(s("IssuedByRole") = "Warehouse Clerk", $"{AppInfo.CompanyName} (Clerk)", s("IssuedBy"))
 
         d.Letterhead("WAYBILL / DELIVERY NOTE", {
             ("Waybill no.", number),
@@ -253,7 +260,7 @@ Public Class ucWaybill
                 ("Address", s("DestinationAddress"), False)}),
             ("Dispatch", {
                 ("From", String.Join(", ", {s("Warehouse"), s("WarehouseLocation")}.Where(Function(x) x <> "")), True),
-                ("Issued by", s("IssuedBy"), False),
+                ("Issued by", issuedBy, False),
                 ("Lines", n.ToString(), False),
                 ("Total units", totalQty.ToString("#,0"), False)}),
             ("Carrier", {
@@ -269,16 +276,15 @@ Public Class ucWaybill
             d.SectionTitle("Notes")
             d.Text(s("Notes"), size:=9)
         End If
-        ' Candid Purrfect's delivery notes carry a scannable code like its
-        ' receipts do; ChewyPets' waybill layout is left as it was.
-        If Not Company.Current.IsHome Then
-            Try
-                d.Gap(6)
-                d.Barcode(Barcodes.Code128(number, heightPx:=52, moduleWidth:=2, showText:=False),
-                          "Scan to look this delivery up  ·  " & number)
-            Catch
-            End Try
-        End If
+        ' Every waybill carries a scannable code of its own, exactly like the
+        ' sales receipt — both businesses, not just Candid Purrfect.
+        Try
+            d.Gap(6)
+            d.Barcode(Barcodes.Code128(number, heightPx:=52, moduleWidth:=2, showText:=False),
+                      "Scan to look this delivery up  ·  " & number)
+        Catch
+            ' A symbol is a convenience; never lose the waybill over one.
+        End Try
         d.Gap(14)
         ' "Dispatched by" is stamped by the business itself (its own "confirmed
         ' and released" mark) rather than left as a blank signature/date for

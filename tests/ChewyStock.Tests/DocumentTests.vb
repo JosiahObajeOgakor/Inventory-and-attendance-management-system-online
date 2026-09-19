@@ -83,6 +83,17 @@ Public Class DocumentTests
     End Sub
 
     <TestMethod>
+    Public Sub A_watermarked_document_still_renders_one_page()
+        ' Watermark=True must never break layout or throw, whether or not this
+        ' machine's signed-into company has logo artwork on disk.
+        Dim d As New DocPrinter() With {.DocTitle = "Receipt TEST", .FitToOnePage = True, .Watermark = True}
+        d.Letterhead("SALES RECEIPT", {("Invoice no.", "INV-TEST-1"), ("Date", "12 Sep 2026"), ("Status", "PAID")})
+        d.Table(Lines(5), {0.45F, 4.4F, 0.9F, 1.6F, 1.7F}, rightAlignFrom:=2)
+        d.Totals({("TOTAL", "₦58,000.00", 1)})
+        Assert.AreEqual(1, d.PageCount())
+    End Sub
+
+    <TestMethod>
     Public Sub Waybill_style_document_with_signatures_is_one_page()
         Dim goods As New DataTable()
         For Each c In {"#", "SKU", "Description", "Unit", "Qty", "Received"}

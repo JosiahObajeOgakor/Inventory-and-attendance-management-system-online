@@ -13,7 +13,7 @@
 #define MyAppName "ChewyStock"
 #define MyAppPublisher "ChewyPetsFeed"
 #define MyAppExeName "ChewyStock.exe"
-#define MyAppVersion "1.14.0"
+#define MyAppVersion "1.16.0"
 #define ReleaseDir "..\bin\Release\net48"
 
 [Setup]

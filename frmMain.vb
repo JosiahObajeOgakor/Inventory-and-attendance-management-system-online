@@ -62,6 +62,9 @@ Public Class frmMain
     Private _openMenuOwner As Button
     Private _idle As IdleWatcher
     Private _idleLoggingOut As Boolean
+    ' One accent bar that glides under whichever tab is active.
+    Private ReadOnly _tabSlider As New Panel() With {.Height = 3, .Visible = False}
+    Private _sliderTween As Timer
 
     Private _activated As Boolean
     Private ReadOnly _sessionCap As New Timer() With {.Interval = 30000}  ' unactivated: hard logout after 10 min
@@ -92,6 +95,8 @@ Public Class frmMain
         brandStrip.Controls.Add(brandRow)
 
         navCard.Controls.Add(tabStrip)
+        navCard.Controls.Add(_tabSlider)
+        _tabSlider.BringToFront()
         pnlNav.Controls.Add(navCard)
         pnlNav.Controls.Add(brandStrip)
 
@@ -260,30 +265,55 @@ Public Class frmMain
         Exporter.SaveExcel(sheets, Company.Current.FilePrefix & "_full_export_" & DateTime.Now.ToString("yyyyMMdd_HHmmss"), Me)
     End Sub
 
-    ''' Admin sessions get auto-signed-out after the configured idle minutes.
+    ''' Admin sessions only: after the configured idle minutes
+    ''' (AdminIdleLogoutMinutes, default 5) a modal warns and counts down
+    ''' (AdminIdleWarningMinutes, default 3). "Stay signed in" resets the
+    ''' watch; otherwise the admin is signed out when it reaches zero.
     ''' Clerks are never idle-logged-out.
     Private Sub StartIdleWatch()
         If Not IsAdminSession Then Return
         Dim mins = 5
-        Integer.TryParse(ConfigurationManager.AppSettings("AdminIdleLogoutMinutes"), mins)
+        If Not Integer.TryParse(ConfigurationManager.AppSettings("AdminIdleLogoutMinutes"), mins) Then mins = 5
         If mins <= 0 Then Return
         _idle = New IdleWatcher(TimeSpan.FromMinutes(mins))
-        AddHandler _idle.Warning, Sub(s, remaining)
-                                      BeginInvoke(Sub() AppUI.Toast(
-                                          $"You'll be signed out in about {CInt(Math.Ceiling(remaining.TotalSeconds / 10) * 10)}s due to inactivity. Move the mouse to stay.",
-                                          AppUI.ToastKind.Warning, Me))
-                                  End Sub
-        AddHandler _idle.Expired, Sub(s, e) BeginInvoke(New Action(AddressOf IdleLogout))
+        AddHandler _idle.WentIdle, Sub(s, e) BeginInvoke(New Action(AddressOf IdleWarn))
         _idle.Start()
+    End Sub
+
+    Private Sub IdleWarn()
+        If _idleLoggingOut OrElse _idle Is Nothing OrElse Not IsAdminSession Then Return
+        Dim warnMins = 3
+        If Not Integer.TryParse(ConfigurationManager.AppSettings("AdminIdleWarningMinutes"), warnMins) OrElse warnMins <= 0 Then warnMins = 3
+
+        Dim result As DialogResult
+        Using f As New frmIdleWarning(TimeSpan.FromMinutes(warnMins))
+            result = f.ShowDialog(If(Form.ActiveForm, CType(Me, IWin32Window)))
+        End Using
+        If result = DialogResult.OK Then
+            _idle?.Start()
+        Else
+            IdleLogout()
+        End If
     End Sub
 
     Private Sub IdleLogout()
         If _idleLoggingOut Then Return
         _idleLoggingOut = True
         _idle?.Dispose()
-        AppUI.Toast("Signed out due to inactivity.", AppUI.ToastKind.Info, Me)
-        btnLogout_Click(Nothing, EventArgs.Empty)
-        _idleLoggingOut = False
+        _idle = Nothing
+        ' Close any dialog the admin left open so nothing stays on screen
+        ' behind the login window; sign out once their modal loops unwind.
+        For Each f In Application.OpenForms.Cast(Of Form)().Where(Function(x) x IsNot Me AndAlso Not TypeOf x Is frmLogin).ToList()
+            Try
+                f.Close()
+            Catch
+            End Try
+        Next
+        BeginInvoke(Sub()
+                        _idleLoggingOut = False
+                        ' Returns only after the next person signs in.
+                        btnLogout_Click(Nothing, EventArgs.Empty)
+                    End Sub)
     End Sub
 
     ''' Allocates the strip's finite width before positioning either group. This
@@ -390,6 +420,7 @@ Public Class frmMain
                         New NavItem("Suppliers", "Suppliers", True)),
             New NavItem("Customers", "Customers", True,
                         New NavItem("Sales", "Sales", False),
+                        New NavItem("Quotations", "Quotations", False),
                         New NavItem("Receipts", "Receipts", False),
                         New NavItem("Waybill", "Waybill", False)),
             New NavItem("Finance", "Finance", True,
@@ -445,6 +476,9 @@ Public Class frmMain
             wrap.Controls.Add(underline)
             wrap.Tag = underline
             wrap.Width = TextRenderer.MeasureText(btn.Text, Theme.BaseFont()).Width + 34
+            ' Tabs re-wrap when the window resizes; keep the slider under the active one.
+            AddHandler wrap.LocationChanged, Sub(s, e) MoveTabSlider(animate:=False)
+            AddHandler wrap.SizeChanged, Sub(s, e) MoveTabSlider(animate:=False)
             tabStrip.Controls.Add(wrap)
             _tabButtons.Add(btn)
             _tabScreens(btn) = {item.Key}.Concat(children.Select(Function(c) c.Key)).ToArray()
@@ -497,9 +531,47 @@ Public Class frmMain
             btn.ForeColor = If(active, Theme.Current.Primary, Theme.Current.TextPrimary)
             btn.FlatAppearance.MouseOverBackColor = hoverBg
             btn.Font = New Font("Segoe UI", Theme.BaseFontSize, If(active, FontStyle.Bold, FontStyle.Regular))
-            If underline IsNot Nothing Then underline.BackColor = If(active, Theme.Current.Primary, surface)
+            ' The shared slider draws the active underline (static colour if animations are off).
+            If underline IsNot Nothing Then underline.BackColor = If(active AndAlso Not Anim.Enabled, Theme.Current.Primary, surface)
             wrap.Width = TextRenderer.MeasureText(btn.Text, btn.Font).Width + 34
         Next
+        _tabSlider.BackColor = Theme.Current.Primary
+        MoveTabSlider(animate:=True)
+    End Sub
+
+    ''' Glides the accent bar from the previous tab to the active one.
+    Private Sub MoveTabSlider(animate As Boolean)
+        If Not Anim.Enabled Then
+            _tabSlider.Visible = False
+            Return
+        End If
+        Dim activeBtn = _tabButtons.FirstOrDefault(
+            Function(b)
+                Dim screens As String() = Nothing
+                Return If(_tabScreens.TryGetValue(b, screens), screens.Contains(_currentScreen), CStr(b.Tag) = _currentScreen)
+            End Function)
+        If activeBtn Is Nothing OrElse activeBtn.Parent Is Nothing Then
+            _tabSlider.Visible = False
+            Return
+        End If
+        Dim wrap = activeBtn.Parent
+        Dim targetX = tabStrip.Left + wrap.Left + 6
+        Dim targetY = tabStrip.Top + wrap.Bottom - _tabSlider.Height
+        Dim targetW = Math.Max(10, wrap.Width - 12)
+
+        _sliderTween?.Stop()
+        If Not animate OrElse Not _tabSlider.Visible Then
+            _tabSlider.SetBounds(targetX, targetY, targetW, _tabSlider.Height)
+            _tabSlider.Visible = True
+            _tabSlider.BringToFront()
+            Return
+        End If
+        Dim fromX = _tabSlider.Left, fromW = _tabSlider.Width
+        _tabSlider.Top = targetY
+        _sliderTween = Anim.Tween(320, Sub(t)
+                                           _tabSlider.Left = CInt(Anim.Lerp(fromX, targetX, t))
+                                           _tabSlider.Width = CInt(Anim.Lerp(fromW, targetW, t))
+                                       End Sub, ease:=AddressOf Anim.EaseOutBack)
     End Sub
 
     ''' Swaps the active UserControl into the content panel.
@@ -516,6 +588,7 @@ Public Class frmMain
             Case "Dashboard" : uc = New ucDashboard(CurrentUserID, isAdmin)
             Case "Inventory" : uc = New ucInventory(CurrentUserID, isAdmin)
             Case "Sales", "Receipts" : uc = New ucInvoices(CurrentUserID, isAdmin)
+            Case "Quotations" : uc = New ucQuotations(CurrentUserID, isAdmin)
             Case "Suppliers" : uc = New ucSuppliers(CurrentUserID)
             Case "Purchases" : uc = New ucSuppliers(CurrentUserID, purchaseOrdersOnly:=True)
             Case "Customers" : uc = New ucCustomers(CurrentUserID)
@@ -535,6 +608,7 @@ Public Class frmMain
         FitScreenToContent()
         Theme.Apply(uc)
         RestyleTabs()
+        Anim.FadeInOver(pnlContent, uc)
     End Sub
 
     ''' Screen fills the window, but never below ScreenMinSize — smaller windows

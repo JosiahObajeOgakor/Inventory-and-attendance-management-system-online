@@ -243,12 +243,24 @@ Public Module Sales
                         {"@tier", req.PriceTier}, {"@wh", req.WarehouseID}, {"@method", req.PaymentMethod},
                         {"@status", money.Status}, {"@user", userId}})
 
+                Dim changedByName = Convert.ToString(DataAccess.ScalarIn(conn, tx,
+                    "SELECT FullName FROM Users WHERE UserID = @id", New Dictionary(Of String, Object) From {{"@id", userId}}))
+
                 For Each line In req.Lines
                     DataAccess.Exec(conn, tx,
                         "INSERT INTO InvoiceItems (InvoiceID, ProductID, Quantity, UnitPrice, UnitCost, LineTotal) VALUES (@i, @p, @q, @price, @cost, @lt)",
                         New Dictionary(Of String, Object) From {
                             {"@i", money.InvoiceID}, {"@p", line.ProductID}, {"@q", line.Quantity},
                             {"@price", line.UnitPrice}, {"@cost", line.UnitCost}, {"@lt", line.LineTotal}})
+
+                    ' A line priced away from this product's own tier price
+                    ' (e.g. the seller overrode it) is kept on record — never
+                    ' silently blended into an ordinary sale.
+                    Dim standard = TierPrice(conn, tx, line.ProductID, req.PriceTier)
+                    If standard.HasValue AndAlso standard.Value <> line.UnitPrice Then
+                        PriceOverrides.Log(conn, tx, "Invoice", money.InvoiceNumber, line.ProductName,
+                                            standard.Value, line.UnitPrice, changedByName)
+                    End If
 
                     DeductStock(conn, tx, line, req.WarehouseID, money.InvoiceID, req.SaleDate, userId)
                 Next
@@ -310,6 +322,21 @@ Public Module Sales
 
                 Return money
             End Function)
+    End Function
+
+    ''' This product's standard price at `tier`, read fresh inside the sale's
+    ''' own transaction — the one thing an override is measured against.
+    Private Function TierPrice(conn As SqlConnection, tx As SqlTransaction, productId As Integer, tier As String) As Decimal?
+        Dim col As String
+        Select Case tier
+            Case "Distributor" : col = "PriceDistributor"
+            Case "Wholesaler" : col = "PriceWholesaler"
+            Case Else : col = "PriceRetail"
+        End Select
+        Dim t = DataAccess.TableIn(conn, tx, $"SELECT {col} AS P FROM Products WHERE ProductID = @id",
+            New Dictionary(Of String, Object) From {{"@id", productId}})
+        If t.Rows.Count = 0 Then Return Nothing
+        Return Convert.ToDecimal(t.Rows(0)("P"))
     End Function
 
     ''' Locks and totals every product on the order, and refuses the whole sale

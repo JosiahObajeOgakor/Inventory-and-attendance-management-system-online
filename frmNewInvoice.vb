@@ -33,6 +33,7 @@ Public Class frmNewInvoice
     Private lblSegment As New Label() With {.AutoSize = True, .Visible = False, .Tag = "keepfont", .Margin = New Padding(8, 8, 0, 0)}
     Private gridLines As DataGridView = UiHelpers.NewGrid()
     Private btnRemoveLine As New Button() With {.Text = "Remove line", .AutoSize = True, .Enabled = False}
+    Private btnEditPrice As New Button() With {.Text = "Edit price", .AutoSize = True, .Enabled = False}
     Private cboPaymentMethod As New ComboBox() With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 160}
     Private numDiscountPct As New NumericUpDown() With {.Maximum = 100, .DecimalPlaces = 1}
     Private numPaidNow As New NumericUpDown() With {.Maximum = 1000000000, .DecimalPlaces = 2}
@@ -73,7 +74,11 @@ Public Class frmNewInvoice
 
     Public ReadOnly Property SavedInvoiceId As Integer
 
-    Public Sub New(userId As Integer)
+    ''' `fromQuotationId` pre-fills the customer, price tier and lines from an
+    ''' existing quotation being converted — still fully editable here (add,
+    ''' remove, replace, reprice) before it becomes a real sale. The caller
+    ''' (ucQuotations) marks that quotation Converted itself once this saves.
+    Public Sub New(userId As Integer, Optional fromQuotationId As Integer? = Nothing)
         currentUserId = userId
         Text = "New sale"
         Width = 820
@@ -122,17 +127,49 @@ Public Class frmNewInvoice
                                                 RecalculateTotals()
                                             End If
                                         End Sub
-        AddHandler gridLines.SelectionChanged, Sub(s, e) btnRemoveLine.Enabled = gridLines.SelectedRows.Count > 0
+        AddHandler btnEditPrice.Click, AddressOf btnEditPrice_Click
+        AddHandler gridLines.SelectionChanged, Sub(s, e)
+                                                    Dim has = gridLines.SelectedRows.Count > 0
+                                                    btnRemoveLine.Enabled = has
+                                                    btnEditPrice.Enabled = has
+                                                End Sub
         AddHandler numDiscountPct.ValueChanged, Sub(s, e) RecalculateTotals()
         AddHandler numPaidNow.ValueChanged, Sub(s, e) RecalculateTotals()
         AddHandler cboPaymentMethod.SelectedIndexChanged, Sub(s, e) RecalculateTotals()
         AddHandler chkVat.CheckedChanged, Sub(s, e) RecalculateTotals()
+
+        If fromQuotationId.HasValue Then LoadFromQuotation(fromQuotationId.Value)
 
         SyncTierToCustomer()
         UpdateUnitHint()
         UiHelpers.FitToScreen(Me)
         Theme.Apply(Me)
         _formReady = True
+    End Sub
+
+    ''' Seeds the customer, tier and lines from a quotation. Lines are added
+    ''' straight from the quotation's own saved prices (which may already
+    ''' carry an override) rather than through btnAddLine_Click, so nothing
+    ''' here silently reprices them back to the plain tier price.
+    Private Sub LoadFromQuotation(quotationId As Integer)
+        Dim header = DataAccess.GetTable(
+            "SELECT CustomerID, PriceTier FROM Quotations WHERE QuotationID = @id",
+            New Dictionary(Of String, Object) From {{"@id", quotationId}})
+        If header.Rows.Count = 0 Then Return
+        cboCustomer.SelectedValue = Convert.ToInt32(header.Rows(0)("CustomerID"))
+        Dim tier = Convert.ToString(header.Rows(0)("PriceTier"))
+        If cboTier.Items.Contains(tier) Then cboTier.SelectedItem = tier
+
+        Dim items = DataAccess.GetTable(
+            "SELECT qi.ProductID, p.Name AS Product, qi.Quantity, qi.UnitPrice " &
+            "FROM QuotationItems qi JOIN Products p ON p.ProductID = qi.ProductID WHERE qi.QuotationID = @id",
+            New Dictionary(Of String, Object) From {{"@id", quotationId}})
+        For Each r As DataRow In items.Rows
+            Dim qty = Convert.ToInt32(r("Quantity"))
+            Dim price = Convert.ToDecimal(r("UnitPrice"))
+            lineItems.Rows.Add(Convert.ToInt32(r("ProductID")), Convert.ToString(r("Product")), qty, price, qty * price)
+        Next
+        RecalculateTotals()
     End Sub
 
     ''' A customer who already owes is flagged right in the list — "special
@@ -369,6 +406,7 @@ Public Class frmNewInvoice
         gridHost.Controls.Add(gridLines)
         Dim gridBar As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .Padding = New Padding(16, 4, 16, 4)}
         gridBar.Controls.Add(btnRemoveLine)
+        gridBar.Controls.Add(btnEditPrice)
         gridHost.Controls.Add(gridBar)
 
         UiHelpers.AddOkCancelRow(Me, "Save sale", AddressOf btnSave_Click)
@@ -466,6 +504,23 @@ Public Class frmNewInvoice
         RecalculateTotals()
         UpdateUnitHint()
         ShowSaleAdvice(productId, qty)
+    End Sub
+
+    ''' Overrides the selected line's price. The tier price stays what it was
+    ''' computed at — this only changes what's charged, and the override is
+    ''' logged (see Sales.SaveOnce) once the sale itself is saved.
+    Private Sub btnEditPrice_Click(sender As Object, e As EventArgs)
+        If gridLines.CurrentRow Is Nothing OrElse gridLines.CurrentRow.Index >= lineItems.Rows.Count Then Return
+        Dim row = lineItems.Rows(gridLines.CurrentRow.Index)
+        Dim productId = CInt(row("ProductID"))
+        Dim standard = TierPrice(productId)
+        Using f As New frmEditPrice(Convert.ToString(row("Product")), standard, CDec(row("UnitPrice")))
+            If f.ShowDialog(Me) = DialogResult.OK Then
+                row("UnitPrice") = f.NewPrice
+                row("LineTotal") = f.NewPrice * CInt(row("Qty"))
+                RecalculateTotals()
+            End If
+        End Using
     End Sub
 
     ''' The advice line under the sale: what usually goes with what's just been
@@ -586,6 +641,7 @@ Public Class frmNewInvoice
             Dim saved = Sales.Save(req, currentUserId)
             _SavedInvoiceId = saved.InvoiceID
             AppUI.Toast(SaleSummary(saved), AppUI.ToastKind.Success)
+            Anim.SuccessTick(If(Owner, Me), "Sale saved")
             Me.DialogResult = DialogResult.OK
             Me.Close()
         Catch ex As Sales.InsufficientStockException

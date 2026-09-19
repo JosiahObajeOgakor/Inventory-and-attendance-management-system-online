@@ -187,6 +187,51 @@ CREATE TABLE InvoiceItems (
     LineTotal     DECIMAL(14,2) NOT NULL
 );
 
+-- A price computation for a customer that never touches stock, the ledger or
+-- the customer's balance until it's explicitly converted into a real sale
+-- (Sales.Save). Freely editable and deletable while Status = 'Open'.
+CREATE TABLE Quotations (
+    QuotationID        INT IDENTITY(1,1) PRIMARY KEY,
+    QuotationNumber    NVARCHAR(40) NOT NULL UNIQUE,
+    CustomerID         INT NOT NULL REFERENCES Customers(CustomerID),
+    QuotationDate      DATE NOT NULL DEFAULT CAST(SYSDATETIME() AS DATE),
+    Subtotal           DECIMAL(14,2) NOT NULL DEFAULT 0,
+    DiscountPct        DECIMAL(5,2)  NOT NULL DEFAULT 0,
+    DiscountAmount     DECIMAL(14,2) NOT NULL DEFAULT 0,
+    VATRate            DECIMAL(5,2)  NOT NULL DEFAULT 0,
+    VATAmount          DECIMAL(14,2) NOT NULL DEFAULT 0,
+    TotalAmount        DECIMAL(14,2) NOT NULL DEFAULT 0,
+    PriceTier          NVARCHAR(20)  NOT NULL DEFAULT 'Retailer',
+    Status             NVARCHAR(20)  NOT NULL DEFAULT 'Open', -- Open, Converted
+    ConvertedInvoiceID INT NULL REFERENCES Invoices(InvoiceID),
+    CreatedByUserID    INT NOT NULL REFERENCES Users(UserID),
+    CreatedAt          DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+
+CREATE TABLE QuotationItems (
+    QuotationItemID INT IDENTITY(1,1) PRIMARY KEY,
+    QuotationID     INT NOT NULL REFERENCES Quotations(QuotationID),
+    ProductID       INT NOT NULL REFERENCES Products(ProductID),
+    Quantity        INT NOT NULL,
+    UnitPrice       DECIMAL(12,2) NOT NULL,
+    LineTotal       DECIMAL(14,2) NOT NULL
+);
+
+-- Audit trail for any manual price override on a sale or quotation line.
+-- Deliberately carries no foreign keys to Invoices/Quotations: either can be
+-- deleted, and this history must survive that, so everything it needs is
+-- captured in full at write time rather than joined back later.
+CREATE TABLE PriceOverrides (
+    OverrideID    INT IDENTITY(1,1) PRIMARY KEY,
+    DocType       NVARCHAR(10) NOT NULL CHECK (DocType IN ('Invoice','Quotation')),
+    DocNumber     NVARCHAR(40) NOT NULL,
+    ProductName   NVARCHAR(150) NOT NULL,
+    StandardPrice DECIMAL(12,2) NOT NULL,
+    OverridePrice DECIMAL(12,2) NOT NULL,
+    ChangedByName NVARCHAR(100) NOT NULL,
+    ChangedAt     DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+
 -- One row per physical serialised unit. Status walks In Stock -> Sold, and can
 -- also land on Returned or Written Off; InvoiceID ties a warranty claim back to
 -- the sale. Declared after Invoices because it points at it.

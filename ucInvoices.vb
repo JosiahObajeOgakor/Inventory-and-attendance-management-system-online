@@ -16,6 +16,7 @@ Public Class ucInvoices
     Private btnReceipt As New Button() With {.Text = "View receipt / PDF", .AutoSize = True, .Enabled = False}
     Private btnExport As New Button() With {.Text = "Export CSV", .AutoSize = True}
     Private btnDelete As New Button() With {.Text = "Delete invoice", .Tag = "danger", .AutoSize = True, .Enabled = False}
+    Private btnPriceChanges As New Button() With {.Text = "Price changes", .AutoSize = True}
     Private toolbar As New FlowLayoutPanel() With {.Dock = DockStyle.Top, .AutoSize = True, .FlowDirection = FlowDirection.RightToLeft, .Padding = New Padding(12)}
 
     Public Sub New(userId As Integer, isAdminUser As Boolean)
@@ -24,7 +25,10 @@ Public Class ucInvoices
         toolbar.Controls.Add(btnNewInvoice)
         toolbar.Controls.Add(btnReceipt)
         toolbar.Controls.Add(btnExport)
-        If isAdmin Then toolbar.Controls.Add(btnDelete)
+        If isAdmin Then
+            toolbar.Controls.Add(btnDelete)
+            toolbar.Controls.Add(btnPriceChanges)
+        End If
         toolbar.Controls.Add(txtSearch)
         toolbar.Controls.Add(New Label() With {.Text = "Search:", .AutoSize = True, .Margin = New Padding(6, 8, 6, 0)})
         toolbar.Controls.Add(txtScanReceipt)
@@ -35,6 +39,7 @@ Public Class ucInvoices
         AddHandler btnReceipt.Click, Sub(s, e) OpenReceipt()
         AddHandler btnExport.Click, Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "invoices", FindForm())
         AddHandler btnDelete.Click, AddressOf btnDelete_Click
+        AddHandler btnPriceChanges.Click, Sub(s, e) ShowPriceChanges()
         AddHandler txtSearch.TextChanged, Sub(s, e) LoadGrid()
         AddHandler txtScanReceipt.KeyDown, AddressOf ScanReceipt_KeyDown
         AddHandler grid.Grid.SelectionChanged, Sub(s, e)
@@ -118,6 +123,18 @@ Public Class ucInvoices
         Dim term = txtSearch.Text.Trim()
         Dim p As New Dictionary(Of String, Object) From {{"@s", If(term = "", CObj(DBNull.Value), "%" & term & "%")}}
         grid.Bind(DataAccess.GetTable(sql, p), hiddenColumns:={"InvoiceID"})
+    End Sub
+
+    ''' Read-only history of every manual price override, on a sale or a
+    ''' quotation — who changed what, away from the standard tier price.
+    Private Sub ShowPriceChanges()
+        Using f As New Form() With {.Text = "Price changes", .Width = 900, .Height = 560, .StartPosition = FormStartPosition.CenterParent}
+            Dim g As New PagedGrid() With {.PageSize = 12, .Dock = DockStyle.Fill}
+            g.Bind(PriceOverrides.History())
+            f.Controls.Add(g)
+            Theme.Apply(f)
+            f.ShowDialog(FindForm())
+        End Using
     End Sub
 
     Private Sub btnNewInvoice_Click(sender As Object, e As EventArgs)

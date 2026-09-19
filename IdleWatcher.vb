@@ -2,7 +2,9 @@ Imports System.Runtime.InteropServices
 Imports System.Windows.Forms
 
 ''' Watches system-wide input idle time (mouse + keyboard, anywhere on the PC)
-''' and raises Expired once the session has been idle past the timeout.
+''' and raises WentIdle once the session has been idle past the threshold.
+''' It then stops; the caller shows the countdown warning and calls Start()
+''' again if the user chooses to stay signed in.
 ''' frmMain starts one of these ONLY for Admin sessions.
 Public NotInheritable Class IdleWatcher
     Implements IDisposable
@@ -17,19 +19,14 @@ Public NotInheritable Class IdleWatcher
     Private Shared Function GetLastInputInfo(ByRef plii As LASTINPUTINFO) As Boolean
     End Function
 
-    Private ReadOnly _timeout As TimeSpan
-    Private ReadOnly _warnAt As TimeSpan
-    Private ReadOnly _timer As New Timer() With {.Interval = 15000} ' check every 15s
-    Private _warned As Boolean
+    Private ReadOnly _threshold As TimeSpan
+    Private ReadOnly _timer As New Timer() With {.Interval = 5000} ' check every 5s
 
-    ''' Raised when the session has been idle longer than the timeout.
-    Public Event Expired As EventHandler
-    ''' Raised ~1 minute before expiry so the UI can warn the user.
-    Public Event Warning As EventHandler(Of TimeSpan)
+    ''' Raised once when the session has been idle for the threshold.
+    Public Event WentIdle As EventHandler
 
-    Public Sub New(timeout As TimeSpan)
-        _timeout = timeout
-        _warnAt = If(timeout > TimeSpan.FromMinutes(2), timeout - TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(timeout.TotalSeconds * 0.8))
+    Public Sub New(threshold As TimeSpan)
+        _threshold = threshold
         AddHandler _timer.Tick, AddressOf Check
     End Sub
 
@@ -37,16 +34,14 @@ Public NotInheritable Class IdleWatcher
         _timer.Start()
     End Sub
 
+    Public Sub [Stop]()
+        _timer.Stop()
+    End Sub
+
     Private Sub Check(sender As Object, e As EventArgs)
-        Dim idle = IdleTime()
-        If idle >= _timeout Then
+        If IdleTime() >= _threshold Then
             _timer.Stop()
-            RaiseEvent Expired(Me, EventArgs.Empty)
-        ElseIf idle >= _warnAt AndAlso Not _warned Then
-            _warned = True
-            RaiseEvent Warning(Me, _timeout - idle)
-        ElseIf idle < _warnAt Then
-            _warned = False
+            RaiseEvent WentIdle(Me, EventArgs.Empty)
         End If
     End Sub
 

@@ -153,6 +153,52 @@ Public Class StockTests
                         "the batch expiring first must be emptied first")
     End Sub
 
+    Private Function LastProductionId() As Integer
+        Return TestDb.Count("SELECT MAX(MovementID) FROM StockMovements WHERE ProductID=@p AND ReferenceType='Production'", TestDb.P("@p", _product))
+    End Function
+
+    <TestMethod>
+    Public Sub A_mistyped_production_entry_can_be_corrected_down_and_stock_follows()
+        Stock.RecordProduction(_product, _warehouse, 61, Date.Today, "PROD-FIX", Nothing, _user)
+        Assert.AreEqual("", Stock.CorrectProduction(LastProductionId(), 41, Date.Today, _user))
+        Assert.AreEqual(41, Stock.QuantityInWarehouse(_product, _warehouse))
+        Assert.AreEqual(41, TestDb.Count("SELECT Quantity FROM StockMovements WHERE MovementID=@m", TestDb.P("@m", LastProductionId())))
+    End Sub
+
+    <TestMethod>
+    Public Sub Deleting_a_production_entry_removes_its_stock_and_history_row()
+        Stock.RecordProduction(_product, _warehouse, 30, Date.Today, "PROD-DEL", Nothing, _user)
+        Dim id = LastProductionId()
+        Assert.AreEqual("", Stock.CorrectProduction(id, 0, Date.Today, _user))
+        Assert.AreEqual(0, Stock.QuantityInWarehouse(_product, _warehouse))
+        Assert.AreEqual(0, TestDb.Count("SELECT COUNT(*) FROM StockMovements WHERE MovementID=@m", TestDb.P("@m", id)))
+    End Sub
+
+    <TestMethod>
+    Public Sub A_correction_cannot_take_away_stock_that_is_already_gone()
+        Stock.RecordProduction(_product, _warehouse, 50, Date.Today, "PROD-GONE", Nothing, _user)
+        Sales.Save(SaleOf(40), _user)
+        Assert.AreNotEqual("", Stock.CorrectProduction(LastProductionId(), 0, Date.Today, _user))
+        Assert.AreEqual(10, Stock.QuantityInWarehouse(_product, _warehouse), "a refused correction must change nothing")
+    End Sub
+
+    <TestMethod>
+    Public Sub Stock_moves_between_warehouses_both_ways_keeping_the_total()
+        Dim other = TestDb.Count("SELECT MAX(WarehouseID) FROM Warehouses")
+        Stock.RecordProduction(_product, _warehouse, 100, Date.Today, "PROD-MOVE", Nothing, _user)
+
+        Assert.AreEqual("", Stock.TransferStock(_product, _warehouse, other, 30, _user))
+        Assert.AreEqual(70, Stock.QuantityInWarehouse(_product, _warehouse))
+        Assert.AreEqual(30, Stock.QuantityInWarehouse(_product, other))
+
+        Assert.AreEqual("", Stock.TransferStock(_product, other, _warehouse, 10, _user))
+        Assert.AreEqual(80, Stock.QuantityInWarehouse(_product, _warehouse))
+        Assert.AreEqual(20, Stock.QuantityInWarehouse(_product, other))
+
+        Assert.AreNotEqual("", Stock.TransferStock(_product, other, _warehouse, 21, _user), "can't move more than is there")
+        Assert.AreEqual(20, Stock.QuantityInWarehouse(_product, other))
+    End Sub
+
     <TestMethod>
     Public Sub Stock_can_never_be_driven_negative_by_a_sale()
         Stock.RecordProduction(_product, _warehouse, 100, Date.Today, "PROD-NEG", Nothing, _user)

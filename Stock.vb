@@ -1,7 +1,8 @@
 Imports System.Data
 
-''' Stock movements that aren't part of a sale or purchase — currently the
-''' production entries staff record after each production run.
+''' Stock movements that aren't part of a sale or purchase — the production
+''' entries staff record after each run (and admin corrections to them), and
+''' moves between warehouses.
 Public Module Stock
 
     ''' Adds newly produced goods to a warehouse and logs the run in the stock
@@ -28,10 +29,159 @@ Public Module Stock
                 "IF @@ROWCOUNT = 0 " &
                 "  INSERT INTO StockBatches (ProductID, WarehouseID, BatchNumber, ExpiryDate, QuantityOnHand) " &
                 "  VALUES (@p, @w, @b, @e, @q); " &
-                "INSERT INTO StockMovements (ProductID, WarehouseID, MovementType, Quantity, ReferenceType, MovementDate, UserID) " &
-                "  VALUES (@p, @w, 'IN', @q, 'Production', @d, @u); " &
+                "INSERT INTO StockMovements (ProductID, WarehouseID, MovementType, Quantity, ReferenceType, ReferenceID, MovementDate, UserID) " &
+                "  SELECT @p, @w, 'IN', @q, 'Production', BatchID, @d, @u FROM StockBatches " &
+                "  WHERE ProductID = @p AND WarehouseID = @w AND BatchNumber = @b; " &
                 "COMMIT;", p)
             Return ""
+        Catch ex As Exception
+            Return ex.Message
+        End Try
+    End Function
+
+    ''' Corrects a production entry that was typed wrong (say 61 bags instead of
+    ''' 41): the history row takes the new quantity and date, and the warehouse
+    ''' stock moves by the difference. A new quantity of 0 deletes the entry.
+    ''' Stock taken off comes from the batch the run went into first, then the
+    ''' newest other batches in that warehouse. Refused when that much is no
+    ''' longer there (already sold or moved), so stock can never go negative.
+    ''' Returns "" on success, or an error message.
+    Public Function CorrectProduction(movementId As Integer, newQuantity As Integer, producedOn As Date, userId As Integer) As String
+        If newQuantity < 0 Then Return "Quantity cannot be negative."
+        Try
+            Return DataAccess.InTransaction(Of String)(
+                Function(conn, tx)
+                    Dim m = DataAccess.TableIn(conn, tx,
+                        "SELECT sm.ProductID, sm.WarehouseID, sm.Quantity, sm.ReferenceID, sm.MovementDate, w.Name AS Warehouse " &
+                        "FROM StockMovements sm WITH (UPDLOCK) JOIN Warehouses w ON w.WarehouseID = sm.WarehouseID " &
+                        "WHERE sm.MovementID = @m AND sm.ReferenceType = 'Production'",
+                        New Dictionary(Of String, Object) From {{"@m", movementId}})
+                    If m.Rows.Count = 0 Then Return "That production entry no longer exists."
+                    Dim r = m.Rows(0)
+                    Dim productId = Convert.ToInt32(r("ProductID")), warehouseId = Convert.ToInt32(r("WarehouseID"))
+                    Dim oldQty = Convert.ToInt32(r("Quantity"))
+                    Dim batchId = If(IsDBNull(r("ReferenceID")), 0, Convert.ToInt32(r("ReferenceID")))
+                    Dim dayBatch = "PROD-" & Convert.ToDateTime(r("MovementDate")).ToString("yyMMdd")
+                    Dim delta = newQuantity - oldQty
+
+                    If delta > 0 Then
+                        AddToBatch(conn, tx, productId, warehouseId, batchId, dayBatch, delta)
+                    ElseIf delta < 0 Then
+                        Dim err = TakeFromWarehouse(conn, tx, productId, warehouseId, batchId, dayBatch, -delta, Convert.ToString(r("Warehouse")))
+                        If err <> "" Then
+                            Dim lowest = oldQty - OnHandIn(conn, tx, productId, warehouseId)
+                            Return $"{err} This entry can't go below {lowest:#,0}."
+                        End If
+                    End If
+
+                    If newQuantity = 0 Then
+                        DataAccess.Exec(conn, tx, "DELETE FROM StockMovements WHERE MovementID = @m",
+                                        New Dictionary(Of String, Object) From {{"@m", movementId}})
+                    Else
+                        DataAccess.Exec(conn, tx,
+                            "UPDATE StockMovements SET Quantity = @q, MovementDate = @d WHERE MovementID = @m",
+                            New Dictionary(Of String, Object) From {{"@q", newQuantity}, {"@d", producedOn.Date}, {"@m", movementId}})
+                    End If
+                    Return ""
+                End Function)
+        Catch ex As Exception
+            Return ex.Message
+        End Try
+    End Function
+
+    Private Function OnHandIn(conn As SqlClient.SqlConnection, tx As SqlClient.SqlTransaction,
+                              productId As Integer, warehouseId As Integer) As Integer
+        Return Convert.ToInt32(DataAccess.ScalarIn(conn, tx,
+            "SELECT ISNULL(SUM(QuantityOnHand), 0) FROM StockBatches WHERE ProductID = @p AND WarehouseID = @w",
+            New Dictionary(Of String, Object) From {{"@p", productId}, {"@w", warehouseId}}))
+    End Function
+
+    ''' Puts units back into the batch a production run went into, or that day's
+    ''' PROD- batch when the entry predates batch tracking.
+    Private Sub AddToBatch(conn As SqlClient.SqlConnection, tx As SqlClient.SqlTransaction,
+                           productId As Integer, warehouseId As Integer, batchId As Integer, dayBatch As String, qty As Integer)
+        Dim p As New Dictionary(Of String, Object) From {
+            {"@id", batchId}, {"@p", productId}, {"@w", warehouseId}, {"@b", dayBatch}, {"@q", qty}}
+        If DataAccess.Exec(conn, tx,
+            "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand + @q WHERE BatchID = @id AND ProductID = @p AND WarehouseID = @w", p) > 0 Then Return
+        If DataAccess.Exec(conn, tx,
+            "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand + @q WHERE ProductID = @p AND WarehouseID = @w AND BatchNumber = @b", p) > 0 Then Return
+        DataAccess.Exec(conn, tx,
+            "INSERT INTO StockBatches (ProductID, WarehouseID, BatchNumber, QuantityOnHand) VALUES (@p, @w, @b, @q)", p)
+    End Sub
+
+    ''' Removes units from one warehouse — the given batch first, then that
+    ''' day's PROD- batch, then the newest others. Returns "" or why it can't.
+    Private Function TakeFromWarehouse(conn As SqlClient.SqlConnection, tx As SqlClient.SqlTransaction,
+                                       productId As Integer, warehouseId As Integer, batchId As Integer, dayBatch As String,
+                                       qty As Integer, warehouseName As String) As String
+        Dim batches = DataAccess.TableIn(conn, tx,
+            "SELECT BatchID, QuantityOnHand FROM StockBatches WITH (UPDLOCK, HOLDLOCK) " &
+            "WHERE ProductID = @p AND WarehouseID = @w AND QuantityOnHand > 0 " &
+            "ORDER BY CASE WHEN BatchID = @id THEN 0 WHEN BatchNumber = @b THEN 1 ELSE 2 END, BatchID DESC",
+            New Dictionary(Of String, Object) From {{"@p", productId}, {"@w", warehouseId}, {"@id", batchId}, {"@b", dayBatch}})
+        Dim have = batches.AsEnumerable().Sum(Function(b) Convert.ToInt32(b("QuantityOnHand")))
+        If have < qty Then
+            Return $"Only {have:#,0} left in {warehouseName} — the rest has already been sold or moved."
+        End If
+        Dim remaining = qty
+        For Each b As DataRow In batches.Rows
+            If remaining = 0 Then Exit For
+            Dim take = Math.Min(remaining, Convert.ToInt32(b("QuantityOnHand")))
+            DataAccess.Exec(conn, tx, "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand - @t WHERE BatchID = @id",
+                            New Dictionary(Of String, Object) From {{"@t", take}, {"@id", Convert.ToInt32(b("BatchID"))}})
+            remaining -= take
+        Next
+        Return ""
+    End Function
+
+    ''' Moves stock from one warehouse to another — e.g. topping up Shore from
+    ''' Lawal when Shore runs out, or back the other way when Lawal is short for
+    ''' a big order. The company total doesn't change. Units keep their batch
+    ''' number and expiry, earliest-expiring moved first. Logged as an OUT from
+    ''' one and an IN to the other (ReferenceType 'Transfer', ReferenceID = the
+    ''' other warehouse). Returns "" on success, or an error message.
+    Public Function TransferStock(productId As Integer, fromWarehouseId As Integer, toWarehouseId As Integer,
+                                  quantity As Integer, userId As Integer) As String
+        If quantity <= 0 Then Return "Enter how many to move."
+        If fromWarehouseId = toWarehouseId Then Return "Pick two different warehouses."
+        Try
+            Return DataAccess.InTransaction(Of String)(
+                Function(conn, tx)
+                    Dim batches = DataAccess.TableIn(conn, tx,
+                        "SELECT BatchID, BatchNumber, ExpiryDate, QuantityOnHand FROM StockBatches WITH (UPDLOCK, HOLDLOCK) " &
+                        "WHERE ProductID = @p AND WarehouseID = @w AND QuantityOnHand > 0 " &
+                        "ORDER BY CASE WHEN ExpiryDate IS NULL THEN 1 ELSE 0 END, ExpiryDate, BatchID",
+                        New Dictionary(Of String, Object) From {{"@p", productId}, {"@w", fromWarehouseId}})
+                    Dim have = batches.AsEnumerable().Sum(Function(b) Convert.ToInt32(b("QuantityOnHand")))
+                    If have < quantity Then
+                        Dim fromName = Convert.ToString(DataAccess.ScalarIn(conn, tx, "SELECT Name FROM Warehouses WHERE WarehouseID = @w",
+                                                        New Dictionary(Of String, Object) From {{"@w", fromWarehouseId}}))
+                        Return $"Only {have:#,0} in {fromName} — can't move {quantity:#,0}."
+                    End If
+
+                    Dim remaining = quantity
+                    For Each b As DataRow In batches.Rows
+                        If remaining = 0 Then Exit For
+                        Dim take = Math.Min(remaining, Convert.ToInt32(b("QuantityOnHand")))
+                        Dim p As New Dictionary(Of String, Object) From {
+                            {"@t", take}, {"@id", Convert.ToInt32(b("BatchID"))}, {"@p", productId},
+                            {"@to", toWarehouseId}, {"@b", b("BatchNumber")}, {"@e", b("ExpiryDate")}}
+                        DataAccess.Exec(conn, tx, "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand - @t WHERE BatchID = @id", p)
+                        DataAccess.Exec(conn, tx,
+                            "UPDATE StockBatches SET QuantityOnHand = QuantityOnHand + @t WHERE ProductID = @p AND WarehouseID = @to AND BatchNumber = @b; " &
+                            "IF @@ROWCOUNT = 0 INSERT INTO StockBatches (ProductID, WarehouseID, BatchNumber, ExpiryDate, QuantityOnHand) " &
+                            "  VALUES (@p, @to, @b, @e, @t);", p)
+                        remaining -= take
+                    Next
+
+                    Dim mp As New Dictionary(Of String, Object) From {
+                        {"@p", productId}, {"@from", fromWarehouseId}, {"@to", toWarehouseId}, {"@q", quantity}, {"@u", userId}}
+                    DataAccess.Exec(conn, tx,
+                        "INSERT INTO StockMovements (ProductID, WarehouseID, MovementType, Quantity, ReferenceType, ReferenceID, UserID) " &
+                        "VALUES (@p, @from, 'OUT', @q, 'Transfer', @to, @u), (@p, @to, 'IN', @q, 'Transfer', @from, @u)", mp)
+                    Return ""
+                End Function)
         Catch ex As Exception
             Return ex.Message
         End Try
@@ -113,7 +263,7 @@ Public Module Stock
             "SELECT p.Name, p.ReorderLevel, " &
             "  ISNULL((SELECT SUM(QuantityOnHand) FROM StockBatches WHERE ProductID = p.ProductID), 0) AS OnHand, " &
             "  ISNULL((SELECT SUM(Quantity) FROM StockMovements " &
-            "          WHERE ProductID = p.ProductID AND MovementType = 'OUT' " &
+            "          WHERE ProductID = p.ProductID AND MovementType = 'OUT' AND ISNULL(ReferenceType, '') <> 'Transfer' " &
             "            AND MovementDate >= DATEADD(DAY, -@win, SYSDATETIME())), 0) AS SoldInWindow " &
             "FROM Products p WHERE p.ProductID = @p",
             New Dictionary(Of String, Object) From {{"@p", productId}, {"@win", DemandWindowDays}})

@@ -476,13 +476,13 @@ Public NotInheritable Class DocPrinter
         End Function
     End Class
 
-    ''' A waybill's dispatch row: our own column carries only a Name line plus
-    ''' the business's pre-signed "confirmed and released" stamp — no blank
-    ''' Signature/Date for someone to fill in by hand, since the stamp already
-    ''' carries both. The remaining columns (driver, receiving customer) are
-    ''' still ordinary blank Name/Signature/Date lines, exactly as
-    ''' SignatureBlock draws them, since those are signed by someone outside
-    ''' the business.
+    ''' A waybill's dispatch row: our own column carries only a "Name" label
+    ''' plus the business's pre-signed "confirmed and released" stamp — no
+    ''' underline to fill in by hand, and no blank Signature/Date, since the
+    ''' stamp already carries both. The remaining columns (driver, receiving
+    ''' customer) are still ordinary blank Name/Signature/Date lines, exactly
+    ''' as SignatureBlock draws them, since those are signed by someone
+    ''' outside the business.
     Private Class DispatchBlock
         Inherits Block
         Public StampImg As Image
@@ -491,7 +491,13 @@ Public NotInheritable Class DocPrinter
         Private ReadOnly _title As New Font(Face, 8.5F, FontStyle.Bold)
         Private ReadOnly _k As New Font(Face, 8)
         Private Const GapX As Single = 22
-        Private Const StampMaxH As Single = 70
+        ''' The stamp prints large enough for the wording inside the circle to be
+        ''' readable on paper, and is pressed down centred within our own
+        ''' "Dispatched by" column only — it stays clear of the driver/customer
+        ''' columns so it never covers their Name/Signature/Date lines. The block
+        ''' reports the stamp's true height back so the lines below stay clear.
+        Private Const StampMaxH As Single = 150
+        Private Const StampOverlap As Single = 40
 
         Public Overrides Function Render(g As Graphics, x As Single, y As Single, w As Single, draw As Boolean) As Single
             Dim n = 1 + Math.Max(1, OtherTitles.Count)
@@ -501,13 +507,14 @@ Public NotInheritable Class DocPrinter
             Dim px = x, py = y
             py += Put(g, draw, StampTitle.ToUpperInvariant(), _title, Accent, px, py, pw) + 14
             Dim lh = Put(g, draw, "Name", _k, Muted, px, py, 56)
-            If draw Then HLine(g, Color.FromArgb(150, 150, 160), px + 58, px + pw, py + lh - 1)
             py += lh + 16
             If StampImg IsNot Nothing Then
-                Dim s = Math.Min(StampMaxH / StampImg.Height, pw / StampImg.Width)
+                Dim s = Math.Min(StampMaxH / StampImg.Height, (pw * 0.9F) / StampImg.Width)
                 Dim iw = StampImg.Width * s, ih = StampImg.Height * s
-                If draw Then g.DrawImage(StampImg, px, py, iw, ih)
-                py += ih + 4
+                Dim top = Math.Max(y, py - StampOverlap)
+                Dim centreX = px + pw / 2
+                If draw Then g.DrawImage(StampImg, centreX - iw / 2, top, iw, ih)
+                py = top + ih + 10
             End If
             h = Math.Max(h, py - y)
 
@@ -582,6 +589,10 @@ Public NotInheritable Class DocPrinter
     ''' Scale the whole document down (never below 35%) so it fits one page.
     Public Property FitToOnePage As Boolean = False
     Public Property FooterText As String
+    ''' Tiles the signed-into company's own logo, faint and rotated, across the
+    ''' whole page behind everything else — receipts, quotations and waybills
+    ''' opt into it; internal documents (purchase orders, price lists) don't.
+    Public Property Watermark As Boolean = False
 
     Public Function Logo(Optional maxHeight As Single = 72) As DocPrinter
         If Theme.Logo IsNot Nothing Then _blocks.Add(New ImageBlock With {.Img = Theme.Logo, .MaxHeight = maxHeight})
@@ -729,6 +740,62 @@ Public NotInheritable Class DocPrinter
         Return lo
     End Function
 
+    ''' Cached per logo instance — built once, reused for every page/document,
+    ''' since it never depends on the page it's drawn onto.
+    Private Shared _watermarkTile As Bitmap
+    Private Shared _watermarkTileSource As Image
+
+    ''' A small, fixed-size tile with the logo baked in at low alpha, built
+    ''' once per logo. Kept tiny and independent of the page's own resolution
+    ''' — the page can be any size without the tile itself growing.
+    Private Shared Function WatermarkTile(logo As Image) As Bitmap
+        If _watermarkTileSource Is logo AndAlso _watermarkTile IsNot Nothing Then Return _watermarkTile
+
+        Const TilePx As Integer = 240
+        Dim tile As New Bitmap(TilePx, TilePx)
+        Using tg = Graphics.FromImage(tile)
+            tg.Clear(Color.Transparent)
+            Dim matrix As New Imaging.ColorMatrix(New Single()() {
+                New Single() {1, 0, 0, 0, 0},
+                New Single() {0, 1, 0, 0, 0},
+                New Single() {0, 0, 1, 0, 0},
+                New Single() {0, 0, 0, 0.07F, 0},
+                New Single() {0, 0, 0, 0, 1}})
+            Dim attrs As New Imaging.ImageAttributes()
+            attrs.SetColorMatrix(matrix)
+            Dim s = Math.Min(TilePx * 0.55F / logo.Width, TilePx * 0.55F / logo.Height)
+            Dim iw = logo.Width * s, ih = logo.Height * s
+            Dim ix = CInt((TilePx - iw) / 2), iy = CInt((TilePx - ih) / 2)
+            tg.DrawImage(logo, New Rectangle(ix, iy, CInt(iw), CInt(ih)), 0, 0, logo.Width, logo.Height, GraphicsUnit.Pixel, attrs)
+        End Using
+        _watermarkTile = tile
+        _watermarkTileSource = logo
+        Return tile
+    End Function
+
+    ''' Tiles the signed-into company's own logo, very faint and rotated,
+    ''' across the whole page — behind the footer and every block, which are
+    ''' drawn afterwards. A single tiled-brush fill rather than one DrawImage
+    ''' per tile: drawing hundreds of individually alpha-blended images per
+    ''' page is what made print preview / PDF export painfully slow.
+    Private Shared Sub DrawWatermark(g As Graphics, page As Rectangle)
+        Dim logo = Theme.Logo
+        If logo Is Nothing Then Return
+        Dim st = g.Save()
+        Try
+            g.TranslateTransform(page.Width / 2, page.Height / 2)
+            g.RotateTransform(-30)
+            g.TranslateTransform(-page.Width / 2, -page.Height / 2)
+
+            Dim span = Math.Max(page.Width, page.Height) * 1.5F
+            Using brush As New TextureBrush(WatermarkTile(logo), Drawing2D.WrapMode.Tile)
+                g.FillRectangle(brush, -span, -span, span * 2, span * 2)
+            End Using
+        Finally
+            g.Restore(st)
+        End Try
+    End Sub
+
     Private Function BuildDocument(Optional printerName As String = Nothing) As PrintDocument
         Dim doc As New PrintDocument()
         doc.DocumentName = DocTitle
@@ -759,6 +826,7 @@ Public NotInheritable Class DocPrinter
                 Dim g = e.Graphics
                 g.TextRenderingHint = Drawing.Text.TextRenderingHint.AntiAliasGridFit
                 g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+                If Watermark Then DrawWatermark(g, e.PageBounds)
                 Dim m = e.MarginBounds
                 pageNo += 1
                 Dim foot = If(String.IsNullOrEmpty(FooterText), DocTitle, FooterText)

@@ -18,6 +18,11 @@ Public Class ucInventory
     Private btnAddItem As New Button() With {.Text = "+ Add item", .Tag = "primary", .AutoSize = True}
     ' Everyone (admin or clerk) can add what was produced.
     Private btnProduction As New Button() With {.Text = "+ Record production", .Tag = "primary", .AutoSize = True}
+    ' Everyone can move stock between Lawal and Shore.
+    Private btnMoveStock As New Button() With {.Text = "Move stock", .AutoSize = True}
+    ' Admin-only fixes for a production entry typed wrong.
+    Private btnEditProduction As New Button() With {.Text = "Edit entry", .AutoSize = True, .Enabled = False}
+    Private btnDeleteProduction As New Button() With {.Text = "Delete entry", .Tag = "danger", .AutoSize = True, .Enabled = False}
     Private btnEditPrices As New Button() With {.Text = "Edit prices", .AutoSize = True, .Enabled = False}
     Private btnExport As New Button() With {.Text = "Export CSV", .AutoSize = True}
     Private btnExportXlsx As New Button() With {.Text = "Export Excel", .AutoSize = True}
@@ -35,7 +40,7 @@ Public Class ucInventory
             btnProduction.Text = "+ Record purchase"
             cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Purchase history"})
         Else
-            cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Production history"})
+            cboView.Items.AddRange({"Stock by product", "Batches & expiry", "Production history", "Stock moves"})
         End If
         cboView.SelectedIndex = 0
 
@@ -44,6 +49,11 @@ Public Class ucInventory
         toolbar.Controls.Add(txtSearch)
         toolbar.Controls.Add(btnProduction)
         toolbar.Controls.Add(btnAddItem)
+        If Not Buys Then toolbar.Controls.Add(btnMoveStock)
+        If isAdmin AndAlso Not Buys Then
+            toolbar.Controls.Add(btnEditProduction)
+            toolbar.Controls.Add(btnDeleteProduction)
+        End If
         If isAdmin Then toolbar.Controls.Add(btnEditPrices)
         toolbar.Controls.Add(btnLabel)
         If isAdmin Then toolbar.Controls.Add(btnSerials)
@@ -73,7 +83,17 @@ Public Class ucInventory
         AddHandler btnAddItem.Click, AddressOf btnAddItem_Click
         AddHandler btnProduction.Click, AddressOf btnProduction_Click
         AddHandler btnEditPrices.Click, Sub(s, e) EditPrices()
-        AddHandler grid.Grid.CellDoubleClick, Sub(s, e) If isAdmin Then EditPrices()
+        AddHandler btnMoveStock.Click, Sub(s, e)
+                                           Using f As New frmMoveStock(currentUserId)
+                                               If f.ShowDialog(FindForm()) = DialogResult.OK Then LoadGrid()
+                                           End Using
+                                       End Sub
+        AddHandler btnEditProduction.Click, Sub(s, e) EditProductionEntry()
+        AddHandler btnDeleteProduction.Click, Sub(s, e) DeleteProductionEntry()
+        AddHandler grid.Grid.CellDoubleClick, Sub(s, e)
+                                                  If Not isAdmin Then Return
+                                                  If OnProductionHistory Then EditProductionEntry() Else EditPrices()
+                                              End Sub
         AddHandler btnExport.Click, Sub(s, e) AppUI.ExportCsv(grid.AllRows(), "inventory", FindForm())
         AddHandler btnExportXlsx.Click, Sub(s, e) Exporter.SaveExcel(grid.AllRows(), "Inventory", Company.Current.FilePrefix & "_inventory", FindForm())
         AddHandler btnDelete.Click, AddressOf btnDelete_Click
@@ -86,7 +106,9 @@ Public Class ucInventory
                                      End Sub
         AddHandler grid.Grid.SelectionChanged, Sub(s, e)
                                               Dim has = grid.Grid.SelectedRows.Count > 0
-                                              btnDelete.Enabled = has
+                                              btnDelete.Enabled = has AndAlso grid.Grid.Columns.Contains("ProductID")
+                                              btnEditProduction.Enabled = has AndAlso OnProductionHistory
+                                              btnDeleteProduction.Enabled = has AndAlso OnProductionHistory
                                               btnEditPrices.Enabled = has AndAlso cboView.SelectedIndex = 0
                                               btnLabel.Enabled = has AndAlso ByProduct
                                           End Sub
@@ -97,6 +119,12 @@ Public Class ucInventory
     Private ReadOnly Property ByProduct As Boolean
         Get
             Return cboView.SelectedIndex = 0
+        End Get
+    End Property
+
+    Private ReadOnly Property OnProductionHistory As Boolean
+        Get
+            Return Not Buys AndAlso cboView.SelectedIndex = 2 AndAlso grid.Grid.Columns.Contains("MovementID")
         End Get
     End Property
 
@@ -171,13 +199,26 @@ Public Class ucInventory
         ElseIf cboView.SelectedIndex = 2 Then
             ' What was produced, when, and by whom — newest first.
             table = DataAccess.GetTable(
-                "SELECT sm.MovementDate AS ProducedOn, p.SKU, p.Name AS Product, cat.Name AS Category, " &
+                "SELECT sm.MovementID, sm.MovementDate AS ProducedOn, p.SKU, p.Name AS Product, cat.Name AS Category, " &
                 "w.Name AS Warehouse, sm.Quantity AS QtyProduced, p.Unit, ISNULL(u.FullName, '') AS RecordedBy " &
                 "FROM StockMovements sm JOIN Products p ON p.ProductID = sm.ProductID " &
                 "JOIN Categories cat ON cat.CategoryID = p.CategoryID " &
                 "JOIN Warehouses w ON w.WarehouseID = sm.WarehouseID " &
                 "LEFT JOIN Users u ON u.UserID = sm.UserID " &
                 "WHERE sm.ReferenceType = 'Production' AND (p.Name LIKE @s OR p.SKU LIKE @s) " &
+                "ORDER BY sm.MovementDate DESC, sm.MovementID DESC",
+                New Dictionary(Of String, Object) From {{"@s", search}})
+            grid.Bind(table, hiddenColumns:={"MovementID"})
+        ElseIf cboView.SelectedIndex = 3 Then
+            ' Moves between warehouses, newest first (one row per move: its IN side).
+            table = DataAccess.GetTable(
+                "SELECT sm.MovementDate AS MovedOn, p.SKU, p.Name AS Product, wf.Name AS FromWarehouse, wt.Name AS ToWarehouse, " &
+                "sm.Quantity AS QtyMoved, p.Unit, ISNULL(u.FullName, '') AS MovedBy " &
+                "FROM StockMovements sm JOIN Products p ON p.ProductID = sm.ProductID " &
+                "JOIN Warehouses wt ON wt.WarehouseID = sm.WarehouseID " &
+                "LEFT JOIN Warehouses wf ON wf.WarehouseID = sm.ReferenceID " &
+                "LEFT JOIN Users u ON u.UserID = sm.UserID " &
+                "WHERE sm.ReferenceType = 'Transfer' AND sm.MovementType = 'IN' AND (p.Name LIKE @s OR p.SKU LIKE @s) " &
                 "ORDER BY sm.MovementDate DESC, sm.MovementID DESC",
                 New Dictionary(Of String, Object) From {{"@s", search}})
             grid.Bind(table)
@@ -225,6 +266,30 @@ Public Class ucInventory
                 LoadGrid()
             End If
         End Using
+    End Sub
+
+    Private Sub EditProductionEntry()
+        If Not isAdmin OrElse grid.Grid.SelectedRows.Count = 0 OrElse Not OnProductionHistory Then Return
+        Dim id = CInt(grid.Grid.SelectedRows(0).Cells("MovementID").Value)
+        Using f As New frmEditProduction(id, currentUserId)
+            If f.ShowDialog(FindForm()) = DialogResult.OK Then LoadGrid()
+        End Using
+    End Sub
+
+    Private Sub DeleteProductionEntry()
+        If Not isAdmin OrElse grid.Grid.SelectedRows.Count = 0 OrElse Not OnProductionHistory Then Return
+        Dim row = grid.Grid.SelectedRows(0)
+        Dim id = CInt(row.Cells("MovementID").Value)
+        Dim msg = $"Delete this production entry — {Convert.ToInt32(row.Cells("QtyProduced").Value):#,0} of {row.Cells("Product").Value} " &
+                  $"into {row.Cells("Warehouse").Value}? That quantity comes back off the warehouse stock."
+        If Not AppUI.Confirm(FindForm(), msg, "Delete production entry", "Delete", danger:=True) Then Return
+        Dim err = Stock.CorrectProduction(id, 0, Date.Today, currentUserId)
+        If err <> "" Then
+            AppUI.Toast("Could not delete: " & err, AppUI.ToastKind.Error)
+            Return
+        End If
+        AppUI.Toast("Production entry deleted.", AppUI.ToastKind.Success)
+        LoadGrid()
     End Sub
 
     Private Sub btnDelete_Click(sender As Object, e As EventArgs)

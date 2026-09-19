@@ -92,6 +92,7 @@ Public Class frmProduction
             Return
         End If
         AppUI.Toast($"Added {qty:#,0} to stock — produced {producedOn:dd MMM yyyy}.", AppUI.ToastKind.Success)
+        Anim.SuccessTick(If(Owner, Me), "Production added")
         DialogResult = DialogResult.OK
         Close()
     End Sub

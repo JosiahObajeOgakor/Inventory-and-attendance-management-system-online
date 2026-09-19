@@ -100,17 +100,19 @@ Public Module UiHelpers
         }
         inner.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         inner.RowStyles.Add(New RowStyle(SizeType.AutoSize))
-        inner.Controls.Add(New Label() With {
+        Dim lblTitle As New Label() With {
             .Text = title.ToUpperInvariant(), .AutoSize = True, .Tag = "keepfont",
             .ForeColor = Theme.Current.TextMuted, .Margin = New Padding(0, 0, 0, 6),
             .Font = New Font("Segoe UI", Math.Max(8, Theme.BaseFontSize - 3), FontStyle.Regular)
-        }, 0, 0)
-        inner.Controls.Add(New Label() With {
+        }
+        Dim lblValue As New Label() With {
             .Text = value, .AutoSize = True, .Tag = "keepfont",
             .ForeColor = If(accent.HasValue, accent.Value, Theme.Current.TextPrimary),
             .Margin = New Padding(0),
             .Font = New Font("Segoe UI", Theme.BaseFontSize + 5, FontStyle.Bold)
-        }, 0, 1)
+        }
+        inner.Controls.Add(lblTitle, 0, 0)
+        inner.Controls.Add(lblValue, 0, 1)
 
         ' Hairline border + subtle top accent stripe.
         Dim frame As New TableLayoutPanel() With {
@@ -120,9 +122,13 @@ Public Module UiHelpers
         }
         frame.RowStyles.Add(New RowStyle(SizeType.Absolute, 3))
         frame.RowStyles.Add(New RowStyle(SizeType.AutoSize))
-        frame.Controls.Add(New Panel() With {.Height = 3, .Dock = DockStyle.Fill,
-            .BackColor = If(accent.HasValue, accent.Value, Theme.Current.Primary)}, 0, 0)
+        Dim stripeHost As New Panel() With {.Height = 3, .Dock = DockStyle.Fill, .Margin = New Padding(0), .BackColor = Theme.Current.Surface}
+        Dim stripe As New Panel() With {.Dock = DockStyle.Fill, .BackColor = If(accent.HasValue, accent.Value, Theme.Current.Primary)}
+        stripeHost.Controls.Add(stripe)
+        frame.Controls.Add(stripeHost, 0, 0)
         frame.Controls.Add(inner, 0, 1)
+        ' Stripe sweeps in, text fades up, the figure counts up.
+        Anim.RevealCard(frame, stripe, lblTitle, lblValue)
         Return frame
     End Function
 

@@ -13,7 +13,10 @@ Public Module Exporter
     Public Sub RunPeriodReport(owner As IWin32Window, Optional presetYear As Integer? = Nothing, Optional presetMonth As Integer? = Nothing)
         Using dlg As New PeriodDialog(presetYear, presetMonth)
             If dlg.ShowDialog(owner) <> DialogResult.OK Then Return
-            Dim sheets = BuildReport(dlg.SelectedYear, dlg.SelectedMonth)
+            Dim sheets As Dictionary(Of String, DataTable)
+            Using Anim.Busy("Building report…")
+                sheets = BuildReport(dlg.SelectedYear, dlg.SelectedMonth)
+            End Using
             Dim label = AppInfo.PeriodLabel(dlg.SelectedYear, dlg.SelectedMonth)
             Dim baseName = Company.Current.FilePrefix & "_report_" &
                 If(dlg.SelectedMonth.HasValue, $"{dlg.SelectedYear:0000}-{dlg.SelectedMonth.Value:00}", $"{dlg.SelectedYear:0000}")
@@ -92,7 +95,7 @@ Public Module Exporter
         Using sfd As New SaveFileDialog() With {.Filter = "Excel workbook (*.xlsx)|*.xlsx", .FileName = baseName & ".xlsx"}
             If sfd.ShowDialog(owner) <> DialogResult.OK Then Return
             Try
-                Using wb As New XLWorkbook()
+                Using busy = Anim.Busy("Saving Excel file…"), wb As New XLWorkbook()
                     For Each kv In sheets
                         Dim ws = wb.Worksheets.Add(SafeSheetName(kv.Key))
                         If kv.Value Is Nothing OrElse kv.Value.Columns.Count = 0 Then
