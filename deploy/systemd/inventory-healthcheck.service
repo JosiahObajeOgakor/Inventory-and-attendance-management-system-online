@@ -1,0 +1,8 @@
+[Unit]
+Description=Inventory health check
+
+[Service]
+Type=oneshot
+User=inventory-backup
+Group=inventory-backup
+ExecStart=/usr/local/bin/inventory-health-check

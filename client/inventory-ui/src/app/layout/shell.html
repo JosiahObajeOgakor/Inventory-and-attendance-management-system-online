@@ -1,0 +1,87 @@
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="frame" [class.nav-open]="navOpen()">
+  <aside class="rail" aria-label="Main">
+    <div class="brand">
+      @if (logoSrc()) { <span class="logo" data-no-i18n><img [src]="logoSrc()" [alt]="auth.companyName() + ' logo'" (error)="logoFailed()" /></span> }
+      <span class="txt">
+        <span class="eyebrow">Stock desk</span>
+        <span class="name display">{{ auth.companyName() }}</span>
+      </span>
+    </div>
+
+    <nav>
+      @for (g of groups(); track g.title) {
+        <div class="group" [class.open]="isOpen(g)">
+          <button type="button" class="ghead" [attr.aria-expanded]="isOpen(g)" [attr.aria-controls]="'grp-' + g.title" (click)="toggle(g)">
+            <app-icon [name]="g.icon" [size]="18" />
+            <span class="gt">{{ g.title }}</span>
+            <span class="count-badge">{{ g.items.length }}</span>
+            <app-icon name="chevron" [size]="16" class="chev" />
+          </button>
+          <div class="items" [id]="'grp-' + g.title" [attr.inert]="isOpen(g) ? null : ''">
+            <div class="inner">
+              @for (i of g.items; track i.path) {
+                <a [routerLink]="i.path" routerLinkActive="active" (click)="go()">
+                  <app-icon [name]="i.icon" [size]="18" />
+                  <span>{{ i.label }}</span>
+                </a>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </nav>
+
+    <div class="rail-foot">
+      <span class="eyebrow">Signed in as</span>
+      <strong>{{ auth.me()?.fullName }}</strong>
+      <span class="role">{{ auth.isAdmin() ? 'Administrator' : 'Warehouse clerk' }}</span>
+    </div>
+  </aside>
+  @if (navOpen()) { <button type="button" class="scrim" (click)="navOpen.set(false)" aria-label="Close menu"></button> }
+
+  <div class="main">
+    <header class="topbar no-print">
+      <button type="button" class="btn btn-quiet btn-icon menu-btn" (click)="navOpen.set(true)" aria-label="Open menu"><app-icon name="menu" /></button>
+
+      @if ((auth.me()?.companies?.length ?? 0) > 1) {
+        <div class="switch" role="group" aria-label="Business">
+          @for (c of auth.me()!.companies; track c.key) {
+            <button type="button" [attr.data-co]="c.key" [class.on]="c.key === auth.company()" [attr.aria-pressed]="c.key === auth.company()" (click)="switchTo(c.key)">{{ c.displayName }}</button>
+          }
+        </div>
+      }
+
+      <div class="grow"></div>
+
+      <div class="user">
+        <button type="button" class="avatar" (click)="menuOpen.set(!menuOpen())" [attr.aria-expanded]="menuOpen()" aria-haspopup="menu" aria-label="Account menu">{{ initials() }}</button>
+        @if (menuOpen()) {
+          <div class="menu card" role="menu">
+            <div class="who"><strong>{{ auth.me()?.fullName }}</strong><span class="muted">{{ auth.me()?.username }}</span></div>
+            <a role="menuitem" routerLink="/appearance" (click)="menuOpen.set(false)">Appearance</a>
+            <button type="button" role="menuitem" (click)="toggleLanguage()">{{ i18n.code() === 'ig' ? 'English' : 'Igbo' }}</button>
+            <a role="menuitem" routerLink="/change-password" (click)="menuOpen.set(false)">Change my password</a>
+            <button type="button" role="menuitem" (click)="signOut()"><app-icon name="logout" [size]="17" /> Sign out</button>
+          </div>
+        }
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1"><router-outlet /></main>
+  </div>
+</div>
+
+<app-modal [open]="idle.warning()" heading="Still there?" (closed)="idle.stay()">
+  <p>You’ve been idle for a while. For security, administrator sessions sign out automatically.</p>
+  <p class="count mono">{{ countdown() }}</p>
+  <ng-container modal-actions>
+    <button type="button" class="btn" (click)="signOut()">Sign out now</button>
+    <button type="button" class="btn btn-primary" (click)="idle.stay()">Stay signed in</button>
+  </ng-container>
+</app-modal>
+
+@if (checkinOpen()) { <app-clerk-welcome [name]="auth.me()?.fullName ?? ''" [busy]="checkingIn()" (clockIn)="checkIn()" (notNow)="notNow()" /> }
+
+<app-assistant />

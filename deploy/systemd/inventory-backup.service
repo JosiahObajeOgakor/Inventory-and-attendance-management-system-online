@@ -1,0 +1,11 @@
+[Unit]
+Description=Inventory MySQL backup (encrypted, off-VM)
+After=mysql.service
+
+[Service]
+Type=oneshot
+User=inventory-backup
+Group=inventory-backup
+ExecStart=/usr/local/bin/inventory-backup
+# OCI CLI reads its config from the backup user's ~/.oci (an API key limited to the backup bucket).
+Nice=10

@@ -9,3 +9,15 @@ installer/output/
 .vs/
 *.user
 *.suo
+
+# New stack
+node_modules/
+dist/
+.angular/
+*.env
+.env*
+!.env.example
+appsettings.Production.json
+TestResults/
+
+.dev/

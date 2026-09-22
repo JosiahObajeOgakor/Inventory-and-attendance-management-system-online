@@ -1,0 +1,33 @@
+[Unit]
+Description=Inventory API (ASP.NET Core)
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=inventory
+Group=inventory
+WorkingDirectory=/opt/inventory/api
+ExecStart=/opt/inventory/api/Inventory.Api
+# Holds ConnectionStrings__Default and (only while creating the first admin) Setup__Token. root-owned, mode 600.
+EnvironmentFile=/etc/inventory/api.env
+Restart=always
+RestartSec=5
+# Kestrel listens on loopback only; NGINX is the public entry point.
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=DOTNET_gcServer=0
+Environment=DOTNET_GCHeapHardLimit=0x20000000
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/log/inventory
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

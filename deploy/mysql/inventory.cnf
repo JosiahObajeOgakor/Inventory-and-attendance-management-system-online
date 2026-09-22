@@ -1,0 +1,20 @@
+# /etc/mysql/mysql.conf.d/inventory.cnf
+[mysqld]
+# MySQL is reachable ONLY from this machine. Nothing here or in the firewall exposes 3306.
+bind-address            = 127.0.0.1
+mysqlx                  = OFF
+skip-name-resolve
+local_infile            = 0
+
+character-set-server    = utf8mb4
+collation-server        = utf8mb4_0900_as_ci
+
+# Small footprint: the VM has 12 GB shared with the API and NGINX.
+innodb_buffer_pool_size = 1G
+max_connections         = 60
+innodb_flush_log_at_trx_commit = 1
+sync_binlog             = 1
+# Concurrency: locks wait 10 s (then the API's deadlock/lock-wait retry takes over).
+innodb_lock_wait_timeout = 10
+# Binary logs give point-in-time recovery between the daily dumps; keep 7 days.
+binlog_expire_logs_seconds = 604800
