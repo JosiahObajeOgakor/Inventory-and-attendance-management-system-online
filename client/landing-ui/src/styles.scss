@@ -1,0 +1,84 @@
+// Chewy Pet — landing page design tokens.
+// Palette is sampled from the real packaging (violet linework, gold-foil premium bag,
+// orange wordmark) rather than a generic dark+single-accent scheme.
+// Font files themselves are loaded via angular.json's "styles" array (plain CSS, see @fontsource/*).
+
+:root {
+  // Ink
+  --ink: #170b22;
+  --ink-2: #221030;
+  --ink-3: #2d1640;
+
+  // Brand
+  --violet: #8a2be2;
+  --violet-bright: #a855f7;
+  --violet-deep: #4b1876;
+  --orange: #f4801e;
+  --orange-bright: #ff9d3d;
+
+  // Tag / paper
+  --cream: #fbf1e4;
+  --cream-dim: #e8dcc8;
+  --kibble: #8b5a2b;
+
+  // Functional
+  --whatsapp: #25d366;
+  --whatsapp-dark: #1da851;
+
+  --font-display: 'Fredoka', ui-rounded, system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+
+  --max: 1180px;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  margin: 0;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+p { margin: 0; }
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img, video { max-width: 100%; display: block; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 3px solid var(--orange-bright);
+  outline-offset: 3px;
+}

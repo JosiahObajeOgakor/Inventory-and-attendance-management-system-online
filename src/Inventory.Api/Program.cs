@@ -45,6 +45,9 @@ builder.Services.AddSingleton<Inventory.Infrastructure.Localization.LanguageCata
 builder.Services.Configure<Inventory.Infrastructure.Maintenance.ArchiveOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Maintenance.ArchiveOptions.Section));
 builder.Services.AddScoped<Inventory.Infrastructure.Maintenance.ArchiveService>();
 builder.Services.Configure<Inventory.Application.Ai.AiOptions>(builder.Configuration.GetSection(Inventory.Application.Ai.AiOptions.Section));
+builder.Services.Configure<Inventory.Application.SalesAssistant.SalesAssistantOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.SalesAssistantOptions.Section));
+builder.Services.Configure<Inventory.Infrastructure.WhatsApp.WhatsAppOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.WhatsApp.WhatsAppOptions.Section));
+builder.Services.AddHttpClient<Inventory.Application.Messaging.IWhatsAppSender, Inventory.Infrastructure.WhatsApp.MetaWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Inventory.Application.Email.SmtpOptions>(builder.Configuration.GetSection(Inventory.Application.Email.SmtpOptions.Section));
 builder.Services.AddHttpClient<Inventory.Application.Ai.IChatModel, Inventory.Infrastructure.Ai.OpenAiChatModel>(c => c.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<Inventory.Application.Ai.IAiUsageStore, Inventory.Infrastructure.Ai.AiUsageStore>();
@@ -91,6 +94,13 @@ builder.Services.AddRateLimiter(o =>
     o.AddPolicy(Policies.AuthRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:LoginPerMinute", 10), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // Meta's webhook calls all arrive from its own servers, not the customer's IP, so this only guards against a flood/misconfiguration —
+    // the real per-customer limit is SalesAssistantOptions.DailyMessagesPerConversation, enforced inside SalesAssistantService.
+    o.AddPolicy(Policies.WhatsAppRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("whatsapp",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    o.AddPolicy(Policies.WebChatRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never);

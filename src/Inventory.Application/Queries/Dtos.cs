@@ -12,7 +12,8 @@ public sealed record PageRequest(int Page = 1, int PageSize = 25, string? Search
 /// <summary>CostPrice is null for clerks: cost/profit is admin-only and enforced here, not in the UI.</summary>
 public sealed record ProductDto(int Id, string Sku, string Name, int CategoryId, string Category, string Unit, int ReorderLevel,
     decimal? CostPrice, decimal PriceDistributor, decimal PriceWholesaler, decimal PriceRetail, string? Barcode, bool TracksSerial,
-    bool IsActive, int TotalQuantity);
+    bool IsActive, int TotalQuantity, string? Species = null, string? LifeStage = null, decimal? ProteinPct = null,
+    decimal? FatPct = null, decimal? FiberPct = null, decimal? MoisturePct = null, string? NutritionSummary = null);
 
 public sealed record CategoryDto(int Id, string Name);
 public sealed record WarehouseDto(int Id, string Name, string? Location);

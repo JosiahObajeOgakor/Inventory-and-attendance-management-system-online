@@ -39,6 +39,8 @@ public interface IBusinessDbContext
     DbSet<ProductSerial> ProductSerials { get; }
     DbSet<PriceChange> PriceChanges { get; }
     DbSet<PaymentLink> PaymentLinks { get; }
+    DbSet<ChatConversation> ChatConversations { get; }
+    DbSet<ChatLogMessage> ChatMessages { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
@@ -72,6 +74,8 @@ public interface ICompanyContext
     bool HasPriceLists { get; }
     /// <summary>Candid buys what it sells (no production runs); ChewyPets produces.</summary>
     bool BuysGoods { get; }
+    /// <summary>The warehouse the sales assistant fulfills online orders from (config-set; 0 means unconfigured).</summary>
+    int DefaultWarehouseId { get; }
     IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks { get; }
 }
 

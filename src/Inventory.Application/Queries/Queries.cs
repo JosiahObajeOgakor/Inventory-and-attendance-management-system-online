@@ -47,7 +47,8 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
 
     private static ProductDto ToDto(Domain.Entities.Product p, string category, int qty, bool isAdmin) =>
         new(p.Id, p.Sku, p.Name, p.CategoryId, category, p.Unit, p.ReorderLevel, isAdmin ? p.CostPrice : null, p.PriceDistributor,
-            p.PriceWholesaler, p.PriceRetail, p.Barcode, p.TracksSerial, p.IsActive, qty);
+            p.PriceWholesaler, p.PriceRetail, p.Barcode, p.TracksSerial, p.IsActive, qty,
+            p.Species, p.LifeStage, p.ProteinPct, p.FatPct, p.FiberPct, p.MoisturePct, p.NutritionSummary);
 
     public Task<List<CategoryDto>> CategoriesAsync(CancellationToken ct) =>
         db.Categories.AsNoTracking().OrderBy(c => c.Name).Select(c => new CategoryDto(c.Id, c.Name)).ToListAsync(ct);

@@ -36,6 +36,16 @@ public class Product
     public bool TracksSerial { get; set; }
     public bool IsActive { get; set; } = true;
 
+    // Nutrition facts, filled in by an admin when known — used by the sales assistant's product Q&A
+    // and nutrition-guidance tool. All optional: the assistant degrades to generic guidance when unset.
+    public string? Species { get; set; }
+    public string? LifeStage { get; set; }
+    public decimal? ProteinPct { get; set; }
+    public decimal? FatPct { get; set; }
+    public decimal? FiberPct { get; set; }
+    public decimal? MoisturePct { get; set; }
+    public string? NutritionSummary { get; set; }
+
     public decimal PriceFor(string tier) => tier switch
     {
         PriceTiers.Distributor => PriceDistributor,

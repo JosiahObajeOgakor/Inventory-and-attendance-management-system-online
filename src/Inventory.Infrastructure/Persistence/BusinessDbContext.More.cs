@@ -54,6 +54,7 @@ public partial class BusinessDbContext
             e.HasIndex(x => x.QuotationNumber).IsUnique();
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.ConvertedInvoiceId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Warehouse>().WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.QuotationId).OnDelete(DeleteBehavior.Restrict);
         });
         b.Entity<QuotationItem>(e =>
@@ -165,6 +166,27 @@ public partial class BusinessDbContext
             e.Property(x => x.ChangedAt).HasPrecision(6);
             e.HasIndex(x => new { x.ProductId, x.ChangedAt });
             e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<ChatConversation>(e =>
+        {
+            e.ToTable("chat_conversations");
+            e.Property(x => x.Channel).HasMaxLength(10).IsRequired();
+            e.Property(x => x.ExternalId).HasMaxLength(100).IsRequired();
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.LastMessageAt).HasPrecision(6);
+            e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
+            e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Quotation>().WithMany().HasForeignKey(x => x.QuotationId).OnDelete(DeleteBehavior.Restrict);
+        });
+        b.Entity<ChatLogMessage>(e =>
+        {
+            e.ToTable("chat_messages");
+            e.Property(x => x.Role).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.ConversationId, x.CreatedAt });
+            e.HasOne<ChatConversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

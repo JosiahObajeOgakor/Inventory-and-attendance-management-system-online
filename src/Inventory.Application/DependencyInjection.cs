@@ -52,6 +52,13 @@ public static class DependencyInjection
         s.AddScoped<Ai.InsightService>();
         s.AddScoped<Email.DocumentEmailService>();
         s.AddScoped<Payments.PaymentLinkService>();
+        s.AddScoped<Payments.PaymentFollowUpService>();
+        s.AddScoped<SalesAssistant.CustomerLookupService>();
+        s.AddScoped<SalesAssistant.ChatConversationService>();
+        s.AddScoped<SalesAssistant.WebhookDedupService>();
+        s.AddScoped<SalesAssistant.SalesAssistantToolbox>();
+        s.AddScoped<SalesAssistant.VetGuidanceService>();
+        s.AddScoped<SalesAssistant.SalesAssistantService>();
         return s;
     }
 }

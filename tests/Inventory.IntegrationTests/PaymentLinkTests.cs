@@ -1,5 +1,7 @@
+using Inventory.Application.Common;
 using Inventory.Application.Payments;
 using Inventory.Application.Sales;
+using Inventory.Application.Trade;
 using Inventory.Domain.Entities;
 using Inventory.Infrastructure.Payments;
 using Inventory.Infrastructure.Persistence;
@@ -38,7 +40,7 @@ public class PaymentLinkTests(MySqlFixture mysql)
     private static PaymentLinkService Svc(BusinessDbContext db, IPaymentGateway g, IAdminNotifier n)
     {
         var clock = new SystemClock();
-        return new PaymentLinkService(db, Wire.Tx(db), clock, Wire.Co(), g, n, new CustomerPaymentService(db, Wire.Tx(db), clock));
+        return new PaymentLinkService(db, Wire.Tx(db), clock, Wire.Co(), g, n, new CustomerPaymentService(db, Wire.Tx(db), clock), Wire.Quotes(db));
     }
 
     private async Task<(string Cs, Seed Seed, int InvoiceId)> Invoice(decimal paid = 0)
@@ -167,19 +169,64 @@ public class PaymentLinkTests(MySqlFixture mysql)
     }
 
     [Fact]
-    public async Task A_paid_quotation_is_recorded_and_announced_without_touching_any_ledger()
+    public async Task A_paid_quotation_converts_to_a_sale_deducts_stock_and_announces_it()
     {
         var cs = await mysql.NewSchemaAsync();
-        var seed = await SeedAsync(cs, stock: 5);
+        var seed = await SeedAsync(cs, stock: 10);
+        int quotationId; decimal total;
+        await using (var db = NewContext(cs))
+        {
+            var q = await Wire.Quotes(db).CreateAsync(new QuoteRequest { CustomerId = seed.CustomerId, VatRate = 0, Lines = [new SaleLineDto { ProductId = seed.ProductId, Quantity = 3, UnitPrice = 11500 }] }, Clerk);
+            quotationId = q.Id; total = q.Total;
+            // The assistant sets the fulfilment warehouse when it creates a quotation; a plain manual quotation (as here) doesn't, so set it directly for the test.
+            await db.Quotations.Where(x => x.Id == quotationId).ExecuteUpdateAsync(u => u.SetProperty(x => x.WarehouseId, seed.WarehouseId));
+        }
+
         var gw = new FakeGateway(); var note = new RecordingNotifier();
         string reference;
-        await using (var db = NewContext(cs)) reference = (await Svc(db, gw, note).GetOrCreateAsync("Quotation", 7, "Q-7", 27190.5m, null, "PetMart", default))!.Reference;
-        gw.Verification = new GatewayVerification(true, 2_719_050, "NGN", "ussd");
-        await using (var db = NewContext(cs)) await Svc(db, gw, note).SettleAsync(reference, default);
+        await using (var db = NewContext(cs)) reference = (await Svc(db, gw, note).GetOrCreateAsync("Quotation", quotationId, "Q-1", total, null, "PetMart", default))!.Reference;
+        gw.Verification = new GatewayVerification(true, (long)Math.Round(total * 100m), "NGN", "ussd");
+        await using (var db = NewContext(cs)) Assert.True((await Svc(db, gw, note).SettleAsync(reference, default)).Applied);
+
         await using var check = NewContext(cs);
+        var quote = await check.Quotations.SingleAsync();
+        Assert.Equal(QuotationStatuses.Converted, quote.Status);
+        Assert.NotNull(quote.ConvertedInvoiceId);
+        Assert.Equal(7, await check.StockBatches.SumAsync(b => b.QuantityOnHand));   // 10 on hand - 3 sold
+        var invoice = await check.Invoices.SingleAsync();
+        Assert.Equal(("Paid", total), (invoice.Status, invoice.AmountPaid));
+        Assert.Equal("Paystack", (await check.Payments.SingleAsync()).Method);
         Assert.Equal(0m, (await check.Customers.SingleAsync()).Balance);
-        Assert.Empty(await check.Payments.ToListAsync());
-        Assert.Contains("Quotation Q-7", Assert.Single(note.Sent).Message);
+        var sent = Assert.Single(note.Sent);
+        Assert.Contains("Converted to a sale", sent.Message);
+
+        // Same idempotency guarantee as an invoice payment: a retried webhook must not convert the quotation twice.
+        await using (var db = NewContext(cs)) Assert.True((await Svc(db, gw, note).SettleAsync(reference, default)).AlreadySettled);
+        await using var again = NewContext(cs);
+        Assert.Single(await again.Invoices.ToListAsync());
+        Assert.Single(note.Sent);
+    }
+
+    [Fact]
+    public async Task A_quotation_payment_is_refused_when_no_warehouse_is_configured()
+    {
+        var cs = await mysql.NewSchemaAsync();
+        var seed = await SeedAsync(cs, stock: 10);
+        int quotationId; decimal total;
+        await using (var db = NewContext(cs))
+        {
+            // No WarehouseId set on the quotation, and Wire.Co() has no DefaultWarehouseId either.
+            var q = await Wire.Quotes(db).CreateAsync(new QuoteRequest { CustomerId = seed.CustomerId, VatRate = 0, Lines = [new SaleLineDto { ProductId = seed.ProductId, Quantity = 1, UnitPrice = 11500 }] }, Clerk);
+            quotationId = q.Id; total = q.Total;
+        }
+        var gw = new FakeGateway(); var note = new RecordingNotifier();
+        string reference;
+        await using (var db = NewContext(cs)) reference = (await Svc(db, gw, note).GetOrCreateAsync("Quotation", quotationId, "Q-2", total, null, "PetMart", default))!.Reference;
+        gw.Verification = new GatewayVerification(true, (long)Math.Round(total * 100m), "NGN", "ussd");
+        await using (var db = NewContext(cs)) await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db, gw, note).SettleAsync(reference, default));
+        await using var check = NewContext(cs);
+        Assert.Equal(QuotationStatuses.Open, (await check.Quotations.SingleAsync()).Status);
+        Assert.Equal(10, await check.StockBatches.SumAsync(b => b.QuantityOnHand));
     }
 
     [Fact]

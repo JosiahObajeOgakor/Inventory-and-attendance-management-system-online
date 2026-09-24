@@ -20,6 +20,15 @@ public sealed class ProductInput
     public decimal PriceRetail { get; set; }
     public string? Barcode { get; set; }
     public bool TracksSerial { get; set; }
+
+    // Nutrition facts — optional, read by the sales assistant's product Q&A and nutrition-guidance tool.
+    public string? Species { get; set; }
+    public string? LifeStage { get; set; }
+    public decimal? ProteinPct { get; set; }
+    public decimal? FatPct { get; set; }
+    public decimal? FiberPct { get; set; }
+    public decimal? MoisturePct { get; set; }
+    public string? NutritionSummary { get; set; }
 }
 
 public sealed class NewProductRequest
@@ -69,6 +78,8 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
                 Sku = p.Sku.Trim(), Name = p.Name.Trim(), CategoryId = p.CategoryId, Unit = p.Unit.Trim(), ReorderLevel = p.ReorderLevel,
                 CostPrice = p.CostPrice, PriceDistributor = p.PriceDistributor, PriceWholesaler = p.PriceWholesaler,
                 PriceRetail = p.PriceRetail, SellingPrice = p.PriceRetail, Barcode = barcode, TracksSerial = p.TracksSerial,
+                Species = p.Species, LifeStage = p.LifeStage, ProteinPct = p.ProteinPct, FatPct = p.FatPct,
+                FiberPct = p.FiberPct, MoisturePct = p.MoisturePct, NutritionSummary = p.NutritionSummary,
             };
             db.Products.Add(product);
             await db.SaveChangesAsync(inner);
@@ -105,6 +116,8 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         p.ReorderLevel = input.ReorderLevel; p.CostPrice = input.CostPrice; p.PriceDistributor = input.PriceDistributor;
         p.PriceWholesaler = input.PriceWholesaler; p.PriceRetail = input.PriceRetail; p.SellingPrice = input.PriceRetail;
         p.Barcode = barcode; p.TracksSerial = input.TracksSerial;
+        p.Species = input.Species; p.LifeStage = input.LifeStage; p.ProteinPct = input.ProteinPct; p.FatPct = input.FatPct;
+        p.FiberPct = input.FiberPct; p.MoisturePct = input.MoisturePct; p.NutritionSummary = input.NutritionSummary;
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_UPDATED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
         await db.SaveChangesAsync(ct);
     }

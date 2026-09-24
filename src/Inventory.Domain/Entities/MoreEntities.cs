@@ -69,6 +69,8 @@ public class Quotation
     public int? ConvertedInvoiceId { get; set; }
     public int CreatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
+    /// <summary>The warehouse to fulfill from once converted — set by the sales assistant; a human converting manually still picks one explicitly.</summary>
+    public int? WarehouseId { get; set; }
     public List<QuotationItem> Items { get; set; } = [];
 }
 

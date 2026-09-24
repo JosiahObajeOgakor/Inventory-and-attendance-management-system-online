@@ -10,6 +10,8 @@ public static class Policies
     public const string Admin = "Admin";
     public const string Staff = "Staff";
     public const string AuthRateLimit = "auth";
+    public const string WhatsAppRateLimit = "whatsapp";
+    public const string WebChatRateLimit = "webchat";
 }
 
 /// <summary>
@@ -25,8 +27,10 @@ public sealed class CsrfHeaderMiddleware(RequestDelegate next)
     {
         var m = ctx.Request.Method;
         var unsafeMethod = !(HttpMethods.IsGet(m) || HttpMethods.IsHead(m) || HttpMethods.IsOptions(m));
-        // The payment webhook is called by Paystack's servers, which cannot send our header. It is protected by an HMAC signature and by asking Paystack to confirm the payment.
-        var webhook = ctx.Request.Path.Equals("/api/paystack/webhook", StringComparison.OrdinalIgnoreCase);
+        // These webhooks are called by Paystack's/Meta's own servers, which cannot send our header. Both are protected by an HMAC signature instead
+        // (Paystack: asking it to confirm the payment too; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
+        var webhook = ctx.Request.Path.Equals("/api/paystack/webhook", StringComparison.OrdinalIgnoreCase)
+                   || ctx.Request.Path.Equals("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase);
         if (unsafeMethod && !webhook && ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers[HeaderName] != HeaderValue)
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;

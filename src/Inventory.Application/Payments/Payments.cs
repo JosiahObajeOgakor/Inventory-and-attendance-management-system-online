@@ -1,6 +1,8 @@
 using Inventory.Application.Abstractions;
 using Inventory.Application.Common;
 using Inventory.Application.Sales;
+using Inventory.Application.SalesAssistant;
+using Inventory.Application.Trade;
 using Inventory.Domain;
 using Inventory.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +12,7 @@ namespace Inventory.Application.Payments;
 public sealed record GatewayCharge(string Url, string Reference);
 public sealed record GatewayVerification(bool Success, long AmountKobo, string Currency, string? Channel);
 public sealed record PayLink(string Url, decimal Amount, string Reference);
-public sealed record SettleResult(bool Applied, bool AlreadySettled, string Message);
+public sealed record SettleResult(bool Applied, bool AlreadySettled, string Message, int? InvoiceId = null, int? CustomerId = null, string? CustomerPhone = null);
 
 /// <summary>The card / transfer / USSD processor. Implemented over Paystack in Infrastructure; the Application layer never sees a key.</summary>
 public interface IPaymentGateway
@@ -42,7 +44,7 @@ public static class PaymentDocTypes
 /// payment against the invoice exactly once, and tell the admin who paid.
 /// </summary>
 public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, IPaymentGateway gateway,
-    IAdminNotifier notifier, CustomerPaymentService payments)
+    IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations)
 {
     private static readonly TimeSpan Reuse = TimeSpan.FromHours(12);
     private static readonly CurrentUser System = new(0, "Paystack", "SYSTEM");
@@ -85,6 +87,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         var paid = v.AmountKobo / 100m;
 
         string? summary = null; var already = false;
+        int? invoiceId = null; int? custId = null; string? custPhone = null;
         await tx.RunAsync<bool>(async inner =>
         {
             var l = await db.PaymentLinks.FromSqlInterpolated($"SELECT * FROM payment_links WHERE Reference = {reference} FOR UPDATE").SingleAsync(inner);
@@ -95,13 +98,30 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(l.DocId, paid, "Paystack", System, inner);
                 if (leftover > 0) note = $" ₦{leftover:N2} more than was owed on the invoice: refund or keep as credit.";
                 if (applied == 0) note += " Nothing was owed on the invoice any more.";
+                var inv = await db.Invoices.AsNoTracking().SingleAsync(x => x.Id == l.DocId, inner);
+                invoiceId = inv.Id; custId = inv.CustomerId;
             }
-            else note = " This was paid against a quotation: convert it to a sale and record the goods.";
+            else
+            {
+                var quote = await db.Quotations.AsNoTracking().SingleAsync(x => x.Id == l.DocId, inner);
+                var warehouseId = quote.WarehouseId ?? company.DefaultWarehouseId;
+                if (warehouseId <= 0) throw new BusinessRuleException("No warehouse is configured for online sales (Companies:DefaultWarehouseId); the order could not be converted.");
+                // "Card" is the closest of SaleRequestValidator's fixed PaymentMethods to an online gateway charge; the actual
+                // processor ("Paystack") and channel (card/bank_transfer/ussd) are recorded on the Payment row and PaymentLink below.
+                var sale = await quotations.ConvertWithinAsync(l.DocId, new ConvertQuoteRequest { WarehouseId = warehouseId, PaymentMethod = "Card", PaidNow = 0 }, System, inner);
+                var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(sale.InvoiceId, paid, "Paystack", System, inner);
+                if (leftover > 0) note = $" ₦{leftover:N2} more than the total: refund or keep as credit.";
+                note += " Converted to a sale and stock has been deducted.";
+                invoiceId = sale.InvoiceId; custId = quote.CustomerId;
+            }
+            var cust = custId is int cid ? await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == cid, inner) : null;
+            custPhone = cust?.Phone;
             l.Status = PaymentLinkStatuses.Paid; l.PaidAt = clock.UtcNow; l.PaidAmount = paid; l.Channel = v.Channel;
             if (paid != l.Amount) note += $" (Link was for ₦{l.Amount:N2}.)";
             db.AuditLogs.Add(new AuditLog { UserId = null, UserName = "Paystack", Action = "ONLINE_PAYMENT", Entity = l.DocType, EntityId = l.DocId.ToString(), At = clock.UtcNow, Detail = $"{l.DocNumber} ₦{paid:N2} by {l.CustomerName} via {v.Channel ?? "Paystack"}" });
             await db.SaveChangesAsync(inner);
-            summary = $"{(l.DocType == PaymentDocTypes.Invoice ? "Invoice" : "Quotation")} {l.DocNumber} has been paid: ₦{paid:N2} from {l.CustomerName}{(v.Channel is null ? "" : " by " + v.Channel)}.{note}";
+            var waLink = string.IsNullOrWhiteSpace(custPhone) ? "" : $" Chat: https://wa.me/{CustomerLookupService.Normalize(custPhone)}";
+            summary = $"{(l.DocType == PaymentDocTypes.Invoice ? "Invoice" : "Quotation")} {l.DocNumber} has been paid: ₦{paid:N2} from {l.CustomerName}{(v.Channel is null ? "" : " by " + v.Channel)}.{note}{waLink}";
             return true;
         }, ct);
 
@@ -112,6 +132,6 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
             await db.PaymentLinks.Where(l => l.Reference == reference).ExecuteUpdateAsync(u => u.SetProperty(l => l.NotifiedAt, clock.UtcNow), ct);
         }
         catch (Exception) { /* the payment is recorded; a failed message is retried by nobody, so it stays visible as NotifiedAt = null */ }
-        return new SettleResult(true, false, summary);
+        return new SettleResult(true, false, summary, invoiceId, custId, custPhone);
     }
 }

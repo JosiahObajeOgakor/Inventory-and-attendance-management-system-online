@@ -24,6 +24,7 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     public string LegalName => string.IsNullOrWhiteSpace(Info.LegalName) ? Info.DisplayName : Info.LegalName;
     public bool HasPriceLists => Info.HasPriceLists;
     public bool BuysGoods => Info.BuysGoods;
+    public int DefaultWarehouseId => Info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
 }

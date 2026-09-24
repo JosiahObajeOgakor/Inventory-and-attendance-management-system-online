@@ -159,6 +159,8 @@ public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGa
         HttpContext.Items[RequestCompany.OverrideItem] = key;
         var result = await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>().SettleAsync(reference, ct);
         log.LogInformation("Paystack webhook: applied={Applied} already={Already}", result.Applied, result.AlreadySettled);
+        if (result.Applied)
+            await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentFollowUpService>().SendReceiptIfPossibleAsync(result, ct);
         return Ok();
     }
 }

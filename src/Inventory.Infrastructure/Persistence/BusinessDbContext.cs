@@ -39,6 +39,8 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<ProductSerial> ProductSerials => Set<ProductSerial>();
     public DbSet<PriceChange> PriceChanges => Set<PriceChange>();
     public DbSet<PaymentLink> PaymentLinks => Set<PaymentLink>();
+    public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
+    public DbSet<ChatLogMessage> ChatMessages => Set<ChatLogMessage>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
@@ -85,6 +87,11 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Barcode).HasMaxLength(64);
             foreach (var n in new[] { nameof(Product.CostPrice), nameof(Product.SellingPrice), nameof(Product.PriceDistributor), nameof(Product.PriceWholesaler), nameof(Product.PriceRetail) })
                 e.Property(n).HasPrecision(12, 2);
+            e.Property(x => x.Species).HasMaxLength(20);
+            e.Property(x => x.LifeStage).HasMaxLength(30);
+            e.Property(x => x.NutritionSummary).HasMaxLength(300);
+            foreach (var n in new[] { nameof(Product.ProteinPct), nameof(Product.FatPct), nameof(Product.FiberPct), nameof(Product.MoisturePct) })
+                e.Property(n).HasPrecision(5, 2);
             e.HasIndex(x => x.Sku).IsUnique();
             e.HasIndex(x => x.Barcode).IsUnique();   // many NULLs allowed; '' is normalised to NULL by the app/migration
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);

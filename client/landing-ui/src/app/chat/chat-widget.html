@@ -1,0 +1,50 @@
+<div class="chat">
+  <button class="chat__fab" type="button" (click)="toggle()" [attr.aria-expanded]="open()" aria-label="Chat with Chewy Pet">
+    @if (!open()) {
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4V6a2 2 0 0 1 2-2Z"/></svg>
+    } @else {
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    }
+  </button>
+
+  @if (open()) {
+    <div class="chat__panel" role="dialog" aria-label="Chat with Chewy Pet">
+      <header class="chat__header">
+        <span>Chat with Chewy Pet</span>
+        <span class="chat__hint">Real orders, real prices</span>
+      </header>
+
+      <div class="chat__body">
+        @for (b of bubbles(); track $index) {
+          <div class="chat__bubble" [class.chat__bubble--user]="b.role === 'user'">
+            <p>{{ b.text }}</p>
+            @if (b.checkoutUrl) {
+              <a class="btn btn--pay" [href]="b.checkoutUrl" target="_blank" rel="noopener">Pay now</a>
+            }
+            @if (b.quotationNumber) {
+              <span class="tag chat__quote-tag">Quote {{ b.quotationNumber }}</span>
+            }
+          </div>
+        }
+        @if (sending()) {
+          <div class="chat__bubble"><p class="chat__typing">Typing&hellip;</p></div>
+        }
+        <div #scrollAnchor></div>
+      </div>
+
+      <form class="chat__input" (ngSubmit)="send()">
+        <input
+          type="text"
+          [ngModel]="draft()"
+          (ngModelChange)="draft.set($event)"
+          name="message"
+          placeholder="Ask about a product or place an order&hellip;"
+          autocomplete="off"
+        />
+        <button type="submit" [disabled]="sending()" aria-label="Send message">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 11.5 20.5 3 15 20.5l-4-7.5-8-1.5Z"/></svg>
+        </button>
+      </form>
+    </div>
+  }
+</div>

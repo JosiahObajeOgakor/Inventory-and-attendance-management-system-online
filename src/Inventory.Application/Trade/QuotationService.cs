@@ -96,27 +96,33 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
     /// the second left an invoice while the quote still read Open. Here, if the sale is refused (say, not enough stock) the quote stays Open and nothing else changes.
     /// </summary>
     public Task<SaleResult> ConvertAsync(int id, ConvertQuoteRequest req, CurrentUser user, CancellationToken ct = default) =>
-        tx.RunAsync(async inner =>
-        {
-            var q = await db.Quotations
-                .FromSqlInterpolated($"SELECT * FROM quotations WHERE Id = {id} FOR UPDATE")
-                .Include(x => x.Items)
-                .SingleOrDefaultAsync(inner) ?? throw new NotFoundException("Quotation");
-            if (q.Status != QuotationStatuses.Open) throw new BusinessRuleException("This quotation has already been converted to a sale.");
+        tx.RunAsync(inner => ConvertOnceAsync(id, req, user, inner), ct);
 
-            var sale = new SaleRequest
-            {
-                CustomerId = q.CustomerId, PriceTier = q.PriceTier, WarehouseId = req.WarehouseId, PaymentMethod = req.PaymentMethod, DiscountPct = q.DiscountPct,
-                VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
-                Lines = q.Items.Select(i => new SaleLineDto { ProductId = i.ProductId, Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
-            };
-            var result = await sales.SaveWithinAsync(sale, user, null, inner);
-            q.Status = QuotationStatuses.Converted;
-            q.ConvertedInvoiceId = result.InvoiceId;
-            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "QUOTATION_CONVERTED", Entity = "Quotation", EntityId = q.Id.ToString(), At = clock.UtcNow, Detail = $"{q.QuotationNumber} -> {result.InvoiceNumber}" });
-            await db.SaveChangesAsync(inner);
-            return result;
-        }, ct);
+    /// <summary>Same as ConvertAsync but runs inside a transaction the caller already opened (used when settling a quotation's online payment, so "mark paid" and "deduct stock" happen atomically).</summary>
+    public Task<SaleResult> ConvertWithinAsync(int id, ConvertQuoteRequest req, CurrentUser user, CancellationToken ct = default) =>
+        ConvertOnceAsync(id, req, user, ct);
+
+    private async Task<SaleResult> ConvertOnceAsync(int id, ConvertQuoteRequest req, CurrentUser user, CancellationToken ct)
+    {
+        var q = await db.Quotations
+            .FromSqlInterpolated($"SELECT * FROM quotations WHERE Id = {id} FOR UPDATE")
+            .Include(x => x.Items)
+            .SingleOrDefaultAsync(ct) ?? throw new NotFoundException("Quotation");
+        if (q.Status != QuotationStatuses.Open) throw new BusinessRuleException("This quotation has already been converted to a sale.");
+
+        var sale = new SaleRequest
+        {
+            CustomerId = q.CustomerId, PriceTier = q.PriceTier, WarehouseId = req.WarehouseId, PaymentMethod = req.PaymentMethod, DiscountPct = q.DiscountPct,
+            VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
+            Lines = q.Items.Select(i => new SaleLineDto { ProductId = i.ProductId, Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
+        };
+        var result = await sales.SaveWithinAsync(sale, user, null, ct);
+        q.Status = QuotationStatuses.Converted;
+        q.ConvertedInvoiceId = result.InvoiceId;
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "QUOTATION_CONVERTED", Entity = "Quotation", EntityId = q.Id.ToString(), At = clock.UtcNow, Detail = $"{q.QuotationNumber} -> {result.InvoiceNumber}" });
+        await db.SaveChangesAsync(ct);
+        return result;
+    }
 
     /// <summary>Only an Open quotation can be deleted (Admin).</summary>
     public Task DeleteAsync(int id, CurrentUser user, CancellationToken ct = default) =>
