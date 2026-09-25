@@ -47,7 +47,10 @@ builder.Services.AddScoped<Inventory.Infrastructure.Maintenance.ArchiveService>(
 builder.Services.Configure<Inventory.Application.Ai.AiOptions>(builder.Configuration.GetSection(Inventory.Application.Ai.AiOptions.Section));
 builder.Services.Configure<Inventory.Application.SalesAssistant.SalesAssistantOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.SalesAssistantOptions.Section));
 builder.Services.Configure<Inventory.Infrastructure.WhatsApp.WhatsAppOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.WhatsApp.WhatsAppOptions.Section));
-builder.Services.AddHttpClient<Inventory.Application.Messaging.IWhatsAppSender, Inventory.Infrastructure.WhatsApp.MetaWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
+// Registered on the concrete type (not just the IWhatsAppSender interface) so WhatsAppController can also reach its
+// webhook-only methods (ForPhoneNumberId, IsValidSignature, VerifyToken) that aren't part of the IWhatsAppSender contract.
+builder.Services.AddHttpClient<Inventory.Infrastructure.WhatsApp.MetaWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<Inventory.Application.Messaging.IWhatsAppSender>(sp => sp.GetRequiredService<Inventory.Infrastructure.WhatsApp.MetaWhatsAppClient>());
 builder.Services.Configure<Inventory.Application.Email.SmtpOptions>(builder.Configuration.GetSection(Inventory.Application.Email.SmtpOptions.Section));
 builder.Services.AddHttpClient<Inventory.Application.Ai.IChatModel, Inventory.Infrastructure.Ai.OpenAiChatModel>(c => c.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<Inventory.Application.Ai.IAiUsageStore, Inventory.Infrastructure.Ai.AiUsageStore>();
