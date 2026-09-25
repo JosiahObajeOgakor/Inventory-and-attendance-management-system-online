@@ -1,0 +1,50 @@
+:host {
+  display: block;
+}
+
+.nutrition__head h2 {
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  font-weight: 600;
+  max-width: 20ch;
+}
+.nutrition__copy {
+  margin-top: 0.9rem;
+  color: var(--cream-dim);
+  max-width: 52ch;
+  line-height: 1.6;
+}
+
+.nutrition__grid {
+  margin-top: 2.5rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+@media (max-width: 820px) {
+  .nutrition__grid { grid-template-columns: 1fr; }
+}
+
+.nutrition__icon {
+  display: inline-flex;
+  color: var(--violet-deep);
+  margin-bottom: 0.25rem;
+}
+
+.cert-strip {
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+
+  li {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+    color: var(--cream-dim);
+    border: 1px solid rgba(251, 241, 228, 0.18);
+    border-radius: 999px;
+    padding: 0.5rem 1rem;
+  }
+}

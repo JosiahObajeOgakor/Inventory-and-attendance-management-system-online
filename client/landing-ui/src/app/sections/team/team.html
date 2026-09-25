@@ -1,0 +1,23 @@
+<section id="team" class="team">
+  <div class="team__head reveal" appReveal>
+    <p class="eyebrow">Caring hands, real answers</p>
+    <h2>Real people behind every bowl</h2>
+    <p class="team__copy">
+      Message our WhatsApp desk and you'll reach a real Chewy Pet person — not a bot.
+    </p>
+  </div>
+
+  <div class="team__grid">
+    @for (role of roles; track role.title) {
+      <article class="tag tag--card team__card reveal" appReveal>
+        <span class="team__avatar" aria-hidden="true">{{ role.initials }}</span>
+        <span class="tag__title">{{ role.title }}</span>
+        <span class="tag__desc">{{ role.desc }}</span>
+      </article>
+    }
+  </div>
+
+  <div class="team__cta reveal" appReveal>
+    <a class="btn btn--ghost" [href]="whatsappHref" target="_blank" rel="noopener">Say hi on WhatsApp</a>
+  </div>
+</section>

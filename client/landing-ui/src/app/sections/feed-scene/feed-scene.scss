@@ -1,0 +1,40 @@
+:host {
+  display: block;
+}
+
+// Reuses the hero photo as a still banner (no second video to keep the page light) —
+// same image, a different moment in the story.
+.feed {
+  position: relative;
+  max-width: none;
+  padding: clamp(4rem, 12vw, 7rem) clamp(1.25rem, 4vw, 3rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  isolation: isolate;
+  background: url('/landing.jpg') center 30% / cover no-repeat;
+}
+.feed__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(55% 60% at 50% 0%, rgba(244, 128, 30, 0.22), transparent 65%),
+    linear-gradient(180deg, rgba(23, 11, 34, 0.88) 0%, rgba(23, 11, 34, 0.7) 55%, rgba(23, 11, 34, 0.92) 100%);
+}
+.feed__content {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+}
+.feed__title {
+  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
+}
+.feed__sub {
+  color: var(--cream-dim);
+  line-height: 1.6;
+  max-width: 46ch;
+}

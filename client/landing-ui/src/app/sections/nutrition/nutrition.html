@@ -1,0 +1,38 @@
+<section class="nutrition">
+  <div class="nutrition__head reveal" appReveal>
+    <p class="eyebrow">Your pet's health, our priority</p>
+    <h2>Expert nutrition for happy, healthy pets</h2>
+    <p class="nutrition__copy">
+      Every recipe is formulated so mealtime is both delicious and genuinely good for them —
+      real ingredients, no filler.
+    </p>
+  </div>
+
+  <div class="nutrition__grid">
+    @for (point of points; track point.title) {
+      <article class="tag tag--card reveal" appReveal>
+        <span class="nutrition__icon" aria-hidden="true">
+          @switch (point.icon) {
+            @case ('protein') {
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+            }
+            @case ('stages') {
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            }
+            @case ('bowl') {
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16a8 8 0 0 1-16 0Z"/><path d="M8 12V8a4 4 0 0 1 8 0v4"/></svg>
+            }
+          }
+        </span>
+        <span class="tag__title">{{ point.title }}</span>
+        <span class="tag__desc">{{ point.desc }}</span>
+      </article>
+    }
+  </div>
+
+  <ul class="cert-strip reveal" appReveal>
+    @for (cert of certs; track cert) {
+      <li>{{ cert }}</li>
+    }
+  </ul>
+</section>

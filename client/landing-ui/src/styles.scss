@@ -82,3 +82,106 @@ button {
   outline: 3px solid var(--orange-bright);
   outline-offset: 3px;
 }
+
+// ---------- shared building blocks (every landing section, incl. standalone sub-components) ----------
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--orange-bright);
+  margin: 0 0 0.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 1rem;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+.btn--whatsapp {
+  background: var(--whatsapp);
+  color: #0b1f12;
+  box-shadow: 0 10px 26px -10px rgba(37, 211, 102, 0.65);
+}
+.btn--whatsapp:hover {
+  background: var(--whatsapp-dark);
+  transform: translateY(-2px);
+}
+.btn--ghost {
+  background: transparent;
+  border-color: rgba(251, 241, 228, 0.35);
+  color: var(--cream);
+}
+.btn--ghost:hover {
+  background: rgba(251, 241, 228, 0.08);
+  border-color: rgba(251, 241, 228, 0.6);
+}
+.btn--lg {
+  padding: 1.1rem 2rem;
+  font-size: 1.1rem;
+}
+
+// The signature element: a swing-tag, like the ones printed on the real bags,
+// reused for stats and feature copy throughout the page.
+.tag {
+  position: relative;
+  background: var(--cream);
+  color: var(--ink);
+  border-radius: 4px 16px 16px 16px;
+  box-shadow: 0 16px 30px -14px rgba(10, 4, 16, 0.6);
+}
+.tag::before {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--cream-dim);
+}
+.tag--card {
+  list-style: none;
+  padding: 1.5rem 1.5rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 148px;
+}
+.tag__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+.tag__desc {
+  font-size: 0.92rem;
+  color: rgba(23, 11, 34, 0.72);
+  line-height: 1.45;
+}
+
+section {
+  padding: clamp(3.5rem, 8vw, 6rem) clamp(1.25rem, 4vw, 3rem);
+  max-width: var(--max);
+  margin: 0 auto;
+}
+
+// Scroll-reveal (see core/reveal.directive.ts). Reduced-motion users get the
+// no-animation override above, so this still resolves to fully visible.
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}

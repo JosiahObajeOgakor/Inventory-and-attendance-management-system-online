@@ -1,0 +1,29 @@
+<section id="range" class="products">
+  <div class="products__intro reveal" appReveal>
+    <p class="eyebrow">The range</p>
+    <h2>Nutrition crafted for every bowl.</h2>
+    <p class="products__copy">
+      From the first wobbly weeks to the slow, grey-muzzled years — one brand, so you're not
+      juggling five different bags as your dog grows. Order any of these straight over WhatsApp.
+    </p>
+  </div>
+
+  <div class="products__layout">
+    <figure class="products__photo reveal" appReveal>
+      <img src="/landing.jpg" alt="Chewy Pet dog food bags" loading="lazy" />
+    </figure>
+
+    <ol class="products__list reveal" appReveal>
+      @for (product of products; track product.num) {
+        <li class="products__row">
+          <span class="products__num">{{ product.num }}</span>
+          <div class="products__body">
+            <span class="tag__title">{{ product.title }}</span>
+            <span class="tag__desc">{{ product.desc }}</span>
+          </div>
+          <a class="products__pill" [href]="orderHref(product)" target="_blank" rel="noopener">Order</a>
+        </li>
+      }
+    </ol>
+  </div>
+</section>

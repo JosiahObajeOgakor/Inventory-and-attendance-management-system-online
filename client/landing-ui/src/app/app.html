@@ -6,6 +6,8 @@
   <nav class="nav__links">
     <a href="#range">Range</a>
     <a href="#why">Why Chewy Pet</a>
+    <a href="#team">Team</a>
+    <a href="#reviews">Reviews</a>
     <a href="#purrfect">Candid Purrfect</a>
   </nav>
   <a class="nav__cta" [href]="whatsappHref" target="_blank" rel="noopener">
@@ -24,7 +26,7 @@
 
     <div class="hero__content">
       <p class="eyebrow">All life stages &middot; puppy to senior</p>
-      <h1 class="hero__title">Chewy tails.<br />Full bowls.<br /><span class="accent">Zero fuss.</span></h1>
+      <h1 class="hero__title">Fresh bowls.<br />Chewy tails.<br /><span class="accent">Zero fuss.</span></h1>
       <p class="hero__sub">
         Complete dog food formulated for every stage of life, milled and packed for Nigerian
         homes. Tell us what your dog needs on WhatsApp and we'll sort the rest.
@@ -51,65 +53,42 @@
     </div>
   </section>
 
+  <app-feed-scene />
+
   <!-- Trust strip -->
   <section class="strip">
     <p><span>Milled &amp; packed locally</span><span>All life stages, one brand</span><span>Order and pay over WhatsApp</span></p>
   </section>
 
-  <!-- Range -->
-  <section id="range" class="range">
-    <div class="range__intro">
-      <p class="eyebrow">The range</p>
-      <h2>One bag for every stage your dog goes through.</h2>
-      <p class="range__copy">
-        From the first wobbly weeks to the slow, grey-muzzled years — Chewy Pet is formulated
-        so you're not juggling five different brands as your dog grows.
-      </p>
-    </div>
+  <app-nutrition />
 
-    <div class="range__grid">
-      <figure class="range__photo">
-        <img src="landing.jpg" alt="Chewy Pet all-life-stages and puppy formula bags" loading="lazy" />
-      </figure>
-
-      <ul class="range__tags">
-        <li class="tag tag--card">
-          <span class="tag__title">Puppy</span>
-          <span class="tag__desc">Small kibble, built for growing bodies and first teeth.</span>
-        </li>
-        <li class="tag tag--card">
-          <span class="tag__title">All Life Stages</span>
-          <span class="tag__desc">One bag that keeps working as your dog grows — 32% protein, 20% fat.</span>
-        </li>
-        <li class="tag tag--card">
-          <span class="tag__title">Senior</span>
-          <span class="tag__desc">Gentler on ageing joints and appetites, same full bowl.</span>
-        </li>
-      </ul>
-    </div>
-  </section>
+  <app-product-list />
 
   <!-- Why -->
   <section id="why" class="why">
-    <p class="eyebrow">Why pet parents stick with us</p>
+    <p class="eyebrow reveal" appReveal>Why pet parents stick with us</p>
     <div class="why__grid">
-      <div class="tag tag--card">
+      <div class="tag tag--card reveal" appReveal>
         <span class="tag__title">Balanced, not padded</span>
         <span class="tag__desc">Protein and fat built for real energy, not just a heavier bag.</span>
       </div>
-      <div class="tag tag--card">
+      <div class="tag tag--card reveal" appReveal>
         <span class="tag__title">Ask a person, not a form</span>
         <span class="tag__desc">Every order goes through WhatsApp — ask questions, get a straight answer.</span>
       </div>
-      <div class="tag tag--card">
+      <div class="tag tag--card reveal" appReveal>
         <span class="tag__title">Made for Nigerian homes</span>
         <span class="tag__desc">Formulated and packed here, priced for here.</span>
       </div>
     </div>
   </section>
 
+  <app-team />
+
+  <app-testimonials />
+
   <!-- Sister brand -->
-  <section id="purrfect" class="purrfect">
+  <section id="purrfect" class="purrfect reveal" appReveal>
     <img class="purrfect__badge" src="candid-purrfect-logo.jpeg" alt="Candid Purrfect" width="64" height="64" />
     <div class="purrfect__text">
       <p class="eyebrow">From the same kitchen</p>
@@ -123,7 +102,7 @@
   </section>
 
   <!-- Final CTA -->
-  <section class="cta">
+  <section class="cta reveal" appReveal>
     <h2>Ready to fill the bowl?</h2>
     <p>Message us on WhatsApp — tell us your dog's size and stage, we'll tell you the right bag.</p>
     <a class="btn btn--whatsapp btn--lg" [href]="whatsappHref" target="_blank" rel="noopener">
@@ -138,6 +117,14 @@
     <img src="logo.png" alt="Chewy Pet" width="28" height="28" />
     <span>ChewyPets Farm &amp; Feeds Co. Ltd</span>
   </div>
+  <nav class="footer__links">
+    <a href="#range">Range</a>
+    <a href="#why">Why Chewy Pet</a>
+    <a href="#team">Team</a>
+    <a href="#reviews">Reviews</a>
+    <a href="#purrfect">Candid Purrfect</a>
+  </nav>
+  <a class="footer__cta" [href]="whatsappHref" target="_blank" rel="noopener">Message us on WhatsApp</a>
 </footer>
 
 <app-chat-widget />
