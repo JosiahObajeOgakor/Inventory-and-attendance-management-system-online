@@ -55,6 +55,31 @@ public class CompanyController(ICurrentUser cu, CompanyProfileService svc) : App
     }
 }
 
+/// <summary>Where we deliver and what it costs. Staff can see the list (to quote delivery); only admins change it.</summary>
+[ApiController, Route("api/delivery-zones")]
+public class DeliveryZonesController(ICurrentUser cu, DeliveryZoneService svc) : AppController(cu)
+{
+    [HttpGet, Authorize(Policy = Policies.Staff)]
+    public Task<IReadOnlyList<DeliveryZoneDto>> List(CancellationToken ct) => svc.ListAsync(activeOnly: false, ct);
+
+    [HttpPost, Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> Create(DeliveryZoneInput input, CancellationToken ct) => Ok(new { id = await svc.CreateAsync(input, Me, ct) });
+
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> Update(int id, DeliveryZoneInput input, CancellationToken ct)
+    {
+        await svc.UpdateAsync(id, input, Me, ct);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    {
+        await svc.DeleteAsync(id, Me, ct);
+        return NoContent();
+    }
+}
+
 /// <summary>Printable documents, rendered on the server so every device prints the same thing. Inline PDFs open in the browser's viewer.</summary>
 [ApiController, Route("api")]
 public class DocumentsController(ICurrentUser cu, DocumentQueries docs, IDocumentRenderer renderer, IBusinessDbContext db, ICompanyContext company) : AppController(cu)

@@ -163,6 +163,10 @@ public class Invoice
     public DateTime? VoidedAt { get; set; }
     public int? VoidedByUserId { get; set; }
     public string? VoidReason { get; set; }
+    public string? DeliveryAddress { get; set; }
+    public string? DeliveryZone { get; set; }
+    /// <summary>Included in <see cref="TotalAmount"/>, after VAT. Not goods revenue.</summary>
+    public decimal DeliveryFee { get; set; }
     public List<InvoiceItem> Items { get; set; } = [];
     public List<Payment> Payments { get; set; } = [];
 }

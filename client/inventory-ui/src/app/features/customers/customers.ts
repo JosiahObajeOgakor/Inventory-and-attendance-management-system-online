@@ -30,7 +30,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
             @for (c of list.items(); track c.id) {
               <tr><td><span class="strong">{{ c.name }}</span><div class="muted sm">{{ c.phone }}{{ c.location ? ' · ' + c.location : '' }}</div></td><td>{{ c.customerType }}</td>
                 <td><span class="mono">{{ c.trailingTwelveMonthSpend | naira }}</span> <app-stamp [label]="c.ranking" /></td>
-                <td class="num mono" [class.owes]="c.balance > 0">{{ c.balance | naira }}</td><td class="num mono">{{ c.rebateRatePct }}%</td>
+                <td class="num mono" [class.owes]="c.balance > 0" [class.credit]="c.balance < 0">@if (c.balance < 0) { Credit {{ -c.balance | naira }} } @else { {{ c.balance | naira }} }</td><td class="num mono">{{ c.rebateRatePct }}%</td>
                 <td class="actions">
                   @if (c.balance > 0) { <button type="button" class="btn btn-sm btn-primary" (click)="openPay(c)">Record payment</button> }
                   <button type="button" class="btn btn-sm" (click)="metricsFor.set(c.id)">History</button>
@@ -72,7 +72,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
       }
       <ng-container modal-actions><button type="button" class="btn" (click)="paying.set(null)">Cancel</button><button type="submit" form="pay" class="btn btn-primary" [disabled]="payForm.invalid || busy()">Record payment</button></ng-container>
     </app-modal>`,
-  styles: `.sm { font-size: .75rem; } .owes { color: var(--stamp); font-weight: 600; }`,
+  styles: `.sm { font-size: .75rem; } .owes { color: var(--stamp); font-weight: 600; } .credit { color: var(--ok, #1a7f4b); font-weight: 600; }`,
 })
 export class CustomersPage implements OnInit {
   private readonly api = inject(Api);

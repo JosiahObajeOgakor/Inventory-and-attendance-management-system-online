@@ -47,14 +47,14 @@ public class WhatsAppController(MetaWhatsAppClient wa, CompanyRegistry registry,
         var wamid = msg["id"]?.GetValue<string>() ?? "";
         var from = msg["from"]?.GetValue<string>() ?? "";
         var text = msg["text"]?["body"]?.GetValue<string>();
-        if (string.IsNullOrEmpty(text) || from.Length == 0) return Ok();   // non-text message (image/audio/etc.) — ack, don't crash
+        var buttonId = msg["interactive"]?["button_reply"]?["id"]?.GetValue<string>();
+        if ((string.IsNullOrEmpty(text) && string.IsNullOrEmpty(buttonId)) || from.Length == 0) return Ok();   // image/audio/etc. — ack, don't crash
 
-        var dedup = HttpContext.RequestServices.GetRequiredService<WebhookDedupService>();
-        if (await dedup.SeenAsync("whatsapp-in", wamid, ct)) return Ok();   // Meta redelivered this; already handled
-
-        var assistant = HttpContext.RequestServices.GetRequiredService<SalesAssistantService>();
-        var reply = await assistant.AskAsync(Inventory.Domain.Entities.ChatChannels.WhatsApp, from, text, ct);
-        await wa.SendTextAsync(cfg.CompanyKey, from, reply.Text, ct);
+        // Store it and acknowledge Meta straight away; the inbox worker answers it (with retries) in the background.
+        // Meta redelivers anything that isn't acknowledged quickly, and the inbox ignores a message id it already has.
+        var inbox = HttpContext.RequestServices.GetRequiredService<WhatsAppInbox>();
+        if (await inbox.EnqueueAsync(Inventory.Domain.Entities.ChatChannels.WhatsApp, from, wamid.Length > 0 ? wamid : Guid.NewGuid().ToString("N"), text, buttonId, ct))
+            InboxSignal.Wake();
         return Ok();
     }
 }

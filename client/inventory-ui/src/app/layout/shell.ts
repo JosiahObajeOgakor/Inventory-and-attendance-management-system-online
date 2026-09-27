@@ -91,7 +91,7 @@ export class Shell {
   private readonly uploaded = signal(false);
   private readonly logoBroken = signal(false);
   protected readonly logoStamp = signal(Date.now());
-  protected readonly logoSrc = computed(() => (this.logoBroken() ? '' : this.uploaded() ? '/api/company/assets/logo?v=' + this.logoStamp() : '/logo-' + this.auth.company() + '.jpeg'));
+  protected readonly logoSrc = computed(() => (this.logoBroken() ? '' : this.uploaded() ? '/api/company/assets/logo?v=' + this.logoStamp() : 'logo-' + this.auth.company() + '.jpeg'));
   protected logoFailed() { this.logoBroken.set(true); }
 
   constructor() {

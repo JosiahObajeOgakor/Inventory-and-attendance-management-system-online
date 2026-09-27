@@ -1,29 +1,50 @@
 <section id="range" class="products">
+  <p class="watermark products__watermark" aria-hidden="true">RANGE</p>
+  <div class="products__scatter" aria-hidden="true">
+    <span class="tag products__pill products__pill--1">Real Ingredients</span>
+    <span class="tag products__pill products__pill--2">Locally Milled</span>
+    <span class="tag products__pill products__pill--3">Vet-Formulated</span>
+    <span class="tag products__pill products__pill--4">WhatsApp Ordering</span>
+  </div>
+
   <div class="products__intro reveal" appReveal>
     <p class="eyebrow">The range</p>
     <h2>Nutrition crafted for every bowl.</h2>
     <p class="products__copy">
       From the first wobbly weeks to the slow, grey-muzzled years — one brand, so you're not
-      juggling five different bags as your dog grows. Order any of these straight over WhatsApp.
+      juggling five different bags as your dog grows. Tap a bag, then order straight over
+      WhatsApp.
     </p>
   </div>
 
-  <div class="products__layout">
-    <figure class="products__photo reveal" appReveal>
-      <img src="/landing.jpg" alt="Chewy Pet dog food bags" loading="lazy" />
-    </figure>
-
-    <ol class="products__list reveal" appReveal>
-      @for (product of products; track product.num) {
-        <li class="products__row">
-          <span class="products__num">{{ product.num }}</span>
-          <div class="products__body">
+  <ol class="accordion reveal" appReveal>
+    @for (product of products; track product.num) {
+      <li class="accordion__row" [class.accordion__row--active]="activeNum() === product.num" (click)="setActive(product.num)">
+        <div class="accordion__main">
+          <span class="accordion__num">{{ product.num }}</span>
+          <div class="accordion__body">
             <span class="tag__title">{{ product.title }}</span>
-            <span class="tag__desc">{{ product.desc }}</span>
+            @if (activeNum() === product.num) {
+              <span class="tag__desc">{{ product.desc }}</span>
+            }
           </div>
-          <a class="products__pill" [href]="orderHref(product)" target="_blank" rel="noopener">Order</a>
-        </li>
-      }
-    </ol>
-  </div>
+        </div>
+
+        @if (activeNum() === product.num && productImage(product.num); as photo) {
+          <img class="accordion__photo" [src]="photo" [alt]="product.title" loading="lazy" />
+        }
+
+        <a
+          class="accordion__pill"
+          [class.accordion__pill--solid]="activeNum() === product.num"
+          [href]="orderHref(product)"
+          target="_blank"
+          rel="noopener"
+          (click)="$event.stopPropagation()"
+        >
+          Order
+        </a>
+      </li>
+    }
+  </ol>
 </section>

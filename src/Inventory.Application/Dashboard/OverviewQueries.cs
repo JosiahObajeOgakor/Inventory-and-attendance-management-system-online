@@ -47,7 +47,9 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
         var expenses = await db.Expenses.AsNoTracking().Where(e => e.ExpenseDate >= histStart).Select(e => new { e.ExpenseDate, e.Amount }).ToListAsync(ct);
         var histUtc = LagosDayStartUtc(histStart);
         var payments = await (from p in db.Payments.AsNoTracking() join i in db.Invoices.AsNoTracking() on p.InvoiceId equals i.Id
-                              where p.PaymentDate >= histUtc && i.Status != PaymentStatuses.Voided select new { p.PaymentDate, p.Amount }).ToListAsync(ct);
+                              // Account-credit rows only move money already received between a customer's sales — not new cash.
+                              where p.PaymentDate >= histUtc && i.Status != PaymentStatuses.Voided && p.Method != Sales.InvoiceEditService.AccountCredit
+                              select new { p.PaymentDate, p.Amount }).ToListAsync(ct);
 
         decimal Rev(DateOnly a, DateOnly b) => lines.Where(l => l.InvoiceDate >= a && l.InvoiceDate < b).Sum(l => l.Line);
         decimal Gp(DateOnly a, DateOnly b) => lines.Where(l => l.InvoiceDate >= a && l.InvoiceDate < b).Sum(l => l.Line - l.Cost);

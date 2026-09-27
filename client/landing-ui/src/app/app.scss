@@ -16,9 +16,9 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem clamp(1.25rem, 4vw, 3rem);
-  background: rgba(23, 11, 34, 0.72);
+  background: rgba(255, 250, 243, 0.82);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(251, 241, 228, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 .nav__brand {
   display: flex;
@@ -31,10 +31,19 @@
 }
 .nav__links {
   display: flex;
-  gap: 1.5rem;
-  font-size: 0.92rem;
-  color: var(--cream-dim);
-  a:hover { color: var(--cream); }
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+  background: rgba(23, 11, 34, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.35rem;
+  a {
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  a:hover { color: var(--ink); background: rgba(23, 11, 34, 0.07); }
 }
 .nav__cta {
   display: inline-flex;
@@ -48,124 +57,274 @@
   border-radius: 999px;
 }
 .nav__cta:hover { background: var(--whatsapp-dark); }
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.nav__login {
+  padding: 0.55rem 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  white-space: nowrap;
+}
+.nav__login:hover { color: var(--violet-deep); }
 
 @media (max-width: 900px) {
   .nav__links { display: none; }
 }
 
+// ---------- backyard: one clip pinned behind the page, seen only through windows ----------
+
+.backyard {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--ink) url('/backyard-poster.jpg') center / cover no-repeat;
+}
+.backyard__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+main {
+  position: relative;
+  z-index: 1;
+}
+
 // ---------- hero ----------
+// The whole 16:9 frame stays in view so the bowl (bottom-centre of the footage) is never
+// cropped or shaded. One headline, one sentence, one action — big and heavy so it reads
+// at a glance, including for low-vision visitors.
 
 .hero {
+  --overlap: 40px; // the first sheet rides up over the bottom of the hero by this much
   position: relative;
-  min-height: min(88vh, 780px);
+  max-width: none;
+  padding: 0;
+  // Exactly the footage's 16:9 height (capped at one screen), plus the sheet overlap.
+  height: calc(min(56.25vw, 100svh - 70px) + var(--overlap));
+  min-height: 480px;
   display: flex;
   align-items: center;
   overflow: hidden;
   isolation: isolate;
+  background: var(--ink);
 }
 .hero__bg {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: calc(100% - var(--overlap));
   object-fit: cover;
-  filter: saturate(1.05) brightness(0.55);
+  // On screens shorter than 16:9, trim from the top — never the bowl at the bottom.
+  object-position: center bottom;
   z-index: -2;
 }
+// Shade only the left side behind the words; founder, bowl and dog stay bright.
 .hero__scrim {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100% - var(--overlap));
   z-index: -1;
-  background:
-    radial-gradient(60% 55% at 88% 12%, rgba(244, 128, 30, 0.28), transparent 60%),
-    linear-gradient(115deg, rgba(23, 11, 34, 0.96) 30%, rgba(75, 24, 118, 0.55) 68%, rgba(23, 11, 34, 0.35) 100%),
-    linear-gradient(to top, var(--ink) 0%, rgba(23, 11, 34, 0.15) 45%);
+  background: linear-gradient(
+    90deg,
+    rgba(23, 11, 34, 0.85) 0%,
+    rgba(23, 11, 34, 0.7) 28%,
+    rgba(23, 11, 34, 0.32) 42%,
+    rgba(23, 11, 34, 0) 55%
+  );
 }
+// Gold outline reads on both the bright wall and the dark bags behind it.
+.hero__watermark {
+  top: 1%;
+  right: 1.5%;
+  z-index: -1;
+  font-size: clamp(4rem, 9.5vw, 10rem);
+  transform: rotate(-5deg);
+  transform-origin: right top;
+  -webkit-text-stroke: 2px rgba(217, 164, 65, 0.85);
+}
+
 .hero__content {
-  position: relative;
-  padding: clamp(2rem, 6vw, 4rem) clamp(1.25rem, 4vw, 3rem);
-  max-width: 640px;
+  width: min(46vw, 640px);
+  padding: 0 0 var(--overlap) clamp(1.25rem, 5vw, 5rem);
 }
 .hero__title {
-  font-size: clamp(2.6rem, 6vw, 4.4rem);
+  font-size: clamp(2.8rem, 5.6vw, 7rem);
   font-weight: 700;
-  .accent {
-    background: linear-gradient(95deg, var(--orange), var(--orange-bright));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+  color: var(--cream);
+  text-shadow: 0 4px 30px rgba(23, 11, 34, 0.5);
+}
+.hero__line {
+  display: block;
+}
+// Solid color, not gradient-clipped text — gradients thin out legibility for low vision.
+.hero__line--accent {
+  color: var(--orange-bright);
 }
 .hero__sub {
-  margin-top: 1.25rem;
-  max-width: 46ch;
-  font-size: 1.08rem;
-  line-height: 1.6;
-  color: var(--cream-dim);
+  margin-top: clamp(1.25rem, 2.5vw, 1.75rem);
+  max-width: 26ch;
+  font-size: clamp(1.15rem, 1.6vw, 1.5rem);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--cream);
+  text-shadow: 0 2px 16px rgba(23, 11, 34, 0.55);
 }
 .hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.9rem;
-  margin-top: 2rem;
+  align-items: center;
+  gap: 1rem 1.75rem;
+  margin-top: clamp(1.75rem, 3.5vw, 2.5rem);
 }
-.hero__number {
-  margin-top: 1.1rem;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: rgba(251, 241, 228, 0.55);
+.hero__cta {
+  min-height: 60px;
+  padding: 1rem 2rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.hero__link {
+  padding: 0.75rem 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--cream);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.hero__link:hover {
+  color: var(--orange-bright);
 }
 
-.tag--float {
+// Phones and portrait tablets: a landscape video cropped into a tall screen gets zoomed ~3x
+// (blurry, bowl cut off). Instead, show the whole frame across the top — uncropped,
+// unshaded — with the words underneath on the dark hero.
+@media (max-width: 760px), (orientation: portrait) and (max-width: 1100px) {
+  .hero {
+    height: auto;
+    min-height: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hero__bg {
+    position: relative;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+  .hero__scrim {
+    display: none;
+  }
+  .hero__watermark {
+    top: auto;
+    bottom: calc(var(--overlap) + 0.5rem);
+    right: -4%;
+    font-size: 26vw;
+    -webkit-text-stroke: 1.5px rgba(217, 164, 65, 0.4);
+  }
+  .hero__content {
+    width: 100%;
+    padding: 1.75rem clamp(1.25rem, 5vw, 2.5rem) calc(var(--overlap) + 2.5rem);
+  }
+  .hero__title {
+    font-size: clamp(2.9rem, 12vw, 5rem);
+  }
+  .hero__sub {
+    max-width: 30ch;
+    font-size: clamp(1.15rem, 3.8vw, 1.4rem);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  // Load-in: the two headline lines rise one after the other, then the sentence and actions.
+  .hero__line,
+  .hero__sub,
+  .hero__actions {
+    animation: hero-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero__line--accent { animation-delay: 0.12s; }
+  .hero__sub { animation-delay: 0.3s; }
+  .hero__actions { animation-delay: 0.42s; }
+  @keyframes hero-rise {
+    from { opacity: 0; transform: translateY(28px); }
+  }
+}
+
+// ---------- sheets & windows ----------
+
+// Content lives on cream sheets that ride over the backyard footage.
+.sheet {
+  position: relative;
+  z-index: 2;
+  background: var(--paper);
+  border-radius: 40px;
+  box-shadow: 0 -24px 60px -34px rgba(23, 11, 34, 0.55);
+  overflow: clip;
+}
+.sheet--first {
+  margin-top: -40px;
+}
+
+// A gap between sheets: transparent, so the backyard video shows through.
+.window {
+  max-width: none;
+  min-height: 78vh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: clamp(5rem, 14vw, 9rem) clamp(1.25rem, 4vw, 3rem);
+  background: radial-gradient(ellipse at center, rgba(23, 11, 34, 0.5) 0%, rgba(23, 11, 34, 0.15) 70%);
+  color: var(--cream);
+}
+.window--finale {
+  min-height: 92vh;
+  background: linear-gradient(180deg, rgba(23, 11, 34, 0.2) 0%, rgba(23, 11, 34, 0.65) 100%);
+}
+.window__inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  width: 108px;
-  height: 108px;
-  position: absolute;
-  animation: bob 5s ease-in-out infinite;
+  gap: 1.25rem;
 }
-.tag--protein {
-  right: clamp(1.5rem, 8vw, 9rem);
-  top: 18%;
-  transform: rotate(-6deg);
-}
-.tag--fat {
-  right: clamp(3rem, 12vw, 13.5rem);
-  bottom: 14%;
-  transform: rotate(4deg);
-  animation-delay: 0.6s;
-}
-.tag__value {
-  font-family: var(--font-display);
-  font-size: 2rem;
+.window__title {
+  font-size: clamp(2.8rem, 8.5vw, 7rem);
   font-weight: 700;
-  small { font-size: 1.1rem; }
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  color: var(--cream);
+  text-shadow: 0 6px 40px rgba(23, 11, 34, 0.45);
+  text-wrap: balance;
 }
-.tag__label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.65;
+@media (max-width: 600px) {
+  .window__title br { display: none; }
 }
-
-@keyframes bob {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -10px; }
+.window__sub {
+  max-width: 44ch;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--cream-dim);
 }
-
-@media (max-width: 900px) {
-  .tag--float { display: none; }
+.window .btn {
+  margin-top: 0.75rem;
 }
 
 // ---------- trust strip ----------
 
 .strip {
-  background: var(--ink-2);
-  border-top: 1px solid rgba(251, 241, 228, 0.08);
-  border-bottom: 1px solid rgba(251, 241, 228, 0.08);
+  background: var(--paper-warm);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   p {
     max-width: var(--max);
     margin: 0 auto;
@@ -176,19 +335,13 @@
     font-family: var(--font-mono);
     font-size: 0.8rem;
     letter-spacing: 0.03em;
-    color: var(--cream-dim);
+    color: var(--ink-dim);
   }
   span::before { content: '•'; margin-right: 0.6em; color: var(--orange); }
   span:first-child::before { content: ''; margin: 0; }
 }
 
-// ---------- why / purrfect / cta ----------
-
-.why h2, .purrfect h2, .cta h2 {
-  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
-  font-weight: 600;
-  max-width: 18ch;
-}
+// ---------- why ----------
 
 .why__grid {
   margin-top: 2rem;
@@ -200,63 +353,187 @@
   .why__grid { grid-template-columns: 1fr; }
 }
 
-.purrfect {
-  background: linear-gradient(120deg, var(--violet-deep), var(--ink-3));
-  border-radius: 24px;
-  display: flex;
+// ---------- crates & carriers (new product line) ----------
+
+.crates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(1.5rem, 4vw, 3rem);
   align-items: center;
-  gap: 2rem;
-  flex-wrap: wrap;
 }
-.purrfect__badge {
-  border-radius: 14px;
-  flex-shrink: 0;
-  border: 1px solid rgba(251, 241, 228, 0.2);
+@media (max-width: 760px) {
+  .crates { grid-template-columns: 1fr; }
 }
-.purrfect__text {
-  flex: 1;
-  min-width: 260px;
-  p:last-child { margin-top: 0.6rem; color: var(--cream-dim); max-width: 48ch; line-height: 1.55; }
+.crates__photo {
+  aspect-ratio: 4 / 5;
+  transition: transform 0.2s ease;
+  &:hover { transform: translateY(-4px); }
+}
+.crates__copy h2 {
+  margin-top: 0.4rem;
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  font-weight: 600;
+  max-width: 16ch;
+}
+.crates__desc {
+  margin-top: 1rem;
+  color: var(--ink-dim);
+  line-height: 1.6;
+  max-width: 42ch;
+}
+.crates__copy .btn {
+  margin-top: 1.5rem;
 }
 
-.cta {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  h2 { max-width: none; }
-  p { color: var(--cream-dim); max-width: 44ch; }
-  .btn { margin-top: 0.75rem; }
+// ---------- image duo (dogs / cats) ----------
+
+.duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 760px) {
+  .duo { grid-template-columns: 1fr; }
+}
+.duo__panel {
+  position: relative;
+  display: block;
+  border-radius: 24px;
+  overflow: hidden;
+  isolation: isolate;
+  aspect-ratio: 4 / 3;
+  background: var(--ink);
+  transition: transform 0.2s ease;
+  &:hover { transform: translateY(-4px); }
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+.duo__num {
+  top: -6%;
+  right: 4%;
+  transform: rotate(-6deg);
+  z-index: 1;
+  -webkit-text-stroke: 1.5px rgba(251, 241, 228, 0.22);
+}
+.duo__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(0deg, rgba(23, 11, 34, 0.95) 10%, rgba(23, 11, 34, 0.35) 55%, rgba(75, 24, 118, 0.25) 100%);
+}
+.duo__body {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.75rem;
+  h3 {
+    margin-top: 0.4rem;
+    font-size: clamp(1.3rem, 2.4vw, 1.7rem);
+    max-width: 20ch;
+    color: var(--cream);
+  }
+}
+.duo__link {
+  display: inline-block;
+  margin-top: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--orange-bright);
 }
 
 // ---------- footer ----------
 
 .footer {
+  position: relative;
+  z-index: 1;
   border-top: 1px solid rgba(251, 241, 228, 0.08);
-  padding: 1.5rem clamp(1.25rem, 4vw, 3rem);
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-  color: rgba(251, 241, 228, 0.55);
+  background: var(--ink-2);
+  color: var(--cream);
+  padding: clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 3rem) 1.5rem;
+}
+.footer__grid {
+  max-width: var(--max);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 2.5rem;
+}
+@media (max-width: 760px) {
+  .footer__grid { grid-template-columns: 1fr; gap: 2rem; }
 }
 .footer__brand {
   display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.footer__brand-row {
+  display: flex;
   align-items: center;
   gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
   img { border-radius: 6px; }
 }
-.footer__links {
+.footer__brand p { color: var(--cream-dim); font-size: 0.88rem; max-width: 30ch; }
+.footer__col {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1.1rem;
+  flex-direction: column;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+  color: rgba(251, 241, 228, 0.7);
   a:hover { color: var(--cream); }
 }
-.footer__cta {
-  margin-left: auto;
+.footer__heading {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--orange-bright);
-  font-weight: 600;
-  &:hover { color: var(--orange); }
+  margin-bottom: 0.2rem;
 }
+.footer__note {
+  color: var(--cream-dim);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.footer__subscribe {
+  align-self: flex-start;
+  padding: 0.65rem 1.2rem;
+  font-size: 0.88rem;
+}
+.footer__bottom {
+  position: relative;
+  max-width: var(--max);
+  margin: 2.5rem auto 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(251, 241, 228, 0.08);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: rgba(251, 241, 228, 0.5);
+  font-family: var(--font-mono);
+}
+.footer__top {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--orange);
+  color: var(--ink);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.footer__top:hover { background: var(--orange-bright); transform: translateY(-2px); }

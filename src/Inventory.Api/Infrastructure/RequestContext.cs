@@ -17,7 +17,10 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     /// <summary>Set by the payment webhook only, from a reference this server generated and the processor confirmed. Signed-in requests never use it.</summary>
     public const string OverrideItem = "company-override";
 
-    public CompanyInfo Info => registry.Find(http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
+    /// <summary>For background work with no HTTP request (e.g. the pending-payment reconciler): the company for the current async flow only.</summary>
+    public static readonly AsyncLocal<string?> Background = new();
+
+    public CompanyInfo Info => registry.Find(Background.Value ?? http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
         ?? throw new InvalidOperationException("No company selected for this request.");
     public string Key => Info.Key;
     public string DocumentPrefix => Info.DocumentPrefix;

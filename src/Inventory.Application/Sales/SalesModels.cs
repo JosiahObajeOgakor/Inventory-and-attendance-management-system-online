@@ -26,6 +26,10 @@ public sealed class SaleRequest
     public decimal VatRate { get; set; }
     public decimal PaidNow { get; set; }
     public DateOnly? DueDate { get; set; }
+    /// <summary>Added to the total after VAT. Zero for pickup / in-store sales.</summary>
+    public decimal DeliveryFee { get; set; }
+    public string? DeliveryZone { get; set; }
+    public string? DeliveryAddress { get; set; }
     public List<SaleLineDto> Lines { get; set; } = [];
 }
 
@@ -46,6 +50,9 @@ public sealed class SaleRequestValidator : AbstractValidator<SaleRequest>
         RuleFor(x => x.DiscountPct).InclusiveBetween(0, 100);
         RuleFor(x => x.VatRate).InclusiveBetween(0, 100);
         RuleFor(x => x.PaidNow).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DeliveryFee).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DeliveryZone).MaximumLength(60);
+        RuleFor(x => x.DeliveryAddress).MaximumLength(250);
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one product line.");
         RuleForEach(x => x.Lines).ChildRules(l =>
         {

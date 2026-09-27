@@ -36,6 +36,14 @@ export class Api2 {
   waybillInvoices(q: PageQuery & { pendingOnly?: boolean }) { return this.get<Paged<N.PendingInvoice>>('/api/waybills/invoices', q); }
   waybillPrefill(invoiceId: number) { return this.get<N.WaybillPrefill>(`/api/waybills/prefill/${invoiceId}`); }
   createWaybill(r: N.WaybillInput) { return this.post<{ id: number }>('/api/waybills', r); }
+  waybill(id: number) { return this.get<N.WaybillDetail>(`/api/waybills/${id}`); }
+  updateWaybill(id: number, r: N.WaybillInput) { return this.put<void>(`/api/waybills/${id}`, r); }
+
+  // delivery zones (Company settings)
+  deliveryZones() { return this.get<N.DeliveryZone[]>('/api/delivery-zones'); }
+  createDeliveryZone(z: N.DeliveryZoneInput) { return this.post<{ id: number }>('/api/delivery-zones', z); }
+  updateDeliveryZone(id: number, z: N.DeliveryZoneInput) { return this.put<void>(`/api/delivery-zones/${id}`, z); }
+  deleteDeliveryZone(id: number) { return this.del<void>(`/api/delivery-zones/${id}`); }
 
   // attendance
   attendanceToday() { return this.get<N.AttendanceToday>('/api/attendance/today'); }

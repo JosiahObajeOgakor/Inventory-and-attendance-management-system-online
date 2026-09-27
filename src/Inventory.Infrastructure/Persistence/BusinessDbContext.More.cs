@@ -51,6 +51,9 @@ public partial class BusinessDbContext
             e.Property(x => x.PriceTier).HasMaxLength(20).IsRequired();
             e.Property(x => x.Status).HasMaxLength(20).IsRequired();
             e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.DeliveryAddress).HasMaxLength(250);
+            e.Property(x => x.DeliveryZone).HasMaxLength(60);
+            e.Property(x => x.DeliveryFee).HasPrecision(12, 2);
             e.HasIndex(x => x.QuotationNumber).IsUnique();
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.ConvertedInvoiceId).OnDelete(DeleteBehavior.Restrict);
@@ -151,10 +154,24 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.PaidAt).HasPrecision(6);
             e.Property(x => x.NotifiedAt).HasPrecision(6);
+            e.Property(x => x.AdminNotifiedAt).HasPrecision(6);
+            e.Property(x => x.RiderNotifiedAt).HasPrecision(6);
+            e.Property(x => x.Provider).HasMaxLength(20).IsRequired().HasDefaultValue(PaymentProviders.Paystack);
+            e.Property(x => x.ProviderReference).HasMaxLength(100);
+            e.HasIndex(x => new { x.Provider, x.ProviderReference });
             e.HasIndex(x => new { x.DocType, x.DocId, x.Status });
             e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid')"));
         });
 
+
+        b.Entity<DeliveryZone>(e =>
+        {
+            e.ToTable("delivery_zones");
+            e.Property(x => x.Name).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Fee).HasPrecision(12, 2);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.HasData(new DeliveryZone { Id = 1, Name = "Lagos", Fee = 3000m, IsActive = true });
+        });
 
         b.Entity<PriceChange>(e =>
         {
@@ -187,6 +204,26 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.HasIndex(x => new { x.ConversationId, x.CreatedAt });
             e.HasOne<ChatConversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<InboundMessage>(e =>
+        {
+            e.ToTable("inbound_messages");
+            e.Property(x => x.Channel).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Sender).HasMaxLength(100).IsRequired();
+            e.Property(x => x.ExternalId).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Text).HasMaxLength(4096);
+            e.Property(x => x.ButtonId).HasMaxLength(100);
+            e.Property(x => x.Status).HasMaxLength(10).IsRequired();
+            e.Property(x => x.ReplyJson).HasColumnType("text");
+            e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.NextAttemptAt).HasPrecision(6);
+            e.Property(x => x.LockedUntil).HasPrecision(6);
+            e.Property(x => x.ReceivedAt).HasPrecision(6);
+            e.Property(x => x.ProcessedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();   // a redelivered webhook can't be stored twice
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });            // the worker's "what's due" query
+            e.HasIndex(x => new { x.Sender, x.Status });                   // one customer's messages stay in order
         });
     }
 }

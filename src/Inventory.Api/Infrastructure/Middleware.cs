@@ -27,9 +27,10 @@ public sealed class CsrfHeaderMiddleware(RequestDelegate next)
     {
         var m = ctx.Request.Method;
         var unsafeMethod = !(HttpMethods.IsGet(m) || HttpMethods.IsHead(m) || HttpMethods.IsOptions(m));
-        // These webhooks are called by Paystack's/Meta's own servers, which cannot send our header. Both are protected by an HMAC signature instead
-        // (Paystack: asking it to confirm the payment too; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
+        // These webhooks are called by Paystack's/AlatPay's/Meta's own servers, which cannot send our header. All are protected by an HMAC signature instead
+        // (Paystack/AlatPay: also asking the processor to confirm the payment; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
         var webhook = ctx.Request.Path.Equals("/api/paystack/webhook", StringComparison.OrdinalIgnoreCase)
+                   || ctx.Request.Path.StartsWithSegments("/api/alatpay/webhook", StringComparison.OrdinalIgnoreCase)
                    || ctx.Request.Path.Equals("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase);
         if (unsafeMethod && !webhook && ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers[HeaderName] != HeaderValue)
         {

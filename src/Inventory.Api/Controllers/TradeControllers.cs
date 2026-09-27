@@ -18,7 +18,7 @@ public sealed record SalePreviewResult(decimal Subtotal, decimal DiscountAmount,
     decimal AppliedToInvoice, decimal AppliedToPreviousBalance, decimal Outstanding, string Status);
 
 [ApiController, Route("api/sales")]
-public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, IBusinessDbContext db) : AppController(cu)
+public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, InvoiceEditService edits, IBusinessDbContext db) : AppController(cu)
 {
     private const string IdempotencyHeader = "Idempotency-Key";
 
@@ -43,9 +43,20 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     {
         var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
         var prev = await db.Customers.Where(c => c.Id == req.CustomerId).Select(c => (decimal?)c.Balance).SingleOrDefaultAsync(ct) ?? 0m;
-        var split = PaymentWaterfall.ForNewDocument(prev, totals.Total, req.PaidNow);
-        return new SalePreviewResult(totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total, prev, split.AppliedToNew, split.Overflow, split.Outstanding, split.Status);
+        // Mirrors SalesService: account credit (a negative balance) is used before the cash paid now.
+        var creditUsed = prev < 0 ? Math.Min(-prev, totals.Total) : 0m;
+        var split = PaymentWaterfall.ForNewDocument(Math.Max(prev, 0m), totals.Total - creditUsed, req.PaidNow);
+        var applied = creditUsed + split.AppliedToNew;
+        return new SalePreviewResult(totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total, prev, applied, split.Overflow, split.Outstanding,
+            PaymentStatuses.For(applied, totals.Total));
     }
+
+    /// <summary>
+    /// Change a sale's items, prices, discount, VAT or delivery fee. Only the difference moves stock (removed units go back to the batch they came
+    /// from); what the customer owes follows the new total, and anything overpaid pays their other sales, then stays as credit. Admin only.
+    /// </summary>
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public Task<InvoiceEditResult> Edit(int id, InvoiceEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
 
     /// <summary>Send a unique <c>Idempotency-Key</c> header per submit: a retry or double click returns the same invoice.</summary>
     [HttpPost, Authorize(Policy = Policies.Staff)]
@@ -108,7 +119,7 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
 }
 
 [ApiController, Route("api/purchases")]
-public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQueries q) : AppController(cu)
+public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseEditService edits, PurchaseQueries q) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Admin)]
     public Task<PagedResult<PurchaseRowDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.ListAsync(page, ct);
@@ -129,4 +140,8 @@ public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQ
 
     [HttpPost("{id:int}/pay"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Pay(int id, CancellationToken ct) { await svc.PayAsync(id, Me, ct); return NoContent(); }
+
+    /// <summary>Change an order's lines or VAT. Once received, stock moves by the difference in this order's own batch.</summary>
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public Task<PurchaseEditResult> Edit(int id, PurchaseEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
 }

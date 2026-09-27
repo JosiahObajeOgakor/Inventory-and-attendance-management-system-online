@@ -36,6 +36,7 @@ public sealed class NotifyOptions
 public sealed class PaystackGateway(HttpClient http, IOptions<PaystackOptions> options, IOptions<NotifyOptions> notify, ILogger<PaystackGateway> log) : IPaymentGateway
 {
     private PaystackOptions Opt => options.Value;
+    public string Provider => Inventory.Domain.Entities.PaymentProviders.Paystack;
     public bool IsConfigured => Opt.SecretKey.StartsWith("sk_", StringComparison.Ordinal);
     public string FallbackEmail => string.IsNullOrWhiteSpace(notify.Value.AdminEmail) ? "payments@invalid.example" : notify.Value.AdminEmail;
 

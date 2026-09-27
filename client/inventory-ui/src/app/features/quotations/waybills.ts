@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
-import { PendingInvoice, WaybillRow } from '../../core/models-more';
+import { Auth } from '../../core/auth.service';
+import { PendingInvoice, WaybillDetail, WaybillRow } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Toasts } from '../../shared/feedback';
@@ -30,7 +31,9 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
             @for (w of list.items(); track w.id) {
               <tr><td><span class="docno">{{ w.waybillNumber }}</span></td><td>{{ w.issueDate | day }}</td><td class="mono">{{ w.invoiceNumber }}</td><td class="strong">{{ w.customer }}</td>
                 <td>{{ w.driverName ?? '—' }}</td><td class="mono">{{ w.vehiclePlate ?? '—' }}</td>
-                <td class="actions"><a class="btn btn-sm" [href]="'/api/waybills/' + w.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="15" /> PDF</a></td></tr>
+                <td class="actions">
+                  @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="openEdit(w)" [attr.aria-label]="'Edit ' + w.waybillNumber"><app-icon name="edit" [size]="15" /> Edit</button> }
+                  <a class="btn btn-sm" [href]="'/api/waybills/' + w.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="15" /> PDF</a></td></tr>
             }
           </tbody>
         </table></div>
@@ -56,9 +59,10 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
       <app-pager [page]="pending.page()" [pageSize]="pending.pageSize" [total]="pending.total()" (pageChange)="pending.goTo($event)" />
     </app-modal>
 
-    <app-modal [open]="!!chosen()" heading="Dispatch details" (closed)="chosen.set(null)">
-      @if (chosen(); as c) {
-        <p>{{ c.invoiceNumber }} for <strong>{{ c.customer }}</strong>@if (fromWarehouse()) { — leaving {{ fromWarehouse() }} }.</p>
+    <app-modal [open]="!!chosen() || !!editing()" [heading]="editing() ? 'Edit ' + editing()!.waybillNumber : 'Dispatch details'" (closed)="closeForm()">
+      @if (chosen() || editing()) {
+        @if (chosen(); as c) { <p>{{ c.invoiceNumber }} for <strong>{{ c.customer }}</strong>@if (fromWarehouse()) { — leaving {{ fromWarehouse() }} }.</p> }
+        @if (editing(); as e) { <p>For sale <strong class="mono">{{ e.invoiceNumber }}</strong>. The sale stays the same — correct the dispatch details below.</p> }
         <form id="wb" [formGroup]="form" (ngSubmit)="save()" class="form-grid" novalidate>
           <div class="field"><label for="wd">Driver’s name</label><input id="wd" class="input" formControlName="driverName" /></div>
           <div class="field"><label for="wp">Driver’s phone</label><input id="wp" class="input" inputmode="tel" formControlName="driverPhone" /></div>
@@ -69,8 +73,8 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
         </form>
       }
       <ng-container modal-actions>
-        <button type="button" class="btn" (click)="chosen.set(null)">Back</button>
-        <button type="submit" form="wb" class="btn btn-primary" [disabled]="busy()">{{ busy() ? 'Saving…' : 'Create waybill' }}</button>
+        <button type="button" class="btn" (click)="closeForm()">{{ editing() ? 'Cancel' : 'Back' }}</button>
+        <button type="submit" form="wb" class="btn btn-primary" [disabled]="busy()">{{ busy() ? 'Saving…' : editing() ? 'Save changes' : 'Create waybill' }}</button>
       </ng-container>
     </app-modal>`,
   styles: `.sm { font-size: .75rem; } .lede { margin: 0 0 1rem; max-width: 46rem; } .actions { white-space: nowrap; }`,
@@ -84,6 +88,8 @@ export class WaybillsPage implements OnInit {
   protected readonly pending = new PagedList<PendingInvoice>(q => this.api.waybillInvoices({ ...q, pendingOnly: this.pendingOnly() }), 8);
   protected readonly pickOpen = signal(false);
   protected readonly chosen = signal<PendingInvoice | null>(null);
+  protected readonly editing = signal<WaybillDetail | null>(null);
+  protected readonly auth = inject(Auth);
   protected readonly fromWarehouse = signal('');
   protected readonly busy = signal(false);
   protected readonly form = this.fb.nonNullable.group({ driverName: [''], driverPhone: [''], vehiclePlate: [''], issueDate: [''], destinationAddress: [''], notes: [''] });
@@ -101,9 +107,30 @@ export class WaybillsPage implements OnInit {
     } catch (e) { this.toasts.error(messageOf(e)); }
   }
 
+  protected closeForm() { this.chosen.set(null); this.editing.set(null); }
+
+  protected async openEdit(row: WaybillRow) {
+    try {
+      const w = await this.api.waybill(row.id);
+      this.form.reset({ driverName: w.driverName ?? '', driverPhone: w.driverPhone ?? '', vehiclePlate: w.vehiclePlate ?? '', issueDate: w.issueDate,
+        destinationAddress: w.destinationAddress ?? '', notes: w.notes ?? '' });
+      this.editing.set(w);
+    } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+
   protected async save() {
-    const c = this.chosen(); if (!c) return;
     const v = this.form.getRawValue(); const n = (s: string) => s.trim() || null;
+    const e = this.editing();
+    if (e) {
+      this.busy.set(true);
+      try {
+        await this.api.updateWaybill(e.id, { invoiceId: e.invoiceId, issueDate: v.issueDate || null, driverName: n(v.driverName), driverPhone: n(v.driverPhone),
+          vehiclePlate: n(v.vehiclePlate), destinationAddress: n(v.destinationAddress), notes: n(v.notes) });
+        this.toasts.ok(`${e.waybillNumber} updated.`); this.editing.set(null); await this.list.load();
+      } catch (err) { this.toasts.error(messageOf(err)); } finally { this.busy.set(false); }
+      return;
+    }
+    const c = this.chosen(); if (!c) return;
     this.busy.set(true);
     try {
       const { id } = await this.api.createWaybill({ invoiceId: c.invoiceId, issueDate: v.issueDate || null, driverName: n(v.driverName), driverPhone: n(v.driverPhone),

@@ -89,6 +89,58 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
         return batch;
     }
 
+    /// <summary>What a sale still holds, per batch: units it took (its sale + any edits) minus units an edit handed back.</summary>
+    public sealed record HeldStock(int ProductId, int WarehouseId, int? BatchId, int Quantity, int LastMovementId);
+
+    public async Task<IReadOnlyList<HeldStock>> HeldByInvoiceAsync(int invoiceId, CancellationToken ct)
+    {
+        var moves = await db.StockMovements.AsNoTracking()
+            .Where(m => m.ReferenceId == invoiceId
+                        && (m.ReferenceType == MovementReferences.Invoice || m.ReferenceType == MovementReferences.InvoiceEdit)
+                        && (m.MovementType == MovementTypes.Out || m.MovementType == MovementTypes.In))
+            .ToListAsync(ct);
+        return moves.GroupBy(m => (m.ProductId, m.WarehouseId, m.BatchId))
+            .Select(g => new HeldStock(g.Key.ProductId, g.Key.WarehouseId, g.Key.BatchId,
+                g.Sum(m => m.MovementType == MovementTypes.Out ? m.Quantity : -m.Quantity), g.Max(m => m.Id)))
+            .Where(h => h.Quantity > 0)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Puts <paramref name="quantity"/> units of one product that a sale took back on the shelf — into the very batches they came from (most recently
+    /// used first), so expiry dates survive. Units recorded without a batch (desktop-era sales) go to the warehouse's shared "RETURNED" batch.
+    /// </summary>
+    public async Task ReturnFromInvoiceAsync(int invoiceId, int productId, int quantity, string referenceType, int userId, string note, CancellationToken ct)
+    {
+        var held = (await HeldByInvoiceAsync(invoiceId, ct)).Where(h => h.ProductId == productId).OrderByDescending(h => h.LastMovementId).ToList();
+        if (held.Sum(h => h.Quantity) < quantity) throw new InvalidOperationException("Trying to return more units than this sale took.");
+        var left = quantity;
+        foreach (var h in held)
+        {
+            if (left == 0) break;
+            var n = Math.Min(left, h.Quantity);
+            await ReturnHeldAsync(h with { Quantity = n }, invoiceId, referenceType, userId, note, ct);
+            left -= n;
+        }
+    }
+
+    /// <summary>Returns one held slice to its batch (or the RETURNED batch) and logs the IN.</summary>
+    public async Task ReturnHeldAsync(HeldStock h, int invoiceId, string referenceType, int userId, string note, CancellationToken ct)
+    {
+        var batch = h.BatchId is int bid
+            ? await db.StockBatches.FromSqlInterpolated($"SELECT * FROM stock_batches WHERE Id = {bid} FOR UPDATE").SingleOrDefaultAsync(ct)
+            : null;
+        if (batch is not null)
+        {
+            batch.QuantityOnHand += h.Quantity;
+            AddMovement(h.ProductId, h.WarehouseId, MovementTypes.In, h.Quantity, referenceType, invoiceId, userId, note, batch.Id);
+        }
+        else
+        {
+            await ReceiveAsync(h.ProductId, h.WarehouseId, "RETURNED", h.Quantity, null, referenceType, invoiceId, userId, ct, note);
+        }
+    }
+
     public StockMovement AddMovement(int productId, int warehouseId, string type, int quantity, string? referenceType,
         int? referenceId, int userId, string? note = null, int? batchId = null)
     {

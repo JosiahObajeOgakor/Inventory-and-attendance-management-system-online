@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { AdviceLine, SuggestedLine } from '../../core/models-dash';
-import { Product, PurchaseRequest, Supplier, Warehouse } from '../../core/models';
+import { Product, PurchaseDetail, PurchaseRequest, Supplier, Warehouse } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Toasts } from '../../shared/feedback';
 import { asNumber } from '../../shared/paged-list';
@@ -20,16 +21,25 @@ const VAT = 7.5;
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
-      <div class="page-head"><h1>New purchase</h1><div class="actions"><a class="btn" routerLink="/purchases">Cancel</a></div></div>
+      <div class="page-head"><h1>{{ edit ? 'Edit purchase ' + (original()?.poNumber ?? '') : 'New purchase' }}</h1>
+        <div class="actions"><a class="btn" [routerLink]="edit ? ['/purchases', editId] : '/purchases'">Cancel</a></div></div>
+      @if (edit && original(); as o) {
+        <p class="notice info">
+          @if (o.status === 'Received') { These goods are already in stock. Only the difference moves: extra units are added to this order’s batch, and units you take off leave it — as long as they haven’t been sold yet. }
+          @else { This order hasn’t been received yet, so no stock moves — only the order and what you owe the supplier change. }
+        </p>
+      }
 
       <form [formGroup]="form" (ngSubmit)="save()" class="layout" novalidate>
         <div class="left">
           <section class="card card-pad form-grid">
             <div class="field"><label for="sup">Supplier</label>
               <select id="sup" class="input" formControlName="supplierId"><option [ngValue]="0" disabled>Choose a supplier</option>@for (s of suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.name }}</option> }</select>
-              @if (supplier(); as s) { @if (s.balance > 0) { <span class="hint owes">We already owe them {{ s.balance | naira }}</span> } }</div>
-            <div class="field"><label>&nbsp;</label><button type="button" class="btn" [disabled]="!supplier() || suggesting()" (click)="suggest()"><app-icon name="spark" [size]="16" /> {{ suggesting() ? 'Working it out…' : 'Suggest what to order' }}</button></div>
-            <div class="field"><label for="od">Order date</label><input id="od" class="input" type="date" formControlName="orderDate" /></div>
+              @if (supplier(); as s) { @if (s.balance > 0 && !edit) { <span class="hint owes">We already owe them {{ s.balance | naira }}</span> } @if (s.balance < 0) { <span class="hint credit">We have {{ -s.balance | naira }} credit with them</span> } }</div>
+            @if (!edit) {
+              <div class="field"><label>&nbsp;</label><button type="button" class="btn" [disabled]="!supplier() || suggesting()" (click)="suggest()"><app-icon name="spark" [size]="16" /> {{ suggesting() ? 'Working it out…' : 'Suggest what to order' }}</button></div>
+              <div class="field"><label for="od">Order date</label><input id="od" class="input" type="date" formControlName="orderDate" /></div>
+            }
           </section>
 
           @if (suggested().length) {
@@ -76,6 +86,24 @@ const VAT = 7.5;
             @if (vatAmount() > 0) { <div><dt>VAT</dt><dd class="mono">{{ vatAmount() | naira }}</dd></div> }
             <div class="grand"><dt>Total</dt><dd class="figure">{{ total() | naira }}</dd></div>
           </dl>
+          @if (edit && original(); as o) {
+            <div class="changes" aria-live="polite">
+              <div class="label">What this edit does</div>
+              <ul class="plain">
+                @if (o.status === 'Received') {
+                  @for (m of stockMoves(); track m.productId) {
+                    <li>{{ m.qty > 0 ? 'Adds' : 'Takes' }} <strong>{{ m.qty > 0 ? m.qty : -m.qty }} × {{ m.name }}</strong> {{ m.qty > 0 ? 'to' : 'out of' }} stock</li>
+                  } @empty { <li class="muted">No stock moves.</li> }
+                }
+                <li>Total {{ o.totalAmount | naira }} → <strong>{{ total() | naira }}</strong>
+                  @if (total() > o.totalAmount) { — you owe the supplier {{ total() - o.totalAmount | naira }} more. }
+                  @if (total() < o.totalAmount) { — you owe the supplier {{ o.totalAmount - total() | naira }} less. }</li>
+                @if (o.amountPaid > total()) {
+                  <li>{{ o.amountPaid - total() | naira }} already paid is more than the new total. It pays your other unpaid orders with them first; anything left is credit for your next order.</li>
+                }
+              </ul>
+            </div>
+          } @else {
           <label class="check"><input type="checkbox" formControlName="receiveNow" /> The goods are already here — add them to stock</label>
           @if (form.controls.receiveNow.value) {
             <div class="field"><label for="wh">Put them in</label><select id="wh" class="input" formControlName="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div>
@@ -83,7 +111,8 @@ const VAT = 7.5;
           <div class="field"><label for="paid">Paid to the supplier now</label><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
             <span class="hint">Covers this order first, then older orders, oldest first.</span></div>
           <div class="field"><label for="pm">Paid by</label><select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option></select></div>
-          <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : 'Save purchase' }}</button>
+          }
+          <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : edit ? 'Save changes' : 'Save purchase' }}</button>
         </aside>
       </form>
     </div>`,
@@ -93,7 +122,9 @@ const VAT = 7.5;
     .pick { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); max-height: 15rem; overflow: auto; background: #fff; }
     .pick button { display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: .6rem 1.1rem; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; }
     .pick button:hover, .pick button:focus-visible { background: var(--brand-tint); }
-    .sm { font-size: .75rem; } .owes { color: var(--stamp) !important; font-weight: 600; } .w-qty { width: 5rem; } .w-price { width: 8rem; } .big { min-height: 3rem; }
+    .sm { font-size: .75rem; } .owes { color: var(--stamp) !important; font-weight: 600; } .credit { color: var(--ok, #1a7f4b) !important; font-weight: 600; }
+    .label { font: 600 .75rem/1 var(--font-body); letter-spacing: .04em; color: var(--ink-3); margin-bottom: .55rem; }
+    .changes { border-top: 1px solid var(--line); padding-top: .75rem; font-size: .8125rem; } .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; } .w-qty { width: 5rem; } .w-price { width: 8rem; } .big { min-height: 3rem; }
     .totals { margin: 0; display: grid; gap: .35rem; } .totals div { display: flex; justify-content: space-between; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
     .grand { border-top: 2px solid var(--ink); padding-top: .5rem; align-items: baseline; } .grand dt { color: var(--ink) !important; font-weight: 700; } .grand dd { font-size: 2rem; color: var(--brand); }
     @media (max-width: 1100px) { .layout { grid-template-columns: minmax(0, 1fr); } .summary { position: static; } }
@@ -105,6 +136,10 @@ export class PurchaseNew implements OnInit {
   private readonly router = inject(Router);
   private readonly toasts = inject(Toasts);
   private readonly fb = inject(FormBuilder);
+  private readonly route = inject(ActivatedRoute);
+  protected readonly edit = this.route.snapshot.data['mode'] === 'edit';
+  protected readonly editId = Number(this.route.snapshot.paramMap.get('id')) || 0;
+  protected readonly original = signal<PurchaseDetail | null>(null);
   protected readonly vatRate = VAT;
 
   protected readonly suppliers = signal<Supplier[]>([]);
@@ -130,11 +165,23 @@ export class PurchaseNew implements OnInit {
   protected readonly form = this.fb.nonNullable.group({
     supplierId: [0, Validators.min(1)], orderDate: [''], vat: [false], receiveNow: [false], warehouseId: [0], paidNow: [0, Validators.min(0)], paymentMethod: ['Cash'],
   });
-  private readonly value = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
+  // Raw value: in edit mode the supplier is locked (disabled) but still part of the order.
+  private readonly value = toSignal(this.form.valueChanges.pipe(map(() => this.form.getRawValue())), { initialValue: this.form.getRawValue() });
   protected readonly supplier = computed(() => this.suppliers().find(s => s.id === Number(this.value().supplierId)));
   protected readonly subtotal = computed(() => this.lines().reduce((s, l) => s + l.qty * l.cost, 0));
   protected readonly vatAmount = computed(() => (this.value().vat ? Math.round(this.subtotal() * VAT) / 100 : 0));
   protected readonly total = computed(() => this.subtotal() + this.vatAmount());
+  /** Edit mode: per product, how many more (+) or fewer (−) than the saved order. */
+  protected readonly stockMoves = computed(() => {
+    const o = this.original(); if (!o) return [];
+    const was = new Map<number, { name: string; qty: number }>();
+    for (const i of o.items) was.set(i.productId, { name: i.product, qty: (was.get(i.productId)?.qty ?? 0) + i.quantity });
+    const now = new Map<number, { name: string; qty: number }>();
+    for (const l of this.lines()) now.set(l.productId, { name: l.name, qty: (now.get(l.productId)?.qty ?? 0) + l.qty });
+    return [...new Set([...was.keys(), ...now.keys()])]
+      .map(id => ({ productId: id, name: (now.get(id) ?? was.get(id))!.name, qty: (now.get(id)?.qty ?? 0) - (was.get(id)?.qty ?? 0) }))
+      .filter(m => m.qty !== 0);
+  });
   protected readonly request = computed<PurchaseRequest | null>(() => {
     const v = this.value(); const lines = this.lines();
     if (!(Number(v.supplierId) > 0) || !lines.length || lines.some(l => !(l.qty > 0))) return null;
@@ -152,6 +199,16 @@ export class PurchaseNew implements OnInit {
       const [s, w] = await Promise.all([this.api.suppliers({ pageSize: 200 }), this.api.warehouses()]);
       this.suppliers.set(s.items); this.warehouses.set(w);
       if (w[0]) this.form.controls.warehouseId.setValue(w[0].id);
+      if (this.edit) {
+        const o = await this.api.purchase(this.editId);
+        if (o.status === 'Cancelled') { this.error.set('This order was cancelled and can no longer be edited.'); return; }
+        // The order doesn't store its VAT rate; it had VAT if the total is more than its lines.
+        const sub = o.items.reduce((t, i) => t + i.lineTotal, 0);
+        this.form.patchValue({ supplierId: o.supplierId, vat: o.totalAmount > sub + 0.005 });
+        this.form.controls.supplierId.disable();
+        this.lines.set(o.items.map(i => ({ productId: i.productId, name: i.product, sku: i.sku, qty: i.quantity, cost: i.unitCost })));
+        this.original.set(o);
+      }
     } catch (e) { this.error.set(messageOf(e)); }
   }
 
@@ -191,6 +248,13 @@ export class PurchaseNew implements OnInit {
     const r = this.request(); if (!r || this.busy()) return;
     this.busy.set(true); this.error.set('');
     try {
+      if (this.edit) {
+        const res = await this.api.editPurchase(this.editId, { vatRate: r.vatRate, lines: r.lines });
+        const extra = res.creditHeld > 0 ? ` You now have ${new NairaPipe().transform(res.creditHeld)} credit with this supplier.` : '';
+        this.toasts.ok(`Purchase ${res.poNumber} updated.${extra}`);
+        await this.router.navigate(['/purchases', res.purchaseOrderId]);
+        return;
+      }
       const body = JSON.stringify(r);
       if (!this.idem || this.idem.body !== body) this.idem = { body, id: crypto.randomUUID() };
       const res = await this.api.createPurchase(r, this.idem.id);

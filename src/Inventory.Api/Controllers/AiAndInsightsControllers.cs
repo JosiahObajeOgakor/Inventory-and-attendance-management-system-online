@@ -140,14 +140,15 @@ public class LanguageController(LanguageCatalogue catalogue) : ControllerBase
 /// (which must be one this server created), and a server-to-server confirmation from Paystack of the amount. Company routing comes from the reference prefix.
 /// </summary>
 [ApiController, Route("api/paystack")]
-public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGateway gateway, CompanyRegistry registry, ILogger<PaystackWebhookController> log) : ControllerBase
+public class PaystackWebhookController(Inventory.Application.Payments.PaymentGateways gateways, CompanyRegistry registry, ILogger<PaystackWebhookController> log) : ControllerBase
 {
     [HttpPost("webhook"), AllowAnonymous, RequestSizeLimit(65536)]
     public async Task<IActionResult> Webhook(CancellationToken ct)
     {
         string raw;
         using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
-        if (!gateway.IsValidSignature(raw, Request.Headers["x-paystack-signature"].FirstOrDefault())) return Unauthorized();
+        var gateway = gateways.Get(Inventory.Domain.Entities.PaymentProviders.Paystack);
+        if (gateway is null || !gateway.IsValidSignature(raw, Request.Headers["x-paystack-signature"].FirstOrDefault())) return Unauthorized();
 
         string? evt = null, reference = null;
         try { var root = System.Text.Json.Nodes.JsonNode.Parse(raw); evt = root?["event"]?.GetValue<string>(); reference = root?["data"]?["reference"]?.GetValue<string>(); }
@@ -160,7 +161,35 @@ public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGa
         var result = await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>().SettleAsync(reference, ct);
         log.LogInformation("Paystack webhook: applied={Applied} already={Already}", result.Applied, result.AlreadySettled);
         if (result.Applied)
-            await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentFollowUpService>().SendReceiptIfPossibleAsync(result, ct);
+            await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.OrderDispatchService>().CompleteAsync(result, ct);
         return Ok();
+    }
+}
+
+/// <summary>
+/// AlatPay calls this (one URL per company: /api/alatpay/webhook/{companyKey}) when a payment completes. Its body names AlatPay's transaction, not
+/// our payment link, so it is used as a signed doorbell: after the signature checks out, every pending AlatPay link of that company is re-checked
+/// with AlatPay's own status endpoint and the paid ones are settled. Nothing is ever marked paid from the webhook body itself.
+/// </summary>
+[ApiController, Route("api/alatpay")]
+public class AlatPayWebhookController(Inventory.Application.Payments.PaymentGateways gateways, CompanyRegistry registry, Inventory.Application.Abstractions.IClock clock,
+    ILogger<AlatPayWebhookController> log) : ControllerBase
+{
+    [HttpPost("webhook/{companyKey}"), AllowAnonymous, RequestSizeLimit(65536)]
+    public async Task<IActionResult> Webhook(string companyKey, CancellationToken ct)
+    {
+        string raw;
+        using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
+        var gateway = gateways.Get(Inventory.Domain.Entities.PaymentProviders.AlatPay);
+        if (gateway is null || !gateway.IsValidSignature(raw, Request.Headers["x-signature"].FirstOrDefault())) return Unauthorized();
+        if (registry.Find(companyKey) is null) { log.LogWarning("AlatPay webhook for an unknown company"); return Ok(); }
+        HttpContext.Items[RequestCompany.OverrideItem] = companyKey;
+
+        var pay = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>();
+        var dispatch = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.OrderDispatchService>();
+        var settled = await pay.SettlePendingAsync(Inventory.Domain.Entities.PaymentProviders.AlatPay, clock.UtcNow.AddDays(-3), ct);
+        foreach (var result in settled) await dispatch.CompleteAsync(result, ct);
+        log.LogInformation("AlatPay webhook: settled {Count}", settled.Count);
+        return Ok();   // always 200 once the signature is valid, so AlatPay stops retrying
     }
 }

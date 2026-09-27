@@ -47,6 +47,13 @@ public class WaybillsController(ICurrentUser cu, WaybillService svc) : AppContro
 
     [HttpPost, Authorize(Policy = Policies.Staff)]
     public async Task<IActionResult> Create(WaybillInput input, CancellationToken ct) => Ok(new { id = await svc.CreateAsync(input, Me, ct) });
+
+    [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
+    public Task<WaybillDetailDto> Get(int id, CancellationToken ct) => svc.GetAsync(id, ct);
+
+    /// <summary>Correct the driver, vehicle, destination, notes or date. The sale it belongs to stays the same. Admin only.</summary>
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> Update(int id, WaybillInput input, CancellationToken ct) { await svc.UpdateAsync(id, input, Me, ct); return NoContent(); }
 }
 
 // ------------------------------------------------------------------ attendance

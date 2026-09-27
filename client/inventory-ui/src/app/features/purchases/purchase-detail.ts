@@ -20,6 +20,7 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
           @if (p(); as p) {
             @if (p.status === 'Pending') { <button type="button" class="btn btn-primary" (click)="receiveOpen.set(true)">Receive goods</button> }
             @if (p.paymentStatus !== 'Paid') { <button type="button" class="btn" (click)="markPaid()">Mark as paid</button> }
+            @if (p.status !== 'Cancelled') { <a class="btn" [routerLink]="['/purchases', p.id, 'edit']">Edit purchase</a> }
           }
         </div>
       </div>

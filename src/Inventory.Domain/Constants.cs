@@ -65,6 +65,10 @@ public static class MovementReferences
     public const string OpeningBalance = "OpeningBalance";
     /// <summary>New: reversal of a voided invoice.</summary>
     public const string InvoiceVoid = "InvoiceVoid";
+    /// <summary>New: stock moved because a sale's lines were edited (IN = units handed back, OUT = extra units taken).</summary>
+    public const string InvoiceEdit = "InvoiceEdit";
+    /// <summary>New: stock moved because a received purchase's lines were edited.</summary>
+    public const string PurchaseEdit = "PurchaseEdit";
 }
 
 public static class LedgerAccountTypes

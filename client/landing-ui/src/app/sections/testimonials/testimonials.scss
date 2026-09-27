@@ -2,7 +2,21 @@
   display: block;
 }
 
+.reviews {
+  position: relative;
+  isolation: isolate;
+}
+
+.reviews__watermark {
+  bottom: -1rem;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  z-index: 0;
+}
+
 .reviews__head {
+  position: relative;
+  z-index: 1;
   text-align: center;
 
   h2 {
@@ -11,22 +25,59 @@
   }
 }
 
-.reviews__placeholder {
-  margin: 2rem auto 0;
+// A big rounded "blob" backdrop, like a stadium pill, holding the review card(s) — the
+// reference layout's oversized rounded review container.
+.reviews__blob {
+  position: relative;
+  z-index: 1;
+  margin-top: 2.5rem;
+  padding: clamp(3rem, 8vw, 5rem) clamp(1.5rem, 6vw, 4rem) clamp(4rem, 10vw, 6rem);
+  background: var(--paper-warm);
+  border-radius: 999px / 80px;
+  display: flex;
+  justify-content: center;
+}
+
+.reviews__pill {
+  position: relative;
+  z-index: 1;
+  background: #ffffff;
+  color: var(--ink);
+  border-radius: 999px;
   max-width: 46ch;
-  padding: 1.75rem 2rem;
+  padding: 1.75rem 2.25rem;
   text-align: center;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  box-shadow: 0 24px 50px -20px rgba(10, 4, 16, 0.3);
 
-  p {
-    line-height: 1.55;
-  }
+  p { line-height: 1.55; color: rgba(23, 11, 34, 0.75); }
 }
 
 .reviews__stars {
   color: var(--orange);
   font-size: 1.2rem;
   letter-spacing: 0.15em;
+}
+
+// A product photo peeking up from the bottom edge, echoing the reference layout's
+// "dog peeking over the carousel" motif — real packaging, not a stock pet photo.
+.reviews__peek {
+  position: absolute;
+  z-index: 0;
+  bottom: -1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 24px;
+  box-shadow: 0 20px 40px -16px rgba(23, 11, 34, 0.35);
+  border: 4px solid var(--paper);
+}
+
+@media (max-width: 560px) {
+  .reviews__blob { border-radius: 48px; }
+  .reviews__peek { width: 110px; height: 110px; }
 }

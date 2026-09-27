@@ -173,7 +173,7 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
         return new InvoiceDetailDto(i.Id, i.InvoiceNumber, c.Id, c.Name, c.CustomerType, i.InvoiceDate, i.DueDate, i.Subtotal, i.DiscountPct,
             i.DiscountAmount, i.VatRate, i.VatAmount, i.TotalAmount, i.AmountPaid, i.Status, i.PaymentMethod, i.PriceTier, i.WarehouseId,
             names.GetValueOrDefault(i.CreatedByUserId, ""), i.VoidReason, items,
-            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList());
+            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList(), i.DeliveryFee);
     }
 }
 

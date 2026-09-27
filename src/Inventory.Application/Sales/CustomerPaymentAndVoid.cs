@@ -90,28 +90,12 @@ public sealed class InvoiceVoidService(IBusinessDbContext db, TransactionRunner 
                 .FromSqlInterpolated($"SELECT * FROM customers WHERE Id = {invoice.CustomerId} FOR UPDATE")
                 .SingleAsync(inner);
 
-            // Stock back, into the very batch each unit left (their OUT movements say which), so expiry dates survive.
-            // Sales recorded by the desktop app carry no batch id; those units go to one shared "RETURNED" batch per
-            // warehouse rather than a new batch per voided invoice.
-            var outs = await db.StockMovements
-                .Where(m => m.ReferenceType == MovementReferences.Invoice && m.ReferenceId == invoice.Id && m.MovementType == MovementTypes.Out)
-                .ToListAsync(inner);
-            foreach (var m in outs.OrderBy(m => m.BatchId ?? int.MaxValue).ThenBy(m => m.ProductId))
-            {
-                var note = $"Void of {invoice.InvoiceNumber}";
-                StockBatch? original = m.BatchId is int bid
-                    ? await db.StockBatches.FromSqlInterpolated($"SELECT * FROM stock_batches WHERE Id = {bid} FOR UPDATE").SingleOrDefaultAsync(inner)
-                    : null;
-                if (original is not null)
-                {
-                    original.QuantityOnHand += m.Quantity;
-                    stock.AddMovement(m.ProductId, m.WarehouseId, MovementTypes.In, m.Quantity, MovementReferences.InvoiceVoid, invoice.Id, user.Id, note, original.Id);
-                }
-                else
-                {
-                    await stock.ReceiveAsync(m.ProductId, m.WarehouseId, "RETURNED", m.Quantity, null, MovementReferences.InvoiceVoid, invoice.Id, user.Id, inner, note);
-                }
-            }
+            // Stock back, into the very batch each unit left, so expiry dates survive — counting what the sale STILL holds after any
+            // edits (units it took, minus units an edit already handed back). Sales recorded by the desktop app carry no batch id;
+            // those units go to one shared "RETURNED" batch per warehouse rather than a new batch per voided invoice.
+            var held = await stock.HeldByInvoiceAsync(invoice.Id, inner);
+            foreach (var h in held.OrderBy(h => h.BatchId ?? int.MaxValue).ThenBy(h => h.ProductId))
+                await stock.ReturnHeldAsync(h, invoice.Id, MovementReferences.InvoiceVoid, user.Id, $"Void of {invoice.InvoiceNumber}", inner);
 
             // What the customer still owed on this invoice comes off their balance; what they already paid stays paid
             // (refund is a business decision outside the system and is recorded in the void reason).

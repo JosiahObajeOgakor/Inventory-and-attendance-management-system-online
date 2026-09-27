@@ -35,7 +35,7 @@ conversation with no memory of any previous one.
 ### Example
 
 ```bash
-curl -s https://chewypetfeeds.com/api/webchat/message \
+curl -s https://chewypetsfeeds.com/api/webchat/message \
   -H 'Content-Type: application/json' \
   -d '{"sessionId":"demo-1","message":"I need 2 bags of the all-life-stages formula"}'
 ```

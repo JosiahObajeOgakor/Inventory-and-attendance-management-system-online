@@ -13,18 +13,37 @@ using static Inventory.IntegrationTests.MySqlFixture;
 
 namespace Inventory.IntegrationTests;
 
-internal sealed class FakeGateway(bool configured = true) : IPaymentGateway
+/// <summary>A processor that never leaves the machine. AlatPay-style fakes issue their own reference, like the real one.</summary>
+internal sealed class FakeGateway(bool configured = true, string provider = PaymentProviders.Paystack) : IPaymentGateway
 {
+    public string Provider => provider;
     public bool IsConfigured => configured;
     public string FallbackEmail => "admin@example.com";
     public int Initialized { get; private set; }
     public string? LastEmail { get; private set; }
     public long? LastKobo { get; private set; }
+    public List<string> Verified { get; } = [];
     public GatewayVerification? Verification { get; set; }
+    /// <summary>Per-reference answers, for tests with several links; falls back to <see cref="Verification"/>.</summary>
+    public Dictionary<string, GatewayVerification> ByReference { get; } = [];
     public Task<GatewayCharge> InitializeAsync(string email, long amountKobo, string reference, IReadOnlyDictionary<string, string> metadata, CancellationToken ct)
-    { Initialized++; LastEmail = email; LastKobo = amountKobo; return Task.FromResult(new GatewayCharge("https://checkout.paystack.com/" + reference.Replace("-", ""), reference)); }
-    public Task<GatewayVerification?> VerifyAsync(string reference, CancellationToken ct) => Task.FromResult(Verification);
+    {
+        Initialized++; LastEmail = email; LastKobo = amountKobo;
+        var own = provider == PaymentProviders.AlatPay ? "pay" + Guid.NewGuid().ToString("N")[..12] : reference;
+        return Task.FromResult(new GatewayCharge($"https://{provider}.example/{own}", own));
+    }
+    public Task<GatewayVerification?> VerifyAsync(string reference, CancellationToken ct)
+    { Verified.Add(reference); return Task.FromResult(ByReference.TryGetValue(reference, out var v) ? v : Verification); }
     public bool IsValidSignature(string rawBody, string? signature) => signature == "ok";
+}
+
+internal static class Pay
+{
+    public static PaymentLinkService Svc(BusinessDbContext db, IAdminNotifier n, params IPaymentGateway[] gateways)
+    {
+        var clock = new SystemClock();
+        return new PaymentLinkService(db, Wire.Tx(db), clock, Wire.Co(), new PaymentGateways(gateways), n, new CustomerPaymentService(db, Wire.Tx(db), clock), Wire.Quotes(db));
+    }
 }
 
 internal sealed class RecordingNotifier : IAdminNotifier
@@ -37,11 +56,7 @@ internal sealed class RecordingNotifier : IAdminNotifier
 [Collection("mysql")]
 public class PaymentLinkTests(MySqlFixture mysql)
 {
-    private static PaymentLinkService Svc(BusinessDbContext db, IPaymentGateway g, IAdminNotifier n)
-    {
-        var clock = new SystemClock();
-        return new PaymentLinkService(db, Wire.Tx(db), clock, Wire.Co(), g, n, new CustomerPaymentService(db, Wire.Tx(db), clock), Wire.Quotes(db));
-    }
+    private static PaymentLinkService Svc(BusinessDbContext db, IPaymentGateway g, IAdminNotifier n) => Pay.Svc(db, n, g);
 
     private async Task<(string Cs, Seed Seed, int InvoiceId)> Invoice(decimal paid = 0)
     {

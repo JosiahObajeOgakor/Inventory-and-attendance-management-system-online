@@ -73,6 +73,7 @@ export class Api {
   previewSale(req: M.SaleRequest) { return this.post<M.SalePreview>('/api/sales/preview', req); }
   createSale(req: M.SaleRequest, idempotencyKey: string) { return this.post<M.SaleResult>('/api/sales', req, { 'Idempotency-Key': idempotencyKey }); }
   voidSale(id: number, reason: string) { return this.post<void>(`/api/sales/${id}/void`, { reason }); }
+  editSale(id: number, req: M.InvoiceEditRequest) { return this.put<M.InvoiceEditResult>(`/api/sales/${id}`, req); }
 
   // customers
   customers(q: M.PageQuery) { return this.get<M.Paged<M.Customer>>('/api/customers', q); }
@@ -92,6 +93,7 @@ export class Api {
   createPurchase(req: M.PurchaseRequest, idempotencyKey: string) { return this.post<M.PurchaseResult>('/api/purchases', req, { 'Idempotency-Key': idempotencyKey }); }
   receivePurchase(id: number, warehouseId: number) { return this.post<void>(`/api/purchases/${id}/receive`, { warehouseId }); }
   payPurchase(id: number) { return this.post<void>(`/api/purchases/${id}/pay`); }
+  editPurchase(id: number, req: M.PurchaseEditRequest) { return this.put<M.PurchaseEditResult>(`/api/purchases/${id}`, req); }
 
   // admin
   users() { return this.get<M.UserRow[]>('/api/users'); }

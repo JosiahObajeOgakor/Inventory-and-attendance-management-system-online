@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { RevealDirective } from '../../core/reveal.directive';
 import { whatsappHref } from '../../core/whatsapp';
 
@@ -7,6 +7,13 @@ interface Product {
   title: string;
   desc: string;
 }
+
+// Real product photography only (no stock) — bags we actually have shots of fall back
+// to the hero pack shot rather than a fabricated per-SKU photo.
+const PRODUCT_IMAGES: Record<string, string> = {
+  '01': '/chewy-bag-puppy.jpg',
+  '03': '/chewy-bag-all-life-stages.jpg',
+};
 
 @Component({
   selector: 'app-product-list',
@@ -26,5 +33,17 @@ export class ProductList {
 
   protected orderHref(product: Product): string {
     return whatsappHref(`Hi! I'd like to order Chewy Pet ${product.title}.`);
+  }
+
+  // Defaults open on the flagship "All Life Stages" bag.
+  protected readonly activeNum = signal('03');
+
+  protected setActive(num: string): void {
+    this.activeNum.set(num);
+  }
+
+  // Only SKUs we have real bag photography for get a thumbnail — no fallback/stock image.
+  protected productImage(num: string): string | null {
+    return PRODUCT_IMAGES[num] ?? null;
   }
 }

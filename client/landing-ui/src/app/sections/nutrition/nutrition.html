@@ -10,29 +10,43 @@
 
   <div class="nutrition__grid">
     @for (point of points; track point.title) {
-      <article class="tag tag--card reveal" appReveal>
-        <span class="nutrition__icon" aria-hidden="true">
-          @switch (point.icon) {
-            @case ('protein') {
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
-            }
-            @case ('stages') {
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-            }
-            @case ('bowl') {
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16a8 8 0 0 1-16 0Z"/><path d="M8 12V8a4 4 0 0 1 8 0v4"/></svg>
-            }
+      <a class="photo-card nutrition__card reveal" appReveal [href]="whatsappLink(point.title)" target="_blank" rel="noopener">
+        @switch (point.icon) {
+          @case ('protein') {
+            <img src="/chewy-bag-all-life-stages.jpg" [alt]="point.title" loading="lazy" />
+            <span class="photo-card__badge">Protein</span>
           }
-        </span>
-        <span class="tag__title">{{ point.title }}</span>
-        <span class="tag__desc">{{ point.desc }}</span>
-      </article>
+          @case ('stages') {
+            <img src="/chewy-bag-puppy.jpg" [alt]="point.title" loading="lazy" />
+            <span class="photo-card__badge">Life stages</span>
+          }
+        }
+        <div class="photo-card__foot">
+          <div class="nutrition__card-text">
+            <span class="photo-card__title">{{ point.title }}</span>
+            <span class="nutrition__card-desc">{{ point.desc }}</span>
+          </div>
+          <span class="photo-card__arrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 17 17 7M9 7h8v8"/></svg>
+          </span>
+        </div>
+      </a>
     }
   </div>
 
   <ul class="cert-strip reveal" appReveal>
-    @for (cert of certs; track cert) {
-      <li>{{ cert }}</li>
+    @for (cert of certs; track cert; let i = $index) {
+      <li>
+        <span class="cert-strip__icon" aria-hidden="true">
+          @switch (i) {
+            @case (0) { <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg> }
+            @case (1) { <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> }
+            @case (2) { <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V10l5-3 5 3 5-3 3 2v12H3Z"/><path d="M8 21v-6h4v6"/></svg> }
+            @default { <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4V6a2 2 0 0 1 2-2Z"/></svg> }
+          }
+        </span>
+        {{ cert }}
+      </li>
     }
   </ul>
 </section>

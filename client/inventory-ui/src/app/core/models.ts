@@ -63,7 +63,18 @@ export interface InvoiceDetail {
   id: number; invoiceNumber: string; customerId: number; customer: string; customerType: string; invoiceDate: string; dueDate: string | null;
   subtotal: number; discountPct: number; discountAmount: number; vatRate: number; vatAmount: number; totalAmount: number; amountPaid: number;
   status: string; paymentMethod: string; priceTier: string; warehouseId: number | null; createdBy: string; voidReason: string | null;
-  items: InvoiceItem[]; payments: { at: string; amount: number; method: string }[];
+  items: InvoiceItem[]; payments: { at: string; amount: number; method: string }[]; deliveryFee: number;
+}
+export interface InvoiceEditRequest { discountPct: number; vatRate: number; deliveryFee: number; dueDate?: string | null; lines: SaleLine[]; }
+export interface StockChange { productId: number; product: string; quantity: number; }
+export interface InvoiceEditResult {
+  invoiceId: number; invoiceNumber: string; oldTotal: number; newTotal: number; outstanding: number; status: string;
+  stockBack: StockChange[]; stockOut: StockChange[]; movedToOtherSales: number; creditHeld: number;
+}
+export interface PurchaseEditRequest { vatRate: number; lines: { productId: number; quantity: number; unitCost: number }[]; }
+export interface PurchaseEditResult {
+  purchaseOrderId: number; poNumber: string; oldTotal: number; newTotal: number; outstanding: number; paymentStatus: string;
+  stockIn: StockChange[]; stockOut: StockChange[]; movedToOtherOrders: number; creditHeld: number;
 }
 
 export interface SaleLine { productId: number; quantity: number; unitPrice: number; serials?: string[]; }

@@ -3,16 +3,26 @@
     <p class="eyebrow">Caring hands, real answers</p>
     <h2>Real people behind every bowl</h2>
     <p class="team__copy">
-      Message our WhatsApp desk and you'll reach a real Chewy Pet person — not a bot.
+      Message our WhatsApp desk and you'll reach a real Chewy Pet person — not a bot. Roles
+      shown here, not stock headshots of people who don't work with us.
     </p>
   </div>
 
   <div class="team__grid">
     @for (role of roles; track role.title) {
-      <article class="tag tag--card team__card reveal" appReveal>
+      <article class="photo-card team__card reveal" appReveal>
+        @switch (role.initials) {
+          @case ('QS') { <img class="team__card-photo--dim" src="/chewy-bag-puppy.jpg" [alt]="role.title" loading="lazy" /> }
+          @case ('NS') { <img class="team__card-photo--dim" src="/chewy-bag-all-life-stages.jpg" [alt]="role.title" loading="lazy" /> }
+          @case ('CC') { <img class="team__card-photo--dim" src="/candid-purrfect-logo.jpeg" [alt]="role.title" loading="lazy" /> }
+        }
         <span class="team__avatar" aria-hidden="true">{{ role.initials }}</span>
-        <span class="tag__title">{{ role.title }}</span>
-        <span class="tag__desc">{{ role.desc }}</span>
+        <div class="photo-card__foot">
+          <div class="team__card-text">
+            <span class="photo-card__title">{{ role.title }}</span>
+            <span class="team__card-desc">{{ role.desc }}</span>
+          </div>
+        </div>
       </article>
     }
   </div>

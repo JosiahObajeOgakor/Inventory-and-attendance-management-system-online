@@ -5,56 +5,55 @@
   </a>
   <nav class="nav__links">
     <a href="#range">Range</a>
+    <a href="#crates">Crates</a>
     <a href="#why">Why Chewy Pet</a>
     <a href="#team">Team</a>
     <a href="#reviews">Reviews</a>
     <a href="#purrfect">Candid Purrfect</a>
   </nav>
+  <div class="nav__actions">
+  <a class="nav__login" href="/inventory/">Staff login</a>
   <a class="nav__cta" [href]="whatsappHref" target="_blank" rel="noopener">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
     Order on WhatsApp
   </a>
+  </div>
 </header>
+
+<!-- The "backyard": one looping clip pinned behind the whole page, seen through the windows below. -->
+<div class="backyard" aria-hidden="true">
+  <video #backyard class="backyard__video" muted loop playsinline preload="none" poster="/backyard-poster.jpg"></video>
+</div>
 
 <main id="top">
   <!-- Hero: the thesis — real product, real footage, one action -->
   <section class="hero">
-    <video class="hero__bg" autoplay muted loop playsinline poster="landing.jpg">
-      <source src="landingvideo.mp4" type="video/mp4" />
+    <video #heroVideo class="hero__bg" autoplay muted loop playsinline poster="/hero-poster.jpg">
+      <!-- Full 1080p for desktop/laptop screens; a lighter 720p for phones, where the frame is shown at phone width. -->
+      <source src="/hero-1080.mp4" type="video/mp4" media="(min-width: 761px)" />
+      <source src="/hero-720.mp4" type="video/mp4" />
     </video>
     <div class="hero__scrim"></div>
+    <p class="watermark hero__watermark" aria-hidden="true">ChewyPet</p>
 
     <div class="hero__content">
-      <p class="eyebrow">All life stages &middot; puppy to senior</p>
-      <h1 class="hero__title">Fresh bowls.<br />Chewy tails.<br /><span class="accent">Zero fuss.</span></h1>
-      <p class="hero__sub">
-        Complete dog food formulated for every stage of life, milled and packed for Nigerian
-        homes. Tell us what your dog needs on WhatsApp and we'll sort the rest.
-      </p>
+      <h1 class="hero__title">
+        <span class="hero__line">Bowls licked</span>
+        <span class="hero__line hero__line--accent">clean.</span>
+      </h1>
+      <p class="hero__sub">Complete dog food, puppy to senior. Order it in one WhatsApp message.</p>
 
       <div class="hero__actions">
-        <a class="btn btn--whatsapp" [href]="whatsappHref" target="_blank" rel="noopener">
+        <a class="btn btn--whatsapp hero__cta" [href]="whatsappHref" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
-          Buy on WhatsApp
+          Order on WhatsApp
         </a>
-        <a class="btn btn--ghost" href="#range">See the range</a>
+        <a class="hero__link" href="#range">See the range</a>
       </div>
-
-      <p class="hero__number">{{ whatsappDisplay }} &middot; tap to chat, no calls needed</p>
-    </div>
-
-    <div class="tag tag--float tag--protein" aria-hidden="true">
-      <span class="tag__value">32<small>%</small></span>
-      <span class="tag__label">Protein</span>
-    </div>
-    <div class="tag tag--float tag--fat" aria-hidden="true">
-      <span class="tag__value">20<small>%</small></span>
-      <span class="tag__label">Fat</span>
     </div>
   </section>
 
-  <app-feed-scene />
-
+  <div class="sheet sheet--first">
   <!-- Trust strip -->
   <section class="strip">
     <p><span>Milled &amp; packed locally</span><span>All life stages, one brand</span><span>Order and pay over WhatsApp</span></p>
@@ -63,6 +62,64 @@
   <app-nutrition />
 
   <app-product-list />
+
+  <!-- New product line: crates & carriers -->
+  <section id="crates" class="crates">
+    <a class="photo-card crates__photo reveal" appReveal [href]="crateWhatsappHref" target="_blank" rel="noopener">
+      <img src="/crate-lifestyle.jpg" alt="Golden retriever resting in a pink Chewy Pet wire crate at home" loading="lazy" />
+      <span class="photo-card__badge">New</span>
+      <div class="photo-card__foot">
+        <span class="photo-card__title">Foldable Wire Crate</span>
+        <span class="photo-card__arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 17 17 7M9 7h8v8"/></svg>
+        </span>
+      </div>
+    </a>
+    <div class="crates__copy reveal" appReveal>
+      <p class="eyebrow">Comfort &amp; travel</p>
+      <h2>Now stocking crates, not just kibble.</h2>
+      <p class="crates__desc">
+        A sturdy, foldable wire crate with a slide-out tray for easy cleanup — safe travel, vet
+        visits, and a calm space of their own at home. Ask about sizes and colors on WhatsApp.
+      </p>
+      <a class="btn btn--whatsapp" [href]="crateWhatsappHref" target="_blank" rel="noopener">Order a Crate</a>
+    </div>
+  </section>
+  </div>
+
+  <!-- Window 1: the sheet parts and the backyard shows through -->
+  <section class="window">
+    <div class="window__inner reveal" appReveal>
+      <p class="eyebrow">Fed right, full of play</p>
+      <h2 class="window__title">Good food shows up <br />as zoomies.</h2>
+      <a class="btn btn--whatsapp btn--lg" [href]="whatsappHref" target="_blank" rel="noopener">Order on WhatsApp</a>
+    </div>
+  </section>
+
+  <div class="sheet">
+  <!-- Image duo: dogs / cats, one brand family -->
+  <section id="purrfect" class="duo">
+    <a class="duo__panel reveal" appReveal [href]="whatsappHref" target="_blank" rel="noopener">
+      <p class="watermark duo__num" aria-hidden="true">01</p>
+      <img src="/chewy-bag-puppy.jpg" alt="Chewy Pet dog food" loading="lazy" />
+      <div class="duo__scrim"></div>
+      <div class="duo__body">
+        <p class="eyebrow">For dogs</p>
+        <h3>Every breed, every stage — Chewy Pet</h3>
+        <span class="duo__link">Order on WhatsApp &rarr;</span>
+      </div>
+    </a>
+    <a class="duo__panel reveal" appReveal [href]="whatsappHref" target="_blank" rel="noopener">
+      <p class="watermark duo__num" aria-hidden="true">02</p>
+      <img src="/candid-purrfect-logo.jpeg" alt="Candid Purrfect" loading="lazy" />
+      <div class="duo__scrim"></div>
+      <div class="duo__body">
+        <p class="eyebrow">From the same kitchen</p>
+        <h3>Cat at home too? Meet Candid Purrfect</h3>
+        <span class="duo__link">Ask about it on WhatsApp &rarr;</span>
+      </div>
+    </a>
+  </section>
 
   <!-- Why -->
   <section id="why" class="why">
@@ -86,45 +143,56 @@
   <app-team />
 
   <app-testimonials />
+  </div>
 
-  <!-- Sister brand -->
-  <section id="purrfect" class="purrfect reveal" appReveal>
-    <img class="purrfect__badge" src="candid-purrfect-logo.jpeg" alt="Candid Purrfect" width="64" height="64" />
-    <div class="purrfect__text">
-      <p class="eyebrow">From the same kitchen</p>
-      <h2>Cat at home too? Meet Candid Purrfect.</h2>
-      <p>
-        Our sister brand for cats — same standards, same WhatsApp line. Ask us about it when
-        you message.
-      </p>
-    </div>
-    <a class="btn btn--ghost" [href]="whatsappHref" target="_blank" rel="noopener">Ask about Candid Purrfect</a>
-  </section>
-
-  <!-- Final CTA -->
-  <section class="cta reveal" appReveal>
-    <h2>Ready to fill the bowl?</h2>
-    <p>Message us on WhatsApp — tell us your dog's size and stage, we'll tell you the right bag.</p>
+  <!-- Window 2 (finale): the backyard again, full height -->
+  <section class="window window--finale">
+    <div class="window__inner reveal" appReveal>
+    <h2 class="window__title">Ready to fill <br />the bowl?</h2>
+    <p class="window__sub">Message us on WhatsApp — tell us your dog's size and stage, we'll tell you the right bag.</p>
     <a class="btn btn--whatsapp btn--lg" [href]="whatsappHref" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
       Chat with Chewy Pet
     </a>
+    </div>
   </section>
 </main>
 
 <footer class="footer">
-  <div class="footer__brand">
-    <img src="logo.png" alt="Chewy Pet" width="28" height="28" />
-    <span>ChewyPets Farm &amp; Feeds Co. Ltd</span>
+  <div class="footer__grid">
+    <div class="footer__brand">
+      <div class="footer__brand-row">
+        <img src="logo.png" alt="Chewy Pet" width="32" height="32" />
+        <span>ChewyPets Farm &amp; Feeds Co. Ltd</span>
+      </div>
+      <p>Where healthy bowls come first.</p>
+    </div>
+
+    <div class="footer__col">
+      <p class="footer__heading">Explore</p>
+      <a href="#range">Range</a>
+      <a href="#crates">Crates</a>
+      <a href="#why">Why Chewy Pet</a>
+      <a href="#team">Team</a>
+      <a href="#reviews">Reviews</a>
+      <a href="#purrfect">Candid Purrfect</a>
+      <a href="/inventory/">Staff login</a>
+    </div>
+
+    <div class="footer__col">
+      <p class="footer__heading">Stay in the loop</p>
+      <p class="footer__note">Real orders, real answers — no forms, no wait.</p>
+      <a class="btn btn--whatsapp footer__subscribe" [href]="whatsappHref" target="_blank" rel="noopener">Message us on WhatsApp</a>
+    </div>
   </div>
-  <nav class="footer__links">
-    <a href="#range">Range</a>
-    <a href="#why">Why Chewy Pet</a>
-    <a href="#team">Team</a>
-    <a href="#reviews">Reviews</a>
-    <a href="#purrfect">Candid Purrfect</a>
-  </nav>
-  <a class="footer__cta" [href]="whatsappHref" target="_blank" rel="noopener">Message us on WhatsApp</a>
+
+  <div class="footer__bottom">
+    <span>&copy; {{ year }} ChewyPets Farm &amp; Feeds Co. Ltd. All rights reserved.</span>
+    <span>{{ whatsappDisplay }}</span>
+    <a class="footer__top" href="#top" aria-label="Back to top">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </a>
+  </div>
 </footer>
 
 <app-chat-widget />

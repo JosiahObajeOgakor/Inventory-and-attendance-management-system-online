@@ -86,13 +86,17 @@ public sealed class PurchaseService(
 
         var previous = supplier.Balance;
         var totals = DocumentCalculator.Purchase(req.Lines.Select(l => (l.Quantity, l.UnitCost)), req.VatRate);
-        var split = PaymentWaterfall.ForNewDocument(previous, totals.Total, req.PaidNow);
+        // Credit we hold with this supplier (a negative balance, left by an edited order we had overpaid) is used first.
+        var creditUsed = previous < 0 ? Math.Min(-previous, totals.Total) : 0m;
+        var split = PaymentWaterfall.ForNewDocument(Math.Max(previous, 0m), totals.Total - creditUsed, req.PaidNow);
+        var paidOnNew = creditUsed + split.AppliedToNew;
+        var status = PaymentStatuses.For(paidOnNew, totals.Total);
 
         var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.PurchaseOrders.AnyAsync(p => p.PoNumber == n, c), ct);
         var order = new PurchaseOrder
         {
             PoNumber = number, SupplierId = supplier.Id, OrderDate = orderDate, Status = PurchaseStatuses.Pending,
-            PaymentStatus = split.Status, TotalAmount = totals.Total, AmountPaid = split.AppliedToNew, CreatedByUserId = user.Id,
+            PaymentStatus = status, TotalAmount = totals.Total, AmountPaid = paidOnNew, CreatedByUserId = user.Id,
             Items = req.Lines.Select(l => new PurchaseOrderItem { ProductId = l.ProductId, Quantity = l.Quantity, UnitCost = l.UnitCost }).ToList(),
         };
         db.PurchaseOrders.Add(order);
@@ -128,7 +132,7 @@ public sealed class PurchaseService(
         await db.SaveChangesAsync(ct);
 
         return new PurchaseResult(order.Id, number, totals.Subtotal, totals.VatAmount, totals.Total, split.Outstanding,
-            split.Status, previous, appliedToOld, previous - appliedToOld + split.Outstanding);
+            status, previous, appliedToOld, creditUsed > 0 ? supplier.Balance : previous - appliedToOld + split.Outstanding);
     }
 
     /// <summary>

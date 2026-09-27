@@ -9,7 +9,7 @@
 }
 .team__copy {
   margin-top: 0.9rem;
-  color: var(--cream-dim);
+  color: var(--ink-dim);
   max-width: 52ch;
   line-height: 1.6;
 }
@@ -25,22 +25,44 @@
 }
 
 .team__card {
-  align-items: flex-start;
+  aspect-ratio: 3 / 4;
+  transition: transform 0.2s ease;
+  &:hover { transform: translateY(-4px); }
+}
+
+// A product photo standing in for a role card (not a fabricated headshot) — dimmed and
+// desaturated so it clearly reads as texture, not a person.
+.team__card-photo--dim {
+  filter: grayscale(0.3) brightness(0.55);
 }
 
 .team__avatar {
+  position: absolute;
+  z-index: 1;
+  top: 0.9rem;
+  right: 0.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--violet-deep);
-  color: var(--cream);
+  background: var(--orange);
+  color: var(--ink);
   font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.team__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.team__card-desc {
   font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
+  line-height: 1.4;
+  color: var(--cream-dim);
 }
 
 .team__cta {

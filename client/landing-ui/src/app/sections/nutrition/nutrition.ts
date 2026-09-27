@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { RevealDirective } from '../../core/reveal.directive';
+import { whatsappHref } from '../../core/whatsapp';
 
 interface NutritionPoint {
   title: string;
   desc: string;
-  icon: 'protein' | 'stages' | 'bowl';
+  icon: 'protein' | 'stages';
 }
 
 @Component({
@@ -25,12 +26,11 @@ export class Nutrition {
       desc: 'From playful puppies to senior companions — a formula tuned to every age and size.',
       icon: 'stages',
     },
-    {
-      title: 'Made For Picky Eaters',
-      desc: "Recipes dogs actually finish — no coaxing, no leftovers going stale in the bowl.",
-      icon: 'bowl',
-    },
   ];
 
   protected readonly certs = ['32% Protein', 'All Life Stages', 'Milled & Packed Locally', 'Real Person, Not a Bot'];
+
+  protected whatsappLink(title: string): string {
+    return whatsappHref(`Hi! Tell me more about "${title}".`);
+  }
 }

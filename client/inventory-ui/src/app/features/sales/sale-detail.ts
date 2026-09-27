@@ -19,7 +19,10 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
           <a class="btn" routerLink="/sales">All sales</a>
           <a class="btn btn-primary" [href]="'/api/sales/' + id() + '/receipt.pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> Receipt (PDF)</a>
           <button type="button" class="btn" (click)="print()">Print this page</button>
-          @if (auth.isAdmin() && s() && s()!.status !== 'Voided') { <button type="button" class="btn btn-danger" (click)="voidIt()">Void sale</button> }
+          @if (auth.isAdmin() && s() && s()!.status !== 'Voided') {
+            <a class="btn" [routerLink]="['/sales', id(), 'edit']"><app-icon name="edit" [size]="18" /> Edit sale</a>
+            <button type="button" class="btn btn-danger" (click)="voidIt()">Void sale</button>
+          }
         </div>
       </div>
 
@@ -62,6 +65,7 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
               <div><dt>Subtotal</dt><dd class="mono">{{ s.subtotal | naira }}</dd></div>
               @if (s.discountAmount > 0) { <div><dt>Discount ({{ s.discountPct }}%)</dt><dd class="mono">−{{ s.discountAmount | naira }}</dd></div> }
               @if (s.vatAmount > 0) { <div><dt>VAT ({{ s.vatRate }}%)</dt><dd class="mono">{{ s.vatAmount | naira }}</dd></div> }
+              @if (s.deliveryFee > 0) { <div><dt>Delivery</dt><dd class="mono">{{ s.deliveryFee | naira }}</dd></div> }
               <div class="grand"><dt>Total</dt><dd class="figure">{{ s.totalAmount | naira }}</dd></div>
               <div><dt>Paid</dt><dd class="mono">{{ s.amountPaid | naira }}</dd></div>
               @if (owed() > 0 && s.status !== 'Voided') { <div class="owed"><dt>Balance on this invoice</dt><dd class="mono">{{ owed() | naira }}</dd></div> }

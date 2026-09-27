@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, messageOf, problemOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Auth } from '../../core/auth.service';
-import { CustomerLookup, CustomerType, Problem, Product, SalePreview, SaleRequest, Warehouse } from '../../core/models';
+import { CustomerLookup, CustomerType, InvoiceDetail, Problem, Product, SalePreview, SaleRequest, Warehouse } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Toasts } from '../../shared/feedback';
@@ -14,6 +14,8 @@ import { NairaPipe } from '../../shared/ui';
 
 interface Line {
   productId: number; name: string; sku: string; unit: string; qty: number; price: number; standard: number; stock: number; tracks: boolean; serials: string;
+  /** Edit mode: how many the saved sale already holds (they are the customer's, not the shelf's). */
+  orig: number;
   tiers: { Distributor: number; Wholesaler: number; Retailer: number };
 }
 
@@ -30,9 +32,13 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
   template: `
     <div class="page">
       <div class="page-head">
-        <h1>{{ quote ? 'New quotation' : 'New sale' }}</h1>
-        <div class="actions"><a class="btn" [routerLink]="quote ? '/quotations' : '/sales'">Cancel</a></div>
+        <h1>{{ edit ? 'Edit sale ' + (original()?.invoiceNumber ?? '') : quote ? 'New quotation' : 'New sale' }}</h1>
+        <div class="actions"><a class="btn" [routerLink]="edit ? ['/sales', editId] : quote ? '/quotations' : '/sales'">Cancel</a></div>
       </div>
+      @if (edit) {
+        <p class="notice info">Change items, quantities or prices. Only the difference moves stock: items you take off go back on the shelf,
+          and items you add come off it. What the customer owes changes to match the new total.</p>
+      }
 
       <form [formGroup]="form" (ngSubmit)="save()" class="layout" novalidate>
         <div class="left">
@@ -42,8 +48,9 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
             @if (customer(); as c) {
               <div class="chip">
                 <div><strong>{{ c.name }}</strong> <span class="stamp stamp-info">{{ c.customerType }}</span>
-                  @if (c.balance > 0) { <div class="owes">Owes {{ c.balance | naira }} from earlier sales</div> }</div>
-                <button type="button" class="btn btn-sm" (click)="changeCustomer()">Change</button>
+                  @if (c.balance > 0 && !edit) { <div class="owes">Owes {{ c.balance | naira }} from earlier sales</div> }
+                  @if (c.balance < 0) { <div class="credit">Credit {{ -c.balance | naira }}</div> }</div>
+                @if (!edit) { <button type="button" class="btn btn-sm" (click)="changeCustomer()">Change</button> }
               </div>
             } @else {
               <div class="search"><app-icon name="search" [size]="17" />
@@ -81,9 +88,10 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
                 <tbody>
                   @for (l of lines(); track l.productId; let i = $index) {
                     <tr>
-                      <td><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }} · {{ l.stock }} {{ l.unit }} in stock</div>
-                        @if (l.qty > l.stock && !quote) { <div class="short">Only {{ l.stock }} in stock</div> }
-                        @if (l.tracks && !quote) {
+                      <td><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }} · {{ l.stock }} {{ l.unit }} in stock{{ l.orig ? ' · ' + l.orig + ' on this sale' : '' }}</div>
+                        @if (l.qty - l.orig > l.stock && !quote) { <div class="short">Only {{ l.stock }} more in stock</div> }
+                        @if (l.tracks && edit) { <div class="muted sm">Individually tracked — to change this quantity, void the sale and enter it again.</div> }
+                        @if (l.tracks && !quote && !edit) {
                           <label class="serial"><span>Serial numbers — one per line ({{ serialCount(l) }} of {{ l.qty }})</span>
                             <textarea class="input" rows="2" [value]="l.serials" (input)="setSerials(i, $any($event.target).value)" [attr.aria-label]="'Serial numbers for ' + l.name"></textarea></label>
                         }</td>
@@ -115,22 +123,43 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
         <!-- summary -->
         <aside class="summary card card-pad">
           <div class="form-grid one">
-            @if (!quote) { <div class="field"><label for="wh">Take stock from</label>
+            @if (!quote && !edit) { <div class="field"><label for="wh">Take stock from</label>
               <select id="wh" class="input" formControlName="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div> }
             <div class="field"><label for="tier">Price list</label>
               <select id="tier" class="input" formControlName="priceTier"><option>Retailer</option><option>Wholesaler</option><option>Distributor</option></select></div>
             <div class="field"><label for="disc">Discount %</label><input id="disc" class="input num" type="number" min="0" max="100" step="0.5" formControlName="discountPct" /></div>
             <label class="check"><input type="checkbox" formControlName="vat" /> Charge VAT ({{ vatRate }}%)</label>
+            @if (edit) { <div class="field"><label for="dfee">Delivery fee</label><input id="dfee" class="input num" type="number" min="0" step="100" formControlName="deliveryFee" /></div> }
           </div>
 
           <dl class="totals">
             <div><dt>Subtotal</dt><dd class="mono">{{ (preview()?.subtotal ?? localSubtotal()) | naira }}</dd></div>
             @if ((preview()?.discountAmount ?? 0) > 0) { <div><dt>Discount</dt><dd class="mono">−{{ preview()!.discountAmount | naira }}</dd></div> }
             @if ((preview()?.vatAmount ?? 0) > 0) { <div><dt>VAT</dt><dd class="mono">{{ preview()!.vatAmount | naira }}</dd></div> }
-            <div class="grand"><dt>Total</dt><dd class="figure">{{ preview()?.total ?? null | naira }}</dd></div>
+            @if (edit && deliveryFee() > 0) { <div><dt>Delivery</dt><dd class="mono">{{ deliveryFee() | naira }}</dd></div> }
+            <div class="grand"><dt>Total</dt><dd class="figure">{{ (edit ? editTotal() : preview()?.total) ?? null | naira }}</dd></div>
           </dl>
 
-          @if (!quote) {
+          @if (edit && original(); as o) {
+            <div class="changes" aria-live="polite">
+              <div class="label">What this edit does</div>
+              <ul class="plain">
+                @for (s of stockMoves(); track s.productId) {
+                  <li>{{ s.qty > 0 ? 'Takes' : 'Puts back' }} <strong>{{ s.qty > 0 ? s.qty : -s.qty }} × {{ s.name }}</strong> {{ s.qty > 0 ? 'off the shelf' : 'on the shelf' }}</li>
+                } @empty { <li class="muted">No stock moves.</li> }
+                @if (editTotal(); as t) {
+                  <li>Total {{ o.totalAmount | naira }} → <strong>{{ t | naira }}</strong>
+                    @if (t > o.totalAmount) { — the customer owes {{ t - o.totalAmount | naira }} more. }
+                    @if (t < o.totalAmount) { — the customer owes {{ o.totalAmount - t | naira }} less. }</li>
+                  @if (o.amountPaid > t) {
+                    <li>{{ o.amountPaid - t | naira }} already paid is more than the new total. It pays this customer's other unpaid sales first; anything left becomes credit for their next sale.</li>
+                  }
+                }
+              </ul>
+            </div>
+          }
+
+          @if (!quote && !edit) {
           <div class="form-grid one">
             <div class="field"><label for="pm">Paid by</label>
               <select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option><option>Credit</option></select></div>
@@ -143,15 +172,15 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
           </div>
           }
 
-          @if (preview(); as p) {
+          @if (preview(); as p) { @if (!edit) {
             @if (p.previousBalance > 0 && !quote) {
               <p class="notice info split">Earlier debt: <strong>{{ p.previousBalance | naira }}</strong>.
                 @if (p.appliedToPreviousBalance > 0) { {{ p.appliedToPreviousBalance | naira }} of this payment goes toward it, oldest invoice first. }</p>
             }
             @if (p.outstanding > 0 && !quote) { <p class="owed">Left unpaid on this sale: <strong class="mono">{{ p.outstanding | naira }}</strong></p> }
-          }
+          } }
 
-          <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : quote ? 'Save quotation' : 'Save sale' }}</button>
+          <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : edit ? 'Save changes' : quote ? 'Save quotation' : 'Save sale' }}</button>
         </aside>
       </form>
     </div>
@@ -176,6 +205,9 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
     .chip .stamp { margin-left: .5rem; }
     .chip { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
     .owes { color: var(--stamp); font-weight: 600; font-size: .8125rem; margin-top: .2rem; }
+    .credit { color: var(--ok, #1a7f4b); font-weight: 600; font-size: .8125rem; margin-top: .2rem; }
+    .changes { border-top: 1px solid var(--line); padding-top: .75rem; font-size: .8125rem; }
+    .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
     .pick { list-style: none; margin: .5rem 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-2); max-height: 15rem; overflow: auto; background: #fff; }
     .pick:empty { display: none; }
     .pick button { display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: .6rem .8rem; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; }
@@ -202,6 +234,9 @@ export class SaleNew implements OnInit {
   protected readonly auth = inject(Auth);
   private readonly route = inject(ActivatedRoute);
   protected readonly quote = this.route.snapshot.data['mode'] === 'quote';
+  protected readonly edit = this.route.snapshot.data['mode'] === 'edit';
+  protected readonly editId = Number(this.route.snapshot.paramMap.get('id')) || 0;
+  protected readonly original = signal<InvoiceDetail | null>(null);
   protected readonly vatRate = VAT;
 
   protected readonly customers = signal<CustomerLookup[]>([]);
@@ -225,11 +260,26 @@ export class SaleNew implements OnInit {
     vat: [true],
     paidNow: [0, Validators.min(0)],
     dueDate: [''],
+    deliveryFee: [0, Validators.min(0)],
   });
   protected readonly custForm = this.fb.nonNullable.group({ name: ['', Validators.required], customerType: ['Retailer' as CustomerType], phone: [''] });
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
 
   protected readonly localSubtotal = computed(() => this.lines().reduce((s, l) => s + l.qty * l.price, 0));
+  protected readonly deliveryFee = computed(() => Math.max(0, asNumber(this.formValue().deliveryFee)));
+  /** Edit mode: the new total the server will save (goods priced by the preview, plus delivery, which carries no VAT). */
+  protected readonly editTotal = computed(() => { const p = this.preview(); return p ? p.total + this.deliveryFee() : null; });
+  /** Edit mode: per product, how many more (+) or fewer (−) than the saved sale. */
+  protected readonly stockMoves = computed(() => {
+    const o = this.original(); if (!o) return [];
+    const was = new Map<number, { name: string; qty: number }>();
+    for (const i of o.items) was.set(i.productId, { name: i.product, qty: (was.get(i.productId)?.qty ?? 0) + i.quantity });
+    const now = new Map<number, { name: string; qty: number }>();
+    for (const l of this.lines()) now.set(l.productId, { name: l.name, qty: (now.get(l.productId)?.qty ?? 0) + l.qty });
+    return [...new Set([...was.keys(), ...now.keys()])]
+      .map(id => ({ productId: id, name: (now.get(id) ?? was.get(id))!.name, qty: (now.get(id)?.qty ?? 0) - (was.get(id)?.qty ?? 0) }))
+      .filter(m => m.qty !== 0);
+  });
   /** The request the server will price. Null until there is a customer, a warehouse and at least one valid line. */
   protected readonly request = computed<SaleRequest | null>(() => {
     const c = this.customer(); const f = this.formValue(); const lines = this.lines();
@@ -237,7 +287,7 @@ export class SaleNew implements OnInit {
     return {
       customerId: c.id, priceTier: f.priceTier ?? 'Retailer', warehouseId: Number(f.warehouseId), paymentMethod: f.paymentMethod ?? 'Cash',
       discountPct: asNumber(f.discountPct), vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null,
-      lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitPrice: l.price, ...(l.tracks && !this.quote ? { serials: splitSerials(l.serials) } : {}) })),
+      lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitPrice: l.price, ...(l.tracks && !this.quote && !this.edit ? { serials: splitSerials(l.serials) } : {}) })),
     };
   });
 
@@ -261,7 +311,7 @@ export class SaleNew implements OnInit {
     effect(() => {
       const lines = this.lines(); const c = this.customer();
       if (this.adviceTimer) clearTimeout(this.adviceTimer);
-      if (this.quote || !lines.length) { this.advice.set([]); return; }
+      if (this.quote || this.edit || !lines.length) { this.advice.set([]); return; }
       this.adviceTimer = setTimeout(async () => {
         try { this.advice.set(await this.api2.saleAdvice(c?.id ?? null, lines.map(l => ({ productId: l.productId, quantity: l.qty })))); } catch { this.advice.set([]); }
       }, 700);
@@ -275,7 +325,30 @@ export class SaleNew implements OnInit {
       const [ws, cs] = await Promise.all([this.api.warehouses(), this.api.customerLookup()]);
       this.warehouses.set(ws); this.customers.set(cs);
       if (ws[0]) this.form.controls.warehouseId.setValue(ws[0].id);
+      if (this.edit) await this.loadForEdit(ws);
     } catch (e) { this.error.set(messageOf(e)); }
+  }
+
+  /** Edit mode: the saved sale's customer (locked), pricing and lines, with each product's current stock. */
+  private async loadForEdit(ws: Warehouse[]) {
+    const s = await this.api.sale(this.editId);
+    if (s.status === 'Voided') { this.error.set('This sale has been voided and can no longer be edited.'); return; }
+    const products = new Map((await Promise.all([...new Set(s.items.map(i => i.productId))].map(id => this.api.product(id)))).map(p => [p.id, p]));
+    const bal = (await this.api.customerLookup(s.customer)).find(c => c.id === s.customerId)?.balance ?? 0;
+    this.customer.set({ id: s.customerId, name: s.customer, customerType: s.customerType as CustomerType, phone: null, balance: bal });
+    this.form.patchValue({
+      warehouseId: s.warehouseId ?? ws[0]?.id ?? 0, priceTier: (s.priceTier as Tier) || 'Retailer', discountPct: s.discountPct,
+      vat: s.vatRate > 0, deliveryFee: s.deliveryFee ?? 0,
+    }, { emitEvent: false });
+    this.lastTier = this.form.controls.priceTier.value;
+    this.lines.set(s.items.map(i => {
+      const p = products.get(i.productId);
+      const tiers = p ? { Distributor: p.priceDistributor, Wholesaler: p.priceWholesaler, Retailer: p.priceRetail } : { Distributor: i.unitPrice, Wholesaler: i.unitPrice, Retailer: i.unitPrice };
+      return { productId: i.productId, name: i.product, sku: i.sku, unit: i.unit, qty: i.quantity, price: i.unitPrice, standard: i.unitPrice,
+        stock: p?.totalQuantity ?? 0, tracks: p?.tracksSerial ?? false, serials: '', orig: i.quantity, tiers };
+    }));
+    this.form.updateValueAndValidity();
+    this.original.set(s);
   }
 
   // ---- customer ----
@@ -337,7 +410,7 @@ export class SaleNew implements OnInit {
       if (at >= 0) return ls.map((l, i) => (i === at ? { ...l, qty: l.qty + 1 } : l));
       const tiers = { Distributor: p.priceDistributor, Wholesaler: p.priceWholesaler, Retailer: p.priceRetail };
       const price = this.tierPrice(p, this.form.controls.priceTier.value);
-      return [...ls, { productId: p.id, name: p.name, sku: p.sku, unit: p.unit, qty: 1, price, standard: price, stock: p.totalQuantity, tracks: p.tracksSerial, serials: '', tiers }];
+      return [...ls, { productId: p.id, name: p.name, sku: p.sku, unit: p.unit, qty: 1, price, standard: price, stock: p.totalQuantity, tracks: p.tracksSerial, serials: '', orig: 0, tiers }];
     });
   }
 
@@ -366,6 +439,15 @@ export class SaleNew implements OnInit {
     this.busy.set(true); this.error.set(''); this.shortfalls.set([]);
     try {
       // One key per distinct order: a retry after a dropped connection is safe, an edited order is a new sale.
+      if (this.edit) {
+        const res = await this.api.editSale(this.editId, {
+          discountPct: r.discountPct, vatRate: r.vatRate, deliveryFee: this.deliveryFee(), dueDate: this.original()?.dueDate ?? null, lines: r.lines,
+        });
+        const extra = res.creditHeld > 0 ? ` ${new NairaPipe().transform(res.creditHeld)} is now credit for this customer.` : '';
+        this.toasts.ok(`Sale ${res.invoiceNumber} updated.${extra}`);
+        await this.router.navigate(['/sales', res.invoiceId]);
+        return;
+      }
       const body = JSON.stringify(r);
       if (!this.idem || this.idem.body !== body) this.idem = { body, id: crypto.randomUUID() };
       if (this.quote) {

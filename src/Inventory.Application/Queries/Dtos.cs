@@ -40,7 +40,7 @@ public sealed record PaymentDto(DateTime At, decimal Amount, string Method);
 public sealed record InvoiceDetailDto(int Id, string InvoiceNumber, int CustomerId, string Customer, string CustomerType, DateOnly InvoiceDate,
     DateOnly? DueDate, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount, decimal VatRate, decimal VatAmount, decimal TotalAmount,
     decimal AmountPaid, string Status, string PaymentMethod, string PriceTier, int? WarehouseId, string CreatedBy, string? VoidReason,
-    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments);
+    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments, decimal DeliveryFee = 0);
 
 public sealed record PurchaseRowDto(int Id, string PoNumber, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus, decimal TotalAmount, decimal AmountPaid);
 public sealed record PurchaseItemDto(int ProductId, string Product, string Sku, int Quantity, decimal UnitCost, decimal LineTotal);

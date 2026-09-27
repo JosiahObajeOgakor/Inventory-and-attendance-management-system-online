@@ -197,6 +197,7 @@ public class AuthorizationTests(ApiFixture api)
         { "GET", "/api/finance/income?year=2026" }, { "GET", "/api/finance/ledger" }, { "GET", "/api/users" }, { "GET", "/api/audit" },
         { "POST", "/api/purchases" }, { "POST", "/api/suppliers" }, { "POST", "/api/stock/adjustments" }, { "POST", "/api/sales/1/void" },
         { "DELETE", "/api/products/1" }, { "PUT", "/api/products/1" }, { "POST", "/api/customers/1/payments" }, { "POST", "/api/users" },
+        { "PUT", "/api/sales/1" }, { "PUT", "/api/purchases/1" }, { "PUT", "/api/waybills/1" }, { "POST", "/api/delivery-zones" }, { "DELETE", "/api/delivery-zones/1" },
     };
 
     [Theory, MemberData(nameof(AdminOnly))]

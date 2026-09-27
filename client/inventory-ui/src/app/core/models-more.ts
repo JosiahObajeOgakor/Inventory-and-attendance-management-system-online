@@ -20,6 +20,9 @@ export interface QuoteResult { id: number; number: string; subtotal: number; dis
 export interface WaybillRow { id: number; waybillNumber: string; issueDate: string; invoiceId: number; invoiceNumber: string; customer: string; driverName: string | null; vehiclePlate: string | null; }
 export interface PendingInvoice { invoiceId: number; invoiceNumber: string; invoiceDate: string; customer: string; warehouse: string | null; totalAmount: number; waybillCount: number; }
 export interface WaybillPrefill { invoiceNumber: string; customer: string; phone: string; address: string; warehouse: string; }
+export interface WaybillDetail { id: number; waybillNumber: string; issueDate: string; invoiceId: number; invoiceNumber: string; driverName: string | null; driverPhone: string | null; vehiclePlate: string | null; destinationAddress: string | null; notes: string | null; }
+export interface DeliveryZone { id: number; name: string; fee: number; isActive: boolean; }
+export interface DeliveryZoneInput { name: string; fee: number; isActive: boolean; }
 export interface WaybillInput { invoiceId: number; issueDate?: string | null; driverName: string | null; driverPhone: string | null; vehiclePlate: string | null; destinationAddress: string | null; notes: string | null; }
 
 // ---- attendance ----

@@ -76,15 +76,21 @@ public sealed class SalesService(
 
         var previous = customer.Balance;
         var totals = DocumentCalculator.Sale(lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
-        var split = PaymentWaterfall.ForNewDocument(previous, totals.Total, req.PaidNow);
+        var grandTotal = totals.Total + req.DeliveryFee;   // delivery goes on after VAT
+        // Account credit (a negative balance, left when an edited sale came to less than was paid) pays for this sale first.
+        var creditUsed = previous < 0 ? Math.Min(-previous, grandTotal) : 0m;
+        var split = PaymentWaterfall.ForNewDocument(Math.Max(previous, 0m), grandTotal - creditUsed, req.PaidNow);
+        var paidOnNew = creditUsed + split.AppliedToNew;
+        var status = PaymentStatuses.For(paidOnNew, grandTotal);
 
         var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.Invoices.AnyAsync(i => i.InvoiceNumber == n, c), ct);
         var invoice = new Invoice
         {
             InvoiceNumber = number, CustomerId = customer.Id, InvoiceDate = saleDate,
             Subtotal = totals.Subtotal, DiscountPct = req.DiscountPct, DiscountAmount = totals.DiscountAmount,
-            VatRate = req.VatRate, VatAmount = totals.VatAmount, TotalAmount = totals.Total,
-            AmountPaid = split.AppliedToNew, Status = split.Status, PaymentMethod = req.PaymentMethod,
+            VatRate = req.VatRate, VatAmount = totals.VatAmount, TotalAmount = grandTotal,
+            DeliveryFee = req.DeliveryFee, DeliveryZone = req.DeliveryZone?.Trim(), DeliveryAddress = req.DeliveryAddress?.Trim(),
+            AmountPaid = paidOnNew, Status = status, PaymentMethod = req.PaymentMethod,
             DueDate = split.Outstanding > 0 ? req.DueDate : null, PriceTier = req.PriceTier, WarehouseId = req.WarehouseId,
             CreatedByUserId = user.Id, CreatedAt = clock.UtcNow,
         };
@@ -132,11 +138,13 @@ public sealed class SalesService(
         }
 
         // 5. Customer balance, ledger, payment, rebate (S8, S9).
-        customer.Balance = customer.Balance - split.PaidNow + totals.Total;
+        customer.Balance = customer.Balance - split.PaidNow + grandTotal;
         if (appliedToOld > 0)
             db.Ledger.Add(Ledger(saleDate, customer, LedgerEntryTypes.Credit, appliedToOld, number));
         if (split.Outstanding > 0)
             db.Ledger.Add(Ledger(saleDate, customer, LedgerEntryTypes.Debit, split.Outstanding, number));
+        if (creditUsed > 0)
+            db.Payments.Add(new Payment { InvoiceId = invoice.Id, PaymentDate = clock.UtcNow, Amount = creditUsed, Method = InvoiceEditService.AccountCredit, ReceivedByUserId = user.Id });
         if (split.AppliedToNew > 0)
             db.Payments.Add(new Payment { InvoiceId = invoice.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew, Method = req.PaymentMethod, ReceivedByUserId = user.Id });
 
@@ -156,8 +164,8 @@ public sealed class SalesService(
 
         await db.SaveChangesAsync(ct);
 
-        return new SaleResult(invoice.Id, number, totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total,
-            split.Outstanding, split.Status, previous, appliedToOld, previous - appliedToOld + split.Outstanding);
+        return new SaleResult(invoice.Id, number, totals.Subtotal, totals.DiscountAmount, totals.VatAmount, grandTotal,
+            split.Outstanding, status, previous, appliedToOld, creditUsed > 0 ? customer.Balance : previous - appliedToOld + split.Outstanding);
     }
 
     /// <summary>Marks the named serial units Sold against this invoice, or refuses the whole sale (rule T7).</summary>

@@ -39,8 +39,10 @@ public interface IBusinessDbContext
     DbSet<ProductSerial> ProductSerials { get; }
     DbSet<PriceChange> PriceChanges { get; }
     DbSet<PaymentLink> PaymentLinks { get; }
+    DbSet<DeliveryZone> DeliveryZones { get; }
     DbSet<ChatConversation> ChatConversations { get; }
     DbSet<ChatLogMessage> ChatMessages { get; }
+    DbSet<InboundMessage> InboundMessages { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);

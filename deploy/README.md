@@ -1,91 +1,102 @@
-# Deployment runbook — Oracle Cloud Always Free (Ubuntu, arm64)
+# Deployment runbook — chewypetsfeeds.com (Namecheap VPS, Ubuntu x86_64; DNS at Hostinger)
 
 ```
-Internet ─▶ :443 NGINX ─┬─▶ /       Angular static files   (/var/www/inventory)
-                        └─▶ /api/*  Kestrel 127.0.0.1:5000 (systemd: inventory-api, user `inventory`)
-                                        └─▶ MySQL 127.0.0.1:3306  (never public)
+Internet ─▶ :443 nginx ─┬─▶ /             landing page      (/var/www/landing)
+                        ├─▶ /inventory/   inventory app     (/var/www/inventory)
+                        └─▶ /api/*        Kestrel 127.0.0.1:5000 (systemd: inventory-api, user `inventory`)
+                                             ├─▶ MySQL 127.0.0.1:3306  (never public)
+                                             └─▶ background: WhatsApp inbox worker, payment reconciler
+Nightly: encrypted mysqldump ─▶ Cloudflare R2   ·  Weekly: automatic restore test  ·  Every 5 min: health check ─▶ email + WhatsApp
 ```
 
-> **Status: written but NOT yet run on a real VM.** The scripts have only been syntax-checked. The first deployment
-> should be a rehearsal on a scratch VM (Oracle A1 capacity in your home region is sometimes unavailable — check the
-> quota in the console before committing; Always Free instances that sit idle can also be reclaimed, so keep it in use).
+## 1. DNS (Hostinger → Domains → chewypetsfeeds.com → DNS records)
+`A @ → <VPS IP>` and `A www → <VPS IP>`, TTL 300. Remove any other A/AAAA/CNAME for `@`/`www` (parking). Leave MX/TXT (email).
 
-## 1. Oracle Cloud
-1. Create a `VM.Standard.A1.Flex` instance (2 OCPU / 12 GB), Ubuntu 22.04 or 24.04 **aarch64**, with your SSH key.
-2. **Security list / NSG ingress:** TCP 22 (restrict to your IP), 80, 443. **Nothing else. Never 3306.**
-3. Reserve a public IP. In Namecheap, add an **A record** `inventory` → that IP.
-4. Create an Object Storage bucket `inventory-backups` (Always Free 20 GB). Create an API key for a user whose policy allows only that bucket.
-
-## 2. Provision (once)
+## 2. Provision (once; re-runnable)
 ```bash
-scp -r deploy ubuntu@<ip>:/tmp/ && ssh ubuntu@<ip> 'sudo bash /tmp/deploy/scripts/setup-server.sh'
+scp -r deploy root@<ip>:/root/ && ssh root@<ip> 'bash /root/deploy/scripts/setup-server.sh'
 ```
-This installs NGINX/MySQL/certbot/ufw/age, creates the `inventory` and `inventory-backup` service users, binds MySQL to loopback
-(and **aborts if MySQL is reachable from outside**), opens only 22/80/443, and installs the systemd units.
+Installs nginx, MySQL (loopback only, memory sized to the VPS, binlogs 7 days), certbot, rclone, age, a 2 GB swap file;
+firewall 22/80/443 only (SSH rate-limited); **SSH keys only** (only if a key is already installed — it won't lock you out);
+fail2ban (SSH + nginx); automatic security updates; bounded logs; the systemd units and ops scripts.
 
-## 3. Secrets (never in git)
+## 3. Secrets (never in git) — `/etc/inventory/`
+| File | Owner / mode | Contents |
+|---|---|---|
+| `api.env` | root 600 | everything in `scripts/secrets.env.example`, with `ConnectionStrings__Default=Server=127.0.0.1;User=inventory_app;Password=…;` |
+| `backup.cnf` | root:inventory-backup 640 | `[client]` `user=inventory_backup` `password=…` |
+| `backup.env` | root:inventory-backup 640 | `BACKUP_SCHEMAS`, `BACKUP_AGE_RECIPIENTS` (owner + server public keys), `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
+| `backup-restore.key` | root 600 | the server's age private key (weekly restore test only) |
+| `alert.env` | root:inventory-backup 640 | `ALERT_EMAIL_TO`, `SMTP_URL/USER/PASS/FROM`, `WA_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_TO`, optional `WA_TEMPLATE`, `HEARTBEAT_URL` |
+| `monitor.env` | root:inventory-backup 640 | `DOMAIN=chewypetsfeeds.com`, `INBOX_SCHEMAS="inventory_chewypets inventory_candid"` |
+
+MySQL users:
 ```sql
--- mysql -u root
-CREATE USER 'inventory_app'@'localhost'    IDENTIFIED BY '<strong-random>';
--- The API creates/migrates the schemas at startup, so it needs DDL on inventory_* only (not on mysql.* or anything else):
-GRANT ALL ON `inventory\_%`.* TO 'inventory_app'@'localhost';
+-- skip-name-resolve is on, so the API's TCP connection arrives as '127.0.0.1', not 'localhost': create that one.
+CREATE USER 'inventory_app'@'127.0.0.1' IDENTIFIED BY '<strong-random>';
+GRANT ALL ON `inventory\_%`.* TO 'inventory_app'@'127.0.0.1';          -- the API creates/migrates its schemas at startup
 CREATE USER 'inventory_backup'@'localhost' IDENTIFIED BY '<another-strong-random>';
 GRANT SELECT, LOCK TABLES, SHOW VIEW, TRIGGER, EVENT ON `inventory\_%`.* TO 'inventory_backup'@'localhost';
--- restore-test.sh also needs: GRANT ALL ON `restoretest\_%`.* TO 'inventory_backup'@'localhost';
+GRANT PROCESS ON *.* TO 'inventory_backup'@'localhost';                  -- mysqldump needs it (global-only privilege)
 ```
-Create these root-owned, mode 600 files under `/etc/inventory/`:
+**Backup keys:** two age key pairs. The **owner key**'s private half is kept OFF the server (password manager) — it is what
+disaster recovery uses. The **server key** lets the weekly restore test prove the backups decrypt. Backups are encrypted to both.
 
-| File | Contents |
-|---|---|
-| `api.env` | see `src/Inventory.Api/.env.example` (`ConnectionStrings__Default=Server=127.0.0.1;User=inventory_app;Password=…;`) |
-| `backup.cnf` | `[client]` `user=inventory_backup` `password=…` |
-| `backup.env` | `BACKUP_SCHEMAS`, `BACKUP_AGE_RECIPIENT` (age **public** key — keep the private key on your own machine), `OCI_BUCKET`, `OCI_NAMESPACE` |
-| `monitor.env` | `DOMAIN`, `ALERT_WEBHOOK` (e.g. a free healthchecks.io ping URL), `ALERT_EMAIL` |
-
-Generate the age key pair on **your** machine: `age-keygen -o inventory-backup.key` (store it in a password manager; without it backups cannot be decrypted).
-
-## 4. HTTPS
+## 4. Deploy (from your machine, repo root)
 ```bash
-sudo cp deploy/nginx/inventory.conf /etc/nginx/sites-available/inventory.conf   # edit the domain first
-sudo ln -s /etc/nginx/sites-available/inventory.conf /etc/nginx/sites-enabled/ && sudo rm -f /etc/nginx/sites-enabled/default
-sudo certbot --nginx -d inventory.<your-domain> --redirect -m you@example.com --agree-tos
-sudo nginx -t && sudo systemctl reload nginx
+DEPLOY_HOST=root@<ip> DEPLOY_KEY=~/.ssh/chewy_vps ./deploy/scripts/deploy.sh
 ```
-Let's Encrypt renews automatically (`systemctl list-timers | grep certbot`); `health-check.sh` alerts if the certificate has < 14 days left.
+Builds the API (self-contained linux-x64), the inventory app (`/inventory/`) and the landing page, uploads over SSH, swaps the
+API in, restarts it and checks `/api/health`. The previous API build is kept at `/opt/inventory/api.old` for a quick rollback:
+`systemctl stop inventory-api && mv /opt/inventory/api /opt/inventory/api.bad && mv /opt/inventory/api.old /opt/inventory/api && systemctl start inventory-api`.
+Migrations run at API startup. Take a backup first for risky releases: `systemctl start inventory-backup`.
 
-## 5. Deploy the application
+## 5. HTTPS (after DNS points here)
 ```bash
-DEPLOY_HOST=ubuntu@<ip> ./deploy/scripts/deploy.sh      # from your machine, repo root
+ssh root@<ip> 'DOMAIN=chewypetsfeeds.com EMAIL=<you> bash /root/deploy/scripts/enable-https.sh'
 ```
-The API applies EF migrations at startup. Restarts are automatic (`Restart=always`); the service is enabled at boot.
+Renewal is automatic (`systemctl list-timers | grep certbot`); the health check alerts when < 14 days remain.
 
 ## 6. First administrator
-1. Add `Setup__Token=<random>` to `/etc/inventory/api.env`, `sudo systemctl restart inventory-api`.
-2. `curl -X POST https://inventory.<domain>/api/setup/first-admin -H 'Content-Type: application/json' -H 'X-Requested-With: inventory-ui' -d '{"setupToken":"…","fullName":"…","username":"…","password":"…"}'`
-3. **Remove `Setup__Token`** and restart. The endpoint also refuses to work once any admin exists.
+Add `Setup__Token=<random>` to `api.env`, restart, then:
+`curl -X POST https://chewypetsfeeds.com/api/setup/first-admin -H 'Content-Type: application/json' -H 'X-Requested-With: inventory-ui' -d '{"setupToken":"…","fullName":"…","username":"…","password":"…"}'`
+**Remove `Setup__Token`** and restart. The endpoint refuses once any admin exists.
 
-(If you migrate the existing accounts instead, users keep their current passwords; accounts still holding the desktop placeholder hash need a password issued by an admin.)
+## 7. Webhooks to register
+| Service | URL |
+|---|---|
+| Paystack | `https://chewypetsfeeds.com/api/paystack/webhook` |
+| AlatPay | `https://chewypetsfeeds.com/api/alatpay/webhook/chewypets` |
+| Meta WhatsApp | `https://chewypetsfeeds.com/api/whatsapp/webhook` (verify token = `WhatsApp__VerifyToken`) |
 
-## 7. Migrating the existing data
-Run `tools/Inventory.MigrationTool` from a machine that can reach the restored SQL Server **copy** and the MySQL (through an SSH tunnel to 127.0.0.1:3306 — never expose it). See `docs/MIGRATION_PLAN.md`. Do not point it at the client's live database; restore the `.bak` to a copy first.
+## 8. What runs by itself
+| When | What | On failure |
+|---|---|---|
+| Always | WhatsApp inbox worker: answers stored messages, 4 customers at a time, in order per customer; retries 15 s / 1 min / 5 min, then apologises to the customer and alerts you | alert |
+| Every 5 min | Payment reconciler: settles paid links whose webhook was missed | logged |
+| Every 5 min | Health check: services, API, public site, TLS, disk, RAM, backup + restore-test age, WhatsApp backlog, MySQL exposure | email + WhatsApp, hourly while it lasts, then "Resolved" |
+| 02:30 UTC daily | Encrypted backup → R2 (14 daily, 8 weekly, 12 monthly), size-verified after upload | alert |
+| Sun 03:30 UTC | Restore test: downloads the newest backup from R2, restores to a scratch DB, compares | alert |
+| Daily | Security updates (unattended-upgrades) | — |
 
-## 8. Operations
+## 9. Operations
 | Task | Command |
 |---|---|
 | Logs | `journalctl -u inventory-api -f` |
-| Status | `systemctl status inventory-api nginx mysql` · `systemctl list-timers` |
-| Backup now | `sudo systemctl start inventory-backup` |
-| Prove restorability (weekly) | `sudo RESTORE_AGE_IDENTITY=/path/inventory-backup.key inventory-restore-test` |
-| Restart | `sudo systemctl restart inventory-api` |
+| Status | `systemctl status inventory-api nginx mysql` · `systemctl list-timers 'inventory*'` |
+| Backup now / restore test now | `systemctl start inventory-backup` · `systemctl start inventory-restore-test` |
+| Test alerts | `inventory-alert "Test" "Alerts work"` |
+| Inbox | `mysql -e "SELECT Status, COUNT(*) FROM inventory_chewypets.inbound_messages GROUP BY Status"` |
+| Banned IPs | `fail2ban-client status sshd` |
 
-**Restore drill:** download the newest `daily/<schema>/*.sql.gz.age` from the bucket, `age -d -i inventory-backup.key file | gunzip | mysql -u root`.
-Between dumps, MySQL binary logs (7 days) allow point-in-time recovery.
+**Disaster recovery** (new server): provision (§2–3), then for each schema download the newest `daily/<schema>/*.age` from R2 and
+`age -d -i owner.key file | gunzip | mysql`, then deploy (§4). Binary logs on the old disk (if it survived) replay changes after the dump.
 
-## 9. Acceptance checklist
-- [ ] `https://inventory.<domain>` loads, HTTP redirects to HTTPS, certificate valid
-- [ ] `nmap -p 3306 <ip>` from outside shows filtered/closed; `ss -ltn` shows 3306 on 127.0.0.1 only
-- [ ] Admin and Clerk can both sign in remotely; Clerk gets 403 on admin endpoints
-- [ ] `sudo reboot` → site and API come back with no manual steps
-- [ ] `inventory-backup` produced an object in the bucket; `inventory-restore-test` passes
-- [ ] health-check alert fires when `inventory-api` is stopped (test it)
-- [ ] no secrets in `git log -p` / `git grep -i password`
+## 10. Acceptance checklist
+- [ ] `https://chewypetsfeeds.com` and `/inventory/` load; HTTP redirects to HTTPS; certificate valid
+- [ ] `nmap -p 3306 <ip>` from outside: filtered/closed; SSH with a password is refused
+- [ ] Admin and Clerk sign in; Clerk gets 403 on admin actions
+- [ ] `reboot` → everything comes back with no manual steps
+- [ ] `inventory-backup` put objects in R2; `inventory-restore-test` passes
+- [ ] `inventory-alert "Test" "…"` arrives by email and WhatsApp; stopping `inventory-api` triggers an alert within 5 min
+- [ ] A WhatsApp message to the business number is answered; `inbound_messages` shows it Done

@@ -11,7 +11,7 @@ public sealed record WebChatRequest(string SessionId, string Message);
 public sealed record WebChatResponse(string Reply, string? CheckoutUrl, string? QuotationNumber);
 
 /// <summary>
-/// The chat widget on the landing page (chewypetfeeds.com) — the same sales assistant as WhatsApp, over a
+/// The chat widget on the landing page (chewypetsfeeds.com) — the same sales assistant as WhatsApp, over a
 /// stateless JSON endpoint instead. There is no signed-in user and no phone number, so identity is a
 /// client-generated session id, and the company is fixed to "chewypets" (the landing page's own brand) via
 /// the same HttpContext.Items override the webhooks use — there is no JWT to resolve it from on an anonymous request.

@@ -24,7 +24,9 @@ public static class DependencyInjection
         s.AddScoped<SalesService>();
         s.AddScoped<CustomerPaymentService>();
         s.AddScoped<InvoiceVoidService>();
+        s.AddScoped<InvoiceEditService>();
         s.AddScoped<PurchaseService>();
+        s.AddScoped<PurchaseEditService>();
         s.AddScoped<StockOperations>();
         s.AddScoped<ProductService>();
         s.AddScoped<PartnerService>();
@@ -51,14 +53,19 @@ public static class DependencyInjection
         s.AddScoped<Ai.AssistantService>();
         s.AddScoped<Ai.InsightService>();
         s.AddScoped<Email.DocumentEmailService>();
+        s.AddScoped<Company.DeliveryZoneService>();
+        s.AddScoped<Payments.PaymentGateways>();
         s.AddScoped<Payments.PaymentLinkService>();
         s.AddScoped<Payments.PaymentFollowUpService>();
+        s.AddScoped<Payments.OrderDispatchService>();
         s.AddScoped<SalesAssistant.CustomerLookupService>();
         s.AddScoped<SalesAssistant.ChatConversationService>();
         s.AddScoped<SalesAssistant.WebhookDedupService>();
         s.AddScoped<SalesAssistant.SalesAssistantToolbox>();
         s.AddScoped<SalesAssistant.VetGuidanceService>();
         s.AddScoped<SalesAssistant.SalesAssistantService>();
+        s.AddScoped<SalesAssistant.WhatsAppInbox>();
+        s.AddScoped<SalesAssistant.WhatsAppInboxProcessor>();
         return s;
     }
 }

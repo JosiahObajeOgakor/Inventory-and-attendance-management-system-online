@@ -1,6 +1,6 @@
-// TODO: swap in the real WhatsApp Business number (international format, digits only)
-// before this ships. Every WhatsApp link on the landing page reads from this one constant.
-const WHATSAPP_NUMBER = '2348000000000';
+// The WhatsApp Business number (international format, digits only): 0703 998 6047.
+// Every WhatsApp link on the landing page reads from this one constant.
+const WHATSAPP_NUMBER = '2347039986047';
 
 export function whatsappHref(message: string): string {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;

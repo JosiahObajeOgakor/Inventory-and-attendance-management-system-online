@@ -39,8 +39,10 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<ProductSerial> ProductSerials => Set<ProductSerial>();
     public DbSet<PriceChange> PriceChanges => Set<PriceChange>();
     public DbSet<PaymentLink> PaymentLinks => Set<PaymentLink>();
+    public DbSet<DeliveryZone> DeliveryZones => Set<DeliveryZone>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatLogMessage> ChatMessages => Set<ChatLogMessage>();
+    public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
@@ -178,6 +180,9 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.PriceTier).HasMaxLength(20).IsRequired();
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.VoidReason).HasMaxLength(200);
+            e.Property(x => x.DeliveryAddress).HasMaxLength(250);
+            e.Property(x => x.DeliveryZone).HasMaxLength(60);
+            e.Property(x => x.DeliveryFee).HasPrecision(12, 2);
             e.HasIndex(x => x.InvoiceNumber).IsUnique();
             e.HasIndex(x => x.CustomerId);
             e.HasIndex(x => x.InvoiceDate);

@@ -37,7 +37,17 @@ builder.Services.AddScoped<Inventory.Infrastructure.Documents.ExcelExporter>();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<Inventory.Infrastructure.Payments.PaystackOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.PaystackOptions.Section));
 builder.Services.Configure<Inventory.Infrastructure.Payments.NotifyOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.NotifyOptions.Section));
-builder.Services.AddHttpClient<Inventory.Application.Payments.IPaymentGateway, Inventory.Infrastructure.Payments.PaystackGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.Configure<Inventory.Infrastructure.Payments.AlatPayOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.AlatPayOptions.Section));
+builder.Services.Configure<Inventory.Application.Payments.FulfilmentOptions>(builder.Configuration.GetSection(Inventory.Application.Payments.FulfilmentOptions.Section));
+// Both processors are registered as IPaymentGateway; PaymentGateways picks one by name (the customer's choice, or the link's own provider).
+builder.Services.AddHttpClient<Inventory.Infrastructure.Payments.PaystackGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<Inventory.Infrastructure.Payments.AlatPayGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.PaystackGateway>());
+builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.AlatPayGateway>());
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.PendingPaymentReconciler>();
+// WhatsApp messages are stored by the webhook and answered here, with retries, in the background.
+builder.Services.Configure<Inventory.Application.SalesAssistant.InboxOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.InboxOptions.Section));
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.WhatsAppInboxWorker>();
 builder.Services.AddHttpClient("sms", c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddScoped<Inventory.Application.Payments.IAdminNotifier, Inventory.Infrastructure.Payments.AdminNotifier>();
 builder.Services.Configure<Inventory.Infrastructure.Localization.LocalizationOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Localization.LocalizationOptions.Section));
@@ -99,8 +109,10 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:LoginPerMinute", 10), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     // Meta's webhook calls all arrive from its own servers, not the customer's IP, so this only guards against a flood/misconfiguration —
     // the real per-customer limit is SalesAssistantOptions.DailyMessagesPerConversation, enforced inside SalesAssistantService.
+    // Storing a message is cheap now (answering happens in the background), so this only guards against floods; each customer is
+    // separately capped by SalesAssistant:DailyMessagesPerConversation. Meta retries anything refused here.
     o.AddPolicy(Policies.WhatsAppRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("whatsapp",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:WhatsAppPerMinute", 1200), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy(Policies.WebChatRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

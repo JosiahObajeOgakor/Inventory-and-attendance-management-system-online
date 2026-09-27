@@ -9,7 +9,7 @@
 }
 .nutrition__copy {
   margin-top: 0.9rem;
-  color: var(--cream-dim);
+  color: var(--ink-dim);
   max-width: 52ch;
   line-height: 1.6;
 }
@@ -17,34 +17,59 @@
 .nutrition__grid {
   margin-top: 2.5rem;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1.25rem;
 }
-@media (max-width: 820px) {
+@media (max-width: 620px) {
   .nutrition__grid { grid-template-columns: 1fr; }
 }
 
-.nutrition__icon {
-  display: inline-flex;
-  color: var(--violet-deep);
-  margin-bottom: 0.25rem;
+// Photo-card row (see .photo-card primitives in the global stylesheet).
+.nutrition__card {
+  aspect-ratio: 3 / 4;
+  transition: transform 0.2s ease;
+  &:hover { transform: translateY(-4px); }
+}
+.nutrition__card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-width: 80%;
+}
+.nutrition__card-desc {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--cream-dim);
 }
 
+// Certification / trust icon strip.
 .cert-strip {
   margin: 2.5rem 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 1.5rem 2rem;
 
   li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     font-family: var(--font-mono);
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     letter-spacing: 0.03em;
-    color: var(--cream-dim);
-    border: 1px solid rgba(251, 241, 228, 0.18);
-    border-radius: 999px;
-    padding: 0.5rem 1rem;
+    color: var(--ink-dim);
   }
+}
+.cert-strip__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(244, 128, 30, 0.12);
+  color: var(--orange-bright);
+  border: 1px solid rgba(244, 128, 30, 0.3);
 }

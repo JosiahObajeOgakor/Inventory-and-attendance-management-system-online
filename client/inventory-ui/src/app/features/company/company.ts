@@ -2,9 +2,9 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
-import { AssetKind } from '../../core/models-more';
+import { AssetKind, DeliveryZone } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
-import { Toasts } from '../../shared/feedback';
+import { Confirm, Toasts } from '../../shared/feedback';
 
 const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
   { kind: 'logo', label: 'Company logo', hint: 'Printed at the top of every document.' },
@@ -65,6 +65,33 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
           }
         </div>
       </section>
+
+      <section class="card card-pad zones">
+        <h2 class="display sub">Delivery zones</h2>
+        <p class="muted">The delivery fee added to online and WhatsApp orders, by state or area. Switch a zone off to stop offering it without losing its price.</p>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Zone</th><th class="num">Delivery fee (₦)</th><th>Offered</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            @for (z of zones(); track z.id) {
+              <tr>
+                <td><input class="input" [value]="z.name" maxlength="60" [attr.aria-label]="'Name of ' + z.name" (input)="patchZone(z.id, { name: $any($event.target).value })" /></td>
+                <td class="num"><input class="input num w-fee" type="number" min="0" step="100" [value]="z.fee" [attr.aria-label]="'Delivery fee for ' + z.name" (input)="patchZone(z.id, { fee: +$any($event.target).value })" /></td>
+                <td><label class="check"><input type="checkbox" [checked]="z.isActive" (change)="patchZone(z.id, { isActive: $any($event.target).checked })" /> {{ z.isActive ? 'Yes' : 'No' }}</label></td>
+                <td class="actions">
+                  @if (dirty().includes(z.id)) { <button type="button" class="btn btn-sm btn-primary" (click)="saveZone(z)">Save</button> }
+                  <button type="button" class="btn btn-sm btn-danger" (click)="deleteZone(z)">Remove</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table></div>
+        @if (!zones().length) { <div class="empty"><strong>No delivery zones</strong>Add the first one below.</div> }
+        <form class="add-zone" (submit)="addZone(zn.value, zf.value); zn.value = ''; zf.value = ''; $event.preventDefault()">
+          <div class="field"><label for="zn">New zone</label><input #zn id="zn" class="input" placeholder="e.g. Ogun" maxlength="60" /></div>
+          <div class="field"><label for="zf">Delivery fee (₦)</label><input #zf id="zf" class="input num" type="number" min="0" step="100" placeholder="4500" /></div>
+          <button type="submit" class="btn"><app-icon name="plus" [size]="16" /> Add zone</button>
+        </form>
+      </section>
     </div>`,
   styles: `
     .lede { margin: 0 0 1rem; max-width: 46rem; } .sub { font-size: 1.4rem; margin: 1.5rem 0 .6rem; } .sm { font-size: .75rem; }
@@ -72,6 +99,8 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
     .save { margin-top: 1.25rem; } .images { margin-top: 1rem; } .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; margin-top: .8rem; }
     .asset { display: flex; flex-direction: column; gap: .4rem; } .thumb { height: 7rem; border: 1px dashed var(--line-strong); border-radius: var(--r-2); display: grid; place-items: center; background: #fff; overflow: hidden; }
     .thumb img { max-width: 100%; max-height: 100%; object-fit: contain; } .row { display: flex; gap: .5rem; }
+    .zones { margin-top: 1rem; } .w-fee { width: 9rem; } .zones td:first-child .input { min-width: 9rem; } .zones .actions { white-space: nowrap; }
+    .add-zone { display: flex; gap: .6rem; align-items: end; flex-wrap: wrap; margin-top: 1rem; }
     @media (max-width: 720px) { .bank { grid-template-columns: 1fr; } }
   `,
 })
@@ -79,10 +108,13 @@ export class CompanyPage implements OnInit {
   private readonly api = inject(Api2);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   protected readonly assets = ASSETS;
   protected readonly busy = signal(false);
   protected readonly have = signal<string[]>([]);
   protected readonly stamp = signal(Date.now());
+  protected readonly zones = signal<DeliveryZone[]>([]);
+  protected readonly dirty = signal<number[]>([]);
   protected readonly form = this.fb.nonNullable.group({
     legalName: ['', [Validators.required, Validators.maxLength(150)]], address: [''], phone: [''], email: ['', Validators.email], taxId: [''],
     defaultVatRate: [7.5, [Validators.min(0), Validators.max(100)]], defaultRebateRatePct: [1],
@@ -103,6 +135,35 @@ export class CompanyPage implements OnInit {
       this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebateRatePct: p.defaultRebateRatePct });
       this.banks.clear(); p.banks.forEach(b => this.banks.push(this.bankGroup(b))); this.have.set(p.assets);
     } catch (e) { this.toasts.error(messageOf(e)); }
+    await this.loadZones();
+  }
+
+  // ---- delivery zones ----
+  private async loadZones() {
+    try { this.zones.set(await this.api.deliveryZones()); this.dirty.set([]); } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+  protected patchZone(id: number, p: Partial<DeliveryZone>) {
+    this.zones.update(zs => zs.map(z => (z.id === id ? { ...z, ...p } : z)));
+    this.dirty.update(d => (d.includes(id) ? d : [...d, id]));
+  }
+  protected async saveZone(z: DeliveryZone) {
+    try {
+      await this.api.updateDeliveryZone(z.id, { name: z.name.trim(), fee: Number(z.fee) || 0, isActive: z.isActive });
+      this.toasts.ok(`${z.name.trim()} saved.`); await this.loadZones();
+    } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+  protected async addZone(name: string, fee: string) {
+    if (!name.trim()) { this.toasts.error('Enter the zone’s name.'); return; }
+    try {
+      await this.api.createDeliveryZone({ name: name.trim(), fee: Number(fee) || 0, isActive: true });
+      this.toasts.ok(`${name.trim()} added.`); await this.loadZones();
+    } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+  protected async deleteZone(z: DeliveryZone) {
+    const ok = await this.confirm.ask({ title: `Remove ${z.name}?`, message: 'Customers will no longer be offered delivery to this zone. Past orders keep their fee.', confirmLabel: 'Remove zone', danger: true });
+    if (ok === null) return;
+    try { await this.api.deleteDeliveryZone(z.id); this.toasts.ok(`${z.name} removed.`); await this.loadZones(); }
+    catch (e) { this.toasts.error(messageOf(e)); }
   }
 
   protected async save() {

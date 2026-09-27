@@ -71,6 +71,10 @@ public class Quotation
     public DateTime CreatedAt { get; set; }
     /// <summary>The warehouse to fulfill from once converted — set by the sales assistant; a human converting manually still picks one explicitly.</summary>
     public int? WarehouseId { get; set; }
+    public string? DeliveryAddress { get; set; }
+    public string? DeliveryZone { get; set; }
+    /// <summary>Added to the total after VAT (delivery isn't taxed as goods). Zero for pickup or when no fee applies.</summary>
+    public decimal DeliveryFee { get; set; }
     public List<QuotationItem> Items { get; set; } = [];
 }
 
@@ -209,12 +213,40 @@ public static class PaymentLinkStatuses
     public const string Paid = "Paid";
 }
 
-/// <summary>An online-payment link (Paystack) for a quotation or an invoice, at an exact amount. One row per link; a paid row is never changed again.</summary>
+/// <summary>A place we deliver to (a state, city or area) and what delivery there costs. Managed by an admin; offered by the sales assistant.</summary>
+public class DeliveryZone
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public decimal Fee { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public static class PaymentProviders
+{
+    public const string Paystack = "paystack";
+    public const string AlatPay = "alatpay";
+    public static readonly string[] All = [Paystack, AlatPay];
+
+    public static bool IsValid(string? p) => p is not null && All.Contains(p);
+
+    /// <summary>How the provider is written on payments, receipts and messages.</summary>
+    public static string DisplayName(string provider) => provider switch
+    {
+        AlatPay => "AlatPay",
+        _ => "Paystack",
+    };
+}
+
+/// <summary>An online-payment link (Paystack or AlatPay) for a quotation or an invoice, at an exact amount. One row per link; a paid row is never changed again.</summary>
 public class PaymentLink
 {
     public int Id { get; set; }
-    /// <summary>Unique reference sent to the processor; it starts with the company key so a webhook can be routed to the right business.</summary>
+    /// <summary>Our unique reference; it starts with the company key so a Paystack webhook can be routed to the right business.</summary>
     public string Reference { get; set; } = "";
+    public string Provider { get; set; } = PaymentProviders.Paystack;
+    /// <summary>The processor's own reference when it issues one (AlatPay does; for Paystack it equals <see cref="Reference"/>).</summary>
+    public string? ProviderReference { get; set; }
     public string DocType { get; set; } = "Invoice";
     public int DocId { get; set; }
     public string DocNumber { get; set; } = "";
@@ -228,4 +260,8 @@ public class PaymentLink
     public string? Channel { get; set; }
     /// <summary>When the admin was told. Null on a paid link means the message failed and someone should check.</summary>
     public DateTime? NotifiedAt { get; set; }
+    /// <summary>When the admin got the WhatsApp "order paid" message. Null on a paid link means it wasn't sent.</summary>
+    public DateTime? AdminNotifiedAt { get; set; }
+    /// <summary>When the dispatch rider got the WhatsApp delivery message. Null on a paid link means it wasn't sent.</summary>
+    public DateTime? RiderNotifiedAt { get; set; }
 }
