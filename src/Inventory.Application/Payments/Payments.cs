@@ -65,6 +65,8 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
     IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations)
 {
     private static readonly TimeSpan Reuse = TimeSpan.FromHours(12);
+    /// <summary>Metadata key a gateway reads as "send the customer back here after paying"; it is not stored on the processor's side.</summary>
+    public const string ReturnUrlKey = "return_url";
 
     public bool Enabled => gateways.Configured.Count > 0;
     public IReadOnlyList<string> Providers => gateways.Configured;
@@ -74,7 +76,8 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         GetOrCreateAsync(docType, docId, docNumber, amount, customerEmail, customerName, gateways.Configured.FirstOrDefault(), ct);
 
     /// <summary>The link for this document at this exact amount on the chosen processor, creating it if needed. Null when that processor isn't set up or nothing is owed.</summary>
-    public async Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, string? provider, CancellationToken ct)
+    public async Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, string? provider, CancellationToken ct,
+        string? returnUrl = null)
     {
         var gateway = gateways.Get(provider);
         if (gateway is null || !gateway.IsConfigured || amount <= 0) return null;
@@ -86,8 +89,13 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
 
         var email = ValidEmail(customerEmail) ? customerEmail!.Trim() : gateway.FallbackEmail;
         var reference = $"{company.Key}-{docType[0]}{docId}-{clock.UtcNow:yyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}";
-        var charge = await gateway.InitializeAsync(email, (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero), reference,
-            new Dictionary<string, string> { ["company"] = company.Key, ["docType"] = docType, ["docId"] = docId.ToString(), ["docNumber"] = docNumber, ["customer"] = customerName }, ct);
+        // Both businesses may share one processor account, so every charge says which business it is for (Paystack shows these on the transaction).
+        var metadata = new Dictionary<string, string>
+        {
+            ["company"] = company.Key, ["business"] = company.LegalName, ["docType"] = docType, ["docId"] = docId.ToString(), ["docNumber"] = docNumber, ["customer"] = customerName,
+        };
+        if (!string.IsNullOrWhiteSpace(returnUrl)) metadata[ReturnUrlKey] = returnUrl;
+        var charge = await gateway.InitializeAsync(email, (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero), reference, metadata, ct);
         db.PaymentLinks.Add(new PaymentLink
         {
             Reference = reference, Provider = gateway.Provider, ProviderReference = charge.Reference, DocType = docType, DocId = docId, DocNumber = docNumber,

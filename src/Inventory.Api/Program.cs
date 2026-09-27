@@ -45,6 +45,9 @@ builder.Services.AddHttpClient<Inventory.Infrastructure.Payments.AlatPayGateway>
 builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.PaystackGateway>());
 builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.AlatPayGateway>());
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.PendingPaymentReconciler>();
+// The public "choose how to pay" page linked from receipts and quotations (Site:PublicUrl, e.g. https://chewypetsfeeds.com).
+builder.Services.Configure<Inventory.Api.Controllers.SiteOptions>(builder.Configuration.GetSection(Inventory.Api.Controllers.SiteOptions.Section));
+builder.Services.AddScoped<Inventory.Application.Payments.IPayPageLinks, Inventory.Api.Controllers.PayPageLinks>();
 // WhatsApp messages are stored by the webhook and answered here, with retries, in the background.
 builder.Services.Configure<Inventory.Application.SalesAssistant.InboxOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.InboxOptions.Section));
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.WhatsAppInboxWorker>();

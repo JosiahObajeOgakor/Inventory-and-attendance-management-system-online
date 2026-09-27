@@ -50,12 +50,18 @@ public sealed class PaystackGateway(HttpClient http, IOptions<PaystackOptions> o
     public async Task<GatewayCharge> InitializeAsync(string email, long amountKobo, string reference, IReadOnlyDictionary<string, string> metadata, CancellationToken ct)
     {
         if (!IsConfigured) throw new BusinessRuleException("Online payments aren't set up: the server has no Paystack key.");
-        var body = new JsonObject
-        {
-            ["email"] = email, ["amount"] = amountKobo, ["currency"] = "NGN", ["reference"] = reference,
-            ["metadata"] = new JsonObject(metadata.Select(kv => new KeyValuePair<string, JsonNode?>(kv.Key, kv.Value))),
-        };
-        if (!string.IsNullOrWhiteSpace(Opt.CallbackUrl)) body["callback_url"] = Opt.CallbackUrl;
+        var returnUrl = metadata.GetValueOrDefault(Inventory.Application.Payments.PaymentLinkService.ReturnUrlKey);
+        var meta = new JsonObject(metadata.Where(kv => kv.Key != Inventory.Application.Payments.PaymentLinkService.ReturnUrlKey)
+            .Select(kv => new KeyValuePair<string, JsonNode?>(kv.Key, kv.Value)));
+        // custom_fields are what Paystack shows on the transaction in its dashboard: which business, which document, which customer.
+        var shown = new JsonArray();
+        foreach (var (label, key) in new[] { ("Business", "business"), ("Document", "docNumber"), ("Customer", "customer") })
+            if (metadata.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+                shown.Add(new JsonObject { ["display_name"] = label, ["variable_name"] = key, ["value"] = v });
+        meta["custom_fields"] = shown;
+        var body = new JsonObject { ["email"] = email, ["amount"] = amountKobo, ["currency"] = "NGN", ["reference"] = reference, ["metadata"] = meta };
+        var callback = !string.IsNullOrWhiteSpace(returnUrl) ? returnUrl : Opt.CallbackUrl;
+        if (!string.IsNullOrWhiteSpace(callback)) body["callback_url"] = callback;
         try
         {
             using var res = await http.SendAsync(Req(HttpMethod.Post, "/transaction/initialize", new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")), ct);

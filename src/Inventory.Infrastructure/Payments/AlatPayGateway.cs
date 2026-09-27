@@ -50,7 +50,11 @@ public sealed class AlatPayGateway(HttpClient http, IOptions<AlatPayOptions> opt
     {
         if (!IsConfigured) throw new BusinessRuleException("AlatPay isn't set up: the server has no AlatPay key.");
         var body = new JsonObject { ["email"] = email, ["amount"] = amountKobo / 100m, ["currency"] = Opt.CurrencyCode };
-        if (!string.IsNullOrWhiteSpace(Opt.RedirectUrl)) body["redirectUrl"] = Opt.RedirectUrl;
+        // AlatPay's payment-link API documents only email, amount, currency and redirectUrl, so nothing else is sent (the business is recorded on
+        // our side: each business's links live in its own database, and the admin alert names it).
+        var returnUrl = metadata.GetValueOrDefault(Inventory.Application.Payments.PaymentLinkService.ReturnUrlKey);
+        var redirect = !string.IsNullOrWhiteSpace(returnUrl) ? returnUrl : Opt.RedirectUrl;
+        if (!string.IsNullOrWhiteSpace(redirect)) body["redirectUrl"] = redirect;
         try
         {
             using var res = await http.SendAsync(Req(HttpMethod.Post, "/merchant-onboarding/api/v1/payment/initialize", new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")), ct);

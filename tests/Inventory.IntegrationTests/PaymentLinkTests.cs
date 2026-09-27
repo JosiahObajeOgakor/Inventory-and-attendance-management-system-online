@@ -22,13 +22,14 @@ internal sealed class FakeGateway(bool configured = true, string provider = Paym
     public int Initialized { get; private set; }
     public string? LastEmail { get; private set; }
     public long? LastKobo { get; private set; }
+    public IReadOnlyDictionary<string, string>? LastMetadata { get; private set; }
     public List<string> Verified { get; } = [];
     public GatewayVerification? Verification { get; set; }
     /// <summary>Per-reference answers, for tests with several links; falls back to <see cref="Verification"/>.</summary>
     public Dictionary<string, GatewayVerification> ByReference { get; } = [];
     public Task<GatewayCharge> InitializeAsync(string email, long amountKobo, string reference, IReadOnlyDictionary<string, string> metadata, CancellationToken ct)
     {
-        Initialized++; LastEmail = email; LastKobo = amountKobo;
+        Initialized++; LastEmail = email; LastKobo = amountKobo; LastMetadata = metadata;
         var own = provider == PaymentProviders.AlatPay ? "pay" + Guid.NewGuid().ToString("N")[..12] : reference;
         return Task.FromResult(new GatewayCharge($"https://{provider}.example/{own}", own));
     }

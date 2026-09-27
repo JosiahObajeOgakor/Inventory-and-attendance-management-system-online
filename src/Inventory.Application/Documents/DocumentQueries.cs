@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Application.Documents;
 
 /// <summary>Assembles the data for each printable document from the database. Read-only.</summary>
-public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService profile, ICompanyContext company, IUserDirectory users, IClock clock, PaymentLinkService pay)
+public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService profile, ICompanyContext company, IUserDirectory users, IClock clock, PaymentLinkService pay,
+    IPayPageLinks? payPages = null)
 {
     public async Task<Branding> BrandAsync(CancellationToken ct)
     {
@@ -52,9 +53,15 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
             i.TotalAmount, i.AmountPaid, i.Status == PaymentStatuses.Voided ? 0m : elsewhere, rebate, clock.BusinessNow, payUrl);
     }
 
-    /// <summary>The Paystack link for this document at its exact amount. A payment-provider problem must never stop a document from printing, so failures give no link rather than an error.</summary>
+    /// <summary>
+    /// The "pay online" link printed on the document: our own page where the customer picks Paystack or AlatPay and pays what is owed at that
+    /// moment. Without a configured site address it falls back to a direct Paystack checkout. A payment-provider problem must never stop a document
+    /// from printing, so failures give no link rather than an error.
+    /// </summary>
     private async Task<string?> PayUrlAsync(string docType, int docId, string number, decimal amount, Customer c, CancellationToken ct)
     {
+        if (!pay.Enabled || amount <= 0) return null;
+        if (payPages?.UrlFor(docType, docId) is { } page) return page;
         try { return (await pay.GetOrCreateAsync(docType, docId, number, amount, c.Email, c.Name, ct))?.Url; }
         catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
     }

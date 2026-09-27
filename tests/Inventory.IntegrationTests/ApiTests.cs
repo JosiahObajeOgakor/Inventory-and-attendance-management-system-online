@@ -374,3 +374,18 @@ public class UserAdminTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.Conflict, self.StatusCode);
     }
 }
+
+[Collection("api")]
+public class PayPageApiTests(ApiFixture api)
+{
+    [Fact]
+    public async Task An_unknown_or_edited_payment_link_gets_a_friendly_page_not_an_error_and_is_never_indexed()
+    {
+        var r = await api.Client(csrf: false).GetAsync("/pay/not-a-real-token");
+        Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
+        Assert.StartsWith("text/html", r.Content.Headers.ContentType?.ToString());
+        Assert.Contains("Link not recognised", await r.Content.ReadAsStringAsync());
+        Assert.Contains("noindex", r.Headers.GetValues("X-Robots-Tag").Single());
+        Assert.Equal(HttpStatusCode.NotFound, (await api.Client(csrf: false).GetAsync("/pay/not-a-real-token/paystack")).StatusCode);
+    }
+}

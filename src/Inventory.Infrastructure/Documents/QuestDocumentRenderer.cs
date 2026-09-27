@@ -412,16 +412,22 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         col.Item().Height(8);
     }
 
-    /// <summary>A clickable button in the PDF that opens the customer's Paystack payment page for this exact amount.</summary>
+    /// <summary>
+    /// A clickable button in the PDF. It opens our payment page, where the customer picks Paystack or AlatPay and pays what is owed at that
+    /// moment (or, on a server without a site address, a Paystack checkout directly).
+    /// </summary>
     private static void PayBlock(ColumnDescriptor col, string accent, string? url, decimal amount)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps) return;
-        col.Item().PaddingTop(8).Hyperlink(url).Background(accent).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
+        var ownPage = u.AbsolutePath.StartsWith("/pay/", StringComparison.Ordinal);
+        col.Item().PaddingTop(8).Hyperlink(url).Background(accent).CornerRadius(6).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
         {
             c.Item().AlignCenter().Text($"PAY {Money(amount)} ONLINE — CLICK HERE").Bold().FontSize(11).FontColor("#FFFFFF");
-            c.Item().AlignCenter().Text("Card, bank transfer or USSD · secured by Paystack").FontSize(8).FontColor("#FFFFFF");
+            c.Item().AlignCenter().Text(ownPage ? "Choose Paystack or AlatPay · card, bank transfer or USSD" : "Card, bank transfer or USSD · secured by Paystack")
+                .FontSize(8).FontColor("#FFFFFF");
         });
-        col.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(url).FontSize(6.5f).FontColor(Muted);
+        // The address itself, for someone reading a printed copy (our own page's address is long and never typed, so it's shown shortened).
+        col.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(ownPage ? $"{u.Host}/pay" : url).FontSize(6.5f).FontColor(Muted);
     }
 
     /// <summary>Platform badge (short mark + the platform's own colour) for the "follow us" chips. Letters, not logos: they print reliably.</summary>

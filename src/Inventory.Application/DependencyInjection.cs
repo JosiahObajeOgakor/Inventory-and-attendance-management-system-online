@@ -64,6 +64,7 @@ public static class DependencyInjection
         s.AddScoped<SalesAssistant.SalesAssistantToolbox>();
         s.AddScoped<SalesAssistant.VetGuidanceService>();
         s.AddScoped<SalesAssistant.SalesAssistantService>();
+        s.AddScoped<Payments.PayPageService>();
         s.AddScoped<SalesAssistant.WhatsAppInbox>();
         s.AddScoped<SalesAssistant.WhatsAppInboxProcessor>();
         return s;
