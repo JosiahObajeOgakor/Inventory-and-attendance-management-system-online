@@ -75,7 +75,8 @@ public sealed class SalesService(
         if (!await db.Warehouses.AnyAsync(w => w.Id == req.WarehouseId, ct)) throw new NotFoundException("Warehouse");
 
         var previous = customer.Balance;
-        var totals = DocumentCalculator.Sale(lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
+        var totals = DocumentCalculator.Sale(lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate, req.DiscountAmount);
+        var discountPct = req.DiscountAmount is > 0 ? DocumentCalculator.EffectivePct(totals.Subtotal, totals.DiscountAmount) : req.DiscountPct;
         var grandTotal = totals.Total + req.DeliveryFee;   // delivery goes on after VAT
         // Account credit (a negative balance, left when an edited sale came to less than was paid) pays for this sale first.
         var creditUsed = previous < 0 ? Math.Min(-previous, grandTotal) : 0m;
@@ -87,7 +88,7 @@ public sealed class SalesService(
         var invoice = new Invoice
         {
             InvoiceNumber = number, CustomerId = customer.Id, InvoiceDate = saleDate,
-            Subtotal = totals.Subtotal, DiscountPct = req.DiscountPct, DiscountAmount = totals.DiscountAmount,
+            Subtotal = totals.Subtotal, DiscountPct = discountPct, DiscountAmount = totals.DiscountAmount,
             VatRate = req.VatRate, VatAmount = totals.VatAmount, TotalAmount = grandTotal,
             DeliveryFee = req.DeliveryFee, DeliveryZone = req.DeliveryZone?.Trim(), DeliveryAddress = req.DeliveryAddress?.Trim(),
             AmountPaid = paidOnNew, Status = status, PaymentMethod = req.PaymentMethod,

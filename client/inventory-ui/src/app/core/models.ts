@@ -64,8 +64,10 @@ export interface InvoiceDetail {
   subtotal: number; discountPct: number; discountAmount: number; vatRate: number; vatAmount: number; totalAmount: number; amountPaid: number;
   status: string; paymentMethod: string; priceTier: string; warehouseId: number | null; createdBy: string; voidReason: string | null;
   items: InvoiceItem[]; payments: { at: string; amount: number; method: string }[]; deliveryFee: number;
+  /** What the customer owes on their other invoices (their balance minus this one's unpaid part). */
+  owedElsewhere: number;
 }
-export interface InvoiceEditRequest { discountPct: number; vatRate: number; deliveryFee: number; dueDate?: string | null; lines: SaleLine[]; }
+export interface InvoiceEditRequest { discountPct: number; discountAmount?: number | null; vatRate: number; deliveryFee: number; dueDate?: string | null; lines: SaleLine[]; }
 export interface StockChange { productId: number; product: string; quantity: number; }
 export interface InvoiceEditResult {
   invoiceId: number; invoiceNumber: string; oldTotal: number; newTotal: number; outstanding: number; status: string;
@@ -80,7 +82,7 @@ export interface PurchaseEditResult {
 export interface SaleLine { productId: number; quantity: number; unitPrice: number; serials?: string[]; }
 export interface SaleRequest {
   customerId: number; saleDate?: string | null; priceTier: string; warehouseId: number; paymentMethod: string;
-  discountPct: number; vatRate: number; paidNow: number; dueDate?: string | null; lines: SaleLine[];
+  discountPct: number; discountAmount?: number | null; vatRate: number; paidNow: number; dueDate?: string | null; lines: SaleLine[];
 }
 export interface SaleResult {
   invoiceId: number; invoiceNumber: string; subtotal: number; discountAmount: number; vatAmount: number; total: number;
@@ -95,6 +97,8 @@ export interface PurchaseRow { id: number; poNumber: string; supplier: string; o
 export interface PurchaseDetail {
   id: number; poNumber: string; supplierId: number; supplier: string; orderDate: string; status: string; paymentStatus: string;
   totalAmount: number; amountPaid: number; items: { productId: number; product: string; sku: string; quantity: number; unitCost: number; lineTotal: number }[];
+  /** What we owe this supplier on other orders. */
+  owedElsewhere: number;
 }
 export interface PurchaseRequest {
   supplierId: number; orderDate?: string | null; vatRate: number; receiveNow: boolean; warehouseId: number; paidNow: number; paymentMethod: string;

@@ -104,6 +104,18 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
                   }
                 </tbody>
               </table></div>
+              <!-- Discount sits right under the items so it's found without scrolling to the summary. -->
+              <div class="discount">
+                <label for="disc">Discount</label>
+                <div class="seg" role="group" aria-label="Discount type">
+                  <button type="button" [class.on]="form.controls.discountType.value === 'pct'" (click)="form.controls.discountType.setValue('pct')">%</button>
+                  <button type="button" [class.on]="form.controls.discountType.value === 'amt'" (click)="form.controls.discountType.setValue('amt')">₦</button>
+                </div>
+                <input id="disc" class="input num w-disc" type="number" min="0" [attr.max]="form.controls.discountType.value === 'pct' ? 100 : null"
+                       [step]="form.controls.discountType.value === 'pct' ? 0.5 : 100" formControlName="discountValue"
+                       [attr.aria-label]="form.controls.discountType.value === 'pct' ? 'Discount percent' : 'Discount in naira'" />
+                @if ((preview()?.discountAmount ?? 0) > 0) { <span class="muted">−{{ preview()!.discountAmount | naira }} off this sale</span> }
+              </div>
             } @else { <div class="empty"><strong>No products yet</strong>Scan a barcode or search above to add the first line.</div> }
           </section>
 
@@ -127,7 +139,6 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
               <select id="wh" class="input" formControlName="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div> }
             <div class="field"><label for="tier">Price list</label>
               <select id="tier" class="input" formControlName="priceTier"><option>Retailer</option><option>Wholesaler</option><option>Distributor</option></select></div>
-            <div class="field"><label for="disc">Discount %</label><input id="disc" class="input num" type="number" min="0" max="100" step="0.5" formControlName="discountPct" /></div>
             <label class="check"><input type="checkbox" formControlName="vat" /> Charge VAT ({{ vatRate }}%)</label>
             @if (edit) { <div class="field"><label for="dfee">Delivery fee</label><input id="dfee" class="input num" type="number" min="0" step="100" formControlName="deliveryFee" /></div> }
           </div>
@@ -137,7 +148,18 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
             @if ((preview()?.discountAmount ?? 0) > 0) { <div><dt>Discount</dt><dd class="mono">−{{ preview()!.discountAmount | naira }}</dd></div> }
             @if ((preview()?.vatAmount ?? 0) > 0) { <div><dt>VAT</dt><dd class="mono">{{ preview()!.vatAmount | naira }}</dd></div> }
             @if (edit && deliveryFee() > 0) { <div><dt>Delivery</dt><dd class="mono">{{ deliveryFee() | naira }}</dd></div> }
-            <div class="grand"><dt>Total</dt><dd class="figure">{{ (edit ? editTotal() : preview()?.total) ?? null | naira }}</dd></div>
+            @if (carriesBalance()) {
+              <!-- Earlier debt (or credit) is brought into this bill, so the customer sees one figure to settle. -->
+              <div class="sale-total"><dt>This sale</dt><dd class="mono strong">{{ preview()!.total | naira }}</dd></div>
+              @if (preview()!.previousBalance > 0) {
+                <div class="bf"><dt>Previous balance (owed)</dt><dd class="mono">+{{ preview()!.previousBalance | naira }}</dd></div>
+              } @else {
+                <div class="cr"><dt>Credit on account</dt><dd class="mono">−{{ -preview()!.previousBalance | naira }}</dd></div>
+              }
+              <div class="grand"><dt>Total due now</dt><dd class="figure">{{ dueNow() | naira }}</dd></div>
+            } @else {
+              <div class="grand"><dt>Total</dt><dd class="figure">{{ (edit ? editTotal() : preview()?.total) ?? null | naira }}</dd></div>
+            }
           </dl>
 
           @if (edit && original(); as o) {
@@ -165,7 +187,9 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
               <select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option><option>Credit</option></select></div>
             <div class="field"><label for="paid">Amount received now</label>
               <div class="inline"><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
-                <button type="button" class="btn btn-sm" [disabled]="!preview()" (click)="payInFull()">Full</button></div></div>
+                <button type="button" class="btn btn-sm" [disabled]="!preview()" (click)="payInFull()"
+                        [attr.title]="carriesBalance() ? 'Fill in everything owed, including the previous balance' : 'Fill in the full amount'">{{ carriesBalance() && (preview()?.previousBalance ?? 0) > 0 ? 'Pay all' : 'Full' }}</button></div>
+              @if ((preview()?.previousBalance ?? 0) > 0) { <span class="hint">Pays this sale first, then the previous balance, oldest invoice first.</span> }</div>
             @if ((preview()?.outstanding ?? 0) > 0) {
               <div class="field"><label for="due">Payment due by</label><input id="due" class="input" type="date" formControlName="dueDate" /></div>
             }
@@ -173,11 +197,12 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
           }
 
           @if (preview(); as p) { @if (!edit) {
-            @if (p.previousBalance > 0 && !quote) {
-              <p class="notice info split">Earlier debt: <strong>{{ p.previousBalance | naira }}</strong>.
-                @if (p.appliedToPreviousBalance > 0) { {{ p.appliedToPreviousBalance | naira }} of this payment goes toward it, oldest invoice first. }</p>
+            @if (p.appliedToPreviousBalance > 0 && !quote) {
+              <p class="notice info split">{{ p.appliedToPreviousBalance | naira }} of this payment clears the previous balance, oldest invoice first.</p>
             }
-            @if (p.outstanding > 0 && !quote) { <p class="owed">Left unpaid on this sale: <strong class="mono">{{ p.outstanding | naira }}</strong></p> }
+            @if (!quote && carriesBalance()) {
+              <p class="owed">After this payment the customer will owe <strong class="mono">{{ owedAfter() | naira }}</strong> in total.</p>
+            } @else if (p.outstanding > 0 && !quote) { <p class="owed">Left unpaid on this sale: <strong class="mono">{{ p.outstanding | naira }}</strong></p> }
           } }
 
           <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : edit ? 'Save changes' : quote ? 'Save quotation' : 'Save sale' }}</button>
@@ -190,6 +215,9 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
         <div class="field span-2"><label for="cn">Name</label><input id="cn" class="input" formControlName="name" /></div>
         <div class="field"><label for="ct">Customer type</label><select id="ct" class="input" formControlName="customerType"><option>Retailer</option><option>Wholesaler</option><option>Distributor</option><option>Walk-in</option></select></div>
         <div class="field"><label for="cp">Phone</label><input id="cp" class="input" formControlName="phone" inputmode="tel" /></div>
+        <div class="field span-2"><label for="ca">Address</label><input id="ca" class="input" formControlName="address" placeholder="e.g. 12 Allen Avenue" autocomplete="street-address" /></div>
+        <div class="field"><label for="cl">Area / city</label><input id="cl" class="input" formControlName="location" placeholder="e.g. Ikeja, Lagos" /></div>
+        <div class="field"><label for="ce">Email (optional)</label><input id="ce" class="input" type="email" formControlName="email" /></div>
       </form>
       <ng-container modal-actions>
         <button type="button" class="btn" (click)="newCustomerOpen.set(false)">Cancel</button>
@@ -202,10 +230,22 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
     .summary { position: sticky; top: 4.5rem; display: flex; flex-direction: column; gap: 1rem; }
     .one { grid-template-columns: minmax(0, 1fr); }
     .label { font: 600 .75rem/1 var(--font-body); letter-spacing: .04em; color: var(--ink-3); margin-bottom: .55rem; }
+    .discount { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .8rem 1.1rem; border-top: 1px solid var(--line); }
+    .discount label { font-weight: 600; }
+    .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-2); overflow: hidden; }
+    .seg button { border: 0; background: #fff; padding: .45rem .8rem; font-weight: 600; cursor: pointer; min-width: 2.5rem; }
+    .seg button + button { border-left: 1px solid var(--line-strong); }
+    .seg button.on { background: var(--brand); color: #fff; }
+    .seg button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+    .w-disc { width: 9rem; }
     .chip .stamp { margin-left: .5rem; }
     .chip { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
     .owes { color: var(--stamp); font-weight: 600; font-size: .8125rem; margin-top: .2rem; }
     .credit { color: var(--ok, #1a7f4b); font-weight: 600; font-size: .8125rem; margin-top: .2rem; }
+    .totals .sale-total { border-top: 1px solid var(--line); padding-top: .4rem; }
+    .totals .bf dt, .totals .bf dd { color: var(--stamp); font-weight: 600; }
+    .totals .cr dt, .totals .cr dd { color: var(--ok, #1a7f4b); font-weight: 600; }
+    .hint { display: block; font-size: .75rem; color: var(--muted); margin-top: .25rem; }
     .changes { border-top: 1px solid var(--line); padding-top: .75rem; font-size: .8125rem; }
     .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
     .pick { list-style: none; margin: .5rem 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-2); max-height: 15rem; overflow: auto; background: #fff; }
@@ -256,13 +296,18 @@ export class SaleNew implements OnInit {
     warehouseId: [0, Validators.min(1)],
     priceTier: ['Retailer' as Tier],
     paymentMethod: ['Cash'],
-    discountPct: [0, [Validators.min(0), Validators.max(100)]],
+    /** 'pct' = a percentage off; 'amt' = a fixed naira amount off (sent to the server as-is, never converted). */
+    discountType: ['pct' as 'pct' | 'amt'],
+    discountValue: [0, Validators.min(0)],
     vat: [true],
     paidNow: [0, Validators.min(0)],
     dueDate: [''],
     deliveryFee: [0, Validators.min(0)],
   });
-  protected readonly custForm = this.fb.nonNullable.group({ name: ['', Validators.required], customerType: ['Retailer' as CustomerType], phone: [''] });
+  protected readonly custForm = this.fb.nonNullable.group({
+    name: ['', Validators.required], customerType: ['Retailer' as CustomerType], phone: [''],
+    address: ['', Validators.maxLength(250)], location: ['', Validators.maxLength(100)], email: ['', Validators.email],
+  });
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
 
   protected readonly localSubtotal = computed(() => this.lines().reduce((s, l) => s + l.qty * l.price, 0));
@@ -284,9 +329,13 @@ export class SaleNew implements OnInit {
   protected readonly request = computed<SaleRequest | null>(() => {
     const c = this.customer(); const f = this.formValue(); const lines = this.lines();
     if (!c || !lines.length || !(Number(f.warehouseId) > 0) || lines.some(l => !(l.qty > 0) || l.price < 0)) return null;
+    const dv = Math.max(0, asNumber(f.discountValue));
+    const byAmount = f.discountType === 'amt';
+    if (!byAmount && dv > 100) return null;
     return {
       customerId: c.id, priceTier: f.priceTier ?? 'Retailer', warehouseId: Number(f.warehouseId), paymentMethod: f.paymentMethod ?? 'Cash',
-      discountPct: asNumber(f.discountPct), vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null,
+      discountPct: byAmount ? 0 : dv, discountAmount: byAmount && dv > 0 ? dv : null,
+      vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null,
       lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitPrice: l.price, ...(l.tracks && !this.quote && !this.edit ? { serials: splitSerials(l.serials) } : {}) })),
     };
   });
@@ -337,7 +386,12 @@ export class SaleNew implements OnInit {
     const bal = (await this.api.customerLookup(s.customer)).find(c => c.id === s.customerId)?.balance ?? 0;
     this.customer.set({ id: s.customerId, name: s.customer, customerType: s.customerType as CustomerType, phone: null, balance: bal });
     this.form.patchValue({
-      warehouseId: s.warehouseId ?? ws[0]?.id ?? 0, priceTier: (s.priceTier as Tier) || 'Retailer', discountPct: s.discountPct,
+      warehouseId: s.warehouseId ?? ws[0]?.id ?? 0, priceTier: (s.priceTier as Tier) || 'Retailer',
+      // A percentage that reproduces the saved discount is kept as a percentage (it scales if items change); otherwise the discount
+      // was a fixed naira amount, which is kept exactly.
+      ...(s.discountAmount > 0 && Math.round(s.subtotal * s.discountPct) / 100 !== s.discountAmount
+        ? { discountType: 'amt' as const, discountValue: s.discountAmount }
+        : { discountType: 'pct' as const, discountValue: s.discountPct }),
       vat: s.vatRate > 0, deliveryFee: s.deliveryFee ?? 0,
     }, { emitEvent: false });
     this.lastTier = this.form.controls.priceTier.value;
@@ -366,12 +420,13 @@ export class SaleNew implements OnInit {
     const v = this.custForm.getRawValue();
     try {
       const { id } = await this.api.createCustomer({
-        name: v.name, customerType: v.customerType, phone: v.phone || null, contactName: null, location: null, address: null, email: null,
+        name: v.name, customerType: v.customerType, phone: v.phone || null, contactName: null,
+        location: v.location.trim() || null, address: v.address.trim() || null, email: v.email.trim() || null,
         taxId: null, rebateRatePct: 1, creditLimit: 0,
       });
       this.newCustomerOpen.set(false);
       this.chooseCustomer({ id, name: v.name.trim(), customerType: v.customerType, phone: v.phone || null, balance: 0 });
-      this.custForm.reset({ name: '', customerType: 'Retailer', phone: '' });
+      this.custForm.reset({ name: '', customerType: 'Retailer', phone: '', address: '', location: '', email: '' });
       this.toasts.ok('Customer added.');
     } catch (e) { this.toasts.error(messageOf(e)); }
   }
@@ -430,7 +485,13 @@ export class SaleNew implements OnInit {
     this.lastTier = t;
   }
 
-  protected payInFull() { const p = this.preview(); if (p) this.form.controls.paidNow.setValue(p.total + p.previousBalance > 0 ? p.total : 0); }
+  /** A new sale for a customer who owes (or holds credit): the bill shows the previous balance and one "total due now". */
+  protected readonly carriesBalance = computed(() => !this.edit && !this.quote && (this.preview()?.previousBalance ?? 0) !== 0);
+  /** This sale plus what was already owed (less any credit) — never below zero. */
+  protected readonly dueNow = computed(() => { const p = this.preview(); return p ? Math.max(0, p.total + p.previousBalance) : 0; });
+  protected readonly owedAfter = computed(() => Math.max(0, this.dueNow() - Math.max(0, asNumber(this.formValue().paidNow))));
+  /** Fills in everything owed: this sale plus any previous balance (the server applies it to this sale first, then oldest invoices). */
+  protected payInFull() { if (this.preview()) this.form.controls.paidNow.setValue(this.dueNow()); }
 
   // ---- save ----
   protected async save() {
@@ -441,7 +502,7 @@ export class SaleNew implements OnInit {
       // One key per distinct order: a retry after a dropped connection is safe, an edited order is a new sale.
       if (this.edit) {
         const res = await this.api.editSale(this.editId, {
-          discountPct: r.discountPct, vatRate: r.vatRate, deliveryFee: this.deliveryFee(), dueDate: this.original()?.dueDate ?? null, lines: r.lines,
+          discountPct: r.discountPct, discountAmount: r.discountAmount, vatRate: r.vatRate, deliveryFee: this.deliveryFee(), dueDate: this.original()?.dueDate ?? null, lines: r.lines,
         });
         const extra = res.creditHeld > 0 ? ` ${new NairaPipe().transform(res.creditHeld)} is now credit for this customer.` : '';
         this.toasts.ok(`Sale ${res.invoiceNumber} updated.${extra}`);
@@ -451,7 +512,7 @@ export class SaleNew implements OnInit {
       const body = JSON.stringify(r);
       if (!this.idem || this.idem.body !== body) this.idem = { body, id: crypto.randomUUID() };
       if (this.quote) {
-        const q = await this.api2.createQuotation({ customerId: r.customerId, priceTier: r.priceTier, discountPct: r.discountPct, vatRate: r.vatRate, lines: r.lines });
+        const q = await this.api2.createQuotation({ customerId: r.customerId, priceTier: r.priceTier, discountPct: r.discountPct, discountAmount: r.discountAmount, vatRate: r.vatRate, lines: r.lines });
         this.toasts.ok(`Quotation ${q.number} saved.`);
         await this.router.navigate(['/quotations']);
         return;

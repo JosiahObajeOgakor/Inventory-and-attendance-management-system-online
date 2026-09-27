@@ -41,7 +41,7 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     [HttpPost("preview"), Authorize(Policy = Policies.Staff)]
     public async Task<ActionResult<SalePreviewResult>> Preview(SaleRequest req, CancellationToken ct)
     {
-        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
+        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate, req.DiscountAmount);
         var prev = await db.Customers.Where(c => c.Id == req.CustomerId).Select(c => (decimal?)c.Balance).SingleOrDefaultAsync(ct) ?? 0m;
         // Mirrors SalesService: account credit (a negative balance) is used before the cash paid now.
         var creditUsed = prev < 0 ? Math.Min(-prev, totals.Total) : 0m;

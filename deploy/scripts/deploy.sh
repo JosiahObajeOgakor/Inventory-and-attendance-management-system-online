@@ -9,7 +9,7 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 : "${DEPLOY_HOST:?set DEPLOY_HOST=user@host}"
 RID=${DEPLOY_RID:-linux-x64}
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=8)
 [ -n "${DEPLOY_KEY:-}" ] && SSH_OPTS+=(-i "$DEPLOY_KEY" -o IdentitiesOnly=yes)
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
@@ -27,7 +27,15 @@ echo "== Landing page (/) =="
 
 echo "== Upload =="
 # Relative paths from inside $OUT: tar and scp read "C:/…" as a remote host "C".
-(cd "$OUT" && tar -czf release.tgz api ui/browser landing/browser && scp "${SSH_OPTS[@]}" release.tgz "$DEPLOY_HOST:/tmp/chewy-release.tgz")
+(cd "$OUT" && tar -czf release.tgz api ui/browser landing/browser)
+# A dropped connection mid-upload just retries (up to 4 tries); the size is checked on the server before anything is swapped in.
+size=$(cd "$OUT" && wc -c < release.tgz | tr -d ' ')
+for try in 1 2 3 4; do
+  (cd "$OUT" && scp "${SSH_OPTS[@]}" release.tgz "$DEPLOY_HOST:/tmp/chewy-release.tgz") \
+    && [ "$(ssh "${SSH_OPTS[@]}" "$DEPLOY_HOST" 'wc -c < /tmp/chewy-release.tgz' | tr -d ' \r')" = "$size" ] && break
+  [ $try = 4 ] && { echo "Upload failed after 4 tries."; exit 1; }
+  echo "Upload interrupted — retrying ($try)…"; sleep 5
+done
 
 # sudo is a no-op when deploying as root.
 ssh "${SSH_OPTS[@]}" "$DEPLOY_HOST" 'set -e; S=$([ "$(id -u)" -eq 0 ] || echo sudo)

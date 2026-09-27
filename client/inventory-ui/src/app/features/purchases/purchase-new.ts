@@ -84,7 +84,18 @@ const VAT = 7.5;
           <dl class="totals">
             <div><dt>Subtotal</dt><dd class="mono">{{ subtotal() | naira }}</dd></div>
             @if (vatAmount() > 0) { <div><dt>VAT</dt><dd class="mono">{{ vatAmount() | naira }}</dd></div> }
-            <div class="grand"><dt>Total</dt><dd class="figure">{{ total() | naira }}</dd></div>
+            @if (carriesBalance()) {
+              <!-- What we already owe this supplier (or credit we hold with them) is brought into this bill. -->
+              <div class="sale-total"><dt>This order</dt><dd class="mono strong">{{ total() | naira }}</dd></div>
+              @if (supplier()!.balance > 0) {
+                <div class="bf"><dt>Previous balance (we owe)</dt><dd class="mono">+{{ supplier()!.balance | naira }}</dd></div>
+              } @else {
+                <div class="cr"><dt>Credit with this supplier</dt><dd class="mono">−{{ -supplier()!.balance | naira }}</dd></div>
+              }
+              <div class="grand"><dt>Total due now</dt><dd class="figure">{{ dueNow() | naira }}</dd></div>
+            } @else {
+              <div class="grand"><dt>Total</dt><dd class="figure">{{ total() | naira }}</dd></div>
+            }
           </dl>
           @if (edit && original(); as o) {
             <div class="changes" aria-live="polite">
@@ -108,8 +119,11 @@ const VAT = 7.5;
           @if (form.controls.receiveNow.value) {
             <div class="field"><label for="wh">Put them in</label><select id="wh" class="input" formControlName="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div>
           }
-          <div class="field"><label for="paid">Paid to the supplier now</label><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
-            <span class="hint">Covers this order first, then older orders, oldest first.</span></div>
+          <div class="field"><label for="paid">Paid to the supplier now</label>
+            <div class="inline"><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
+              <button type="button" class="btn btn-sm" [disabled]="!lines().length" (click)="payAll()">{{ (supplier()?.balance ?? 0) > 0 ? 'Pay all' : 'Full' }}</button></div>
+            <span class="hint">Covers this order first, then older orders, oldest first.</span>
+            @if (carriesBalance()) { <span class="hint owes">After this payment we will owe them {{ owedAfter() | naira }} in total.</span> }</div>
           <div class="field"><label for="pm">Paid by</label><select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option></select></div>
           }
           <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : edit ? 'Save changes' : 'Save purchase' }}</button>
@@ -123,6 +137,10 @@ const VAT = 7.5;
     .pick button { display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: .6rem 1.1rem; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; }
     .pick button:hover, .pick button:focus-visible { background: var(--brand-tint); }
     .sm { font-size: .75rem; } .owes { color: var(--stamp) !important; font-weight: 600; } .credit { color: var(--ok, #1a7f4b) !important; font-weight: 600; }
+    .inline { display: flex; gap: .4rem; }
+    .totals .sale-total { border-top: 1px solid var(--line); padding-top: .4rem; }
+    .totals .bf dt, .totals .bf dd { color: var(--stamp); font-weight: 600; }
+    .totals .cr dt, .totals .cr dd { color: var(--ok, #1a7f4b); font-weight: 600; }
     .label { font: 600 .75rem/1 var(--font-body); letter-spacing: .04em; color: var(--ink-3); margin-bottom: .55rem; }
     .changes { border-top: 1px solid var(--line); padding-top: .75rem; font-size: .8125rem; } .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; } .w-qty { width: 5rem; } .w-price { width: 8rem; } .big { min-height: 3rem; }
     .totals { margin: 0; display: grid; gap: .35rem; } .totals div { display: flex; justify-content: space-between; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
@@ -171,6 +189,11 @@ export class PurchaseNew implements OnInit {
   protected readonly subtotal = computed(() => this.lines().reduce((s, l) => s + l.qty * l.cost, 0));
   protected readonly vatAmount = computed(() => (this.value().vat ? Math.round(this.subtotal() * VAT) / 100 : 0));
   protected readonly total = computed(() => this.subtotal() + this.vatAmount());
+  /** A new order to a supplier we already owe (or hold credit with): the bill shows the previous balance and one "total due now". */
+  protected readonly carriesBalance = computed(() => !this.edit && (this.supplier()?.balance ?? 0) !== 0);
+  protected readonly dueNow = computed(() => Math.max(0, this.total() + (this.supplier()?.balance ?? 0)));
+  protected readonly owedAfter = computed(() => Math.max(0, this.dueNow() - Math.max(0, asNumber(this.value().paidNow))));
+  protected payAll() { this.form.controls.paidNow.setValue(this.dueNow()); }
   /** Edit mode: per product, how many more (+) or fewer (−) than the saved order. */
   protected readonly stockMoves = computed(() => {
     const o = this.original(); if (!o) return [];

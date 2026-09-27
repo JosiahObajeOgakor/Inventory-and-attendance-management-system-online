@@ -69,6 +69,10 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
               <div class="grand"><dt>Total</dt><dd class="figure">{{ s.totalAmount | naira }}</dd></div>
               <div><dt>Paid</dt><dd class="mono">{{ s.amountPaid | naira }}</dd></div>
               @if (owed() > 0 && s.status !== 'Voided') { <div class="owed"><dt>Balance on this invoice</dt><dd class="mono">{{ owed() | naira }}</dd></div> }
+              @if (s.owedElsewhere > 0) {
+                <div class="owed"><dt>Owed on earlier invoices</dt><dd class="mono">{{ s.owedElsewhere | naira }}</dd></div>
+                <div class="owed all"><dt>Total now owed</dt><dd class="mono">{{ (s.status === 'Voided' ? 0 : owed()) + s.owedElsewhere | naira }}</dd></div>
+              }
             </dl>
           </div>
         </article>
@@ -86,6 +90,7 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
     .totals { margin: 0; width: min(20rem, 100%); display: grid; gap: .35rem; margin-left: auto; } .totals div { display: flex; justify-content: space-between; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
     .grand { border-top: 2px solid var(--ink); padding-top: .5rem; align-items: baseline; } .grand dt { color: var(--ink) !important; font-weight: 700; } .grand dd { font-size: 1.9rem; color: var(--brand); }
     .owed dt, .owed dd { color: var(--stamp) !important; font-weight: 700; }
+    .owed.all { border-top: 1px solid var(--line); padding-top: .35rem; }
     @media print { .receipt { max-width: none; border: 0; padding: 0; } .grand dd { color: #000; } }
   `,
 })

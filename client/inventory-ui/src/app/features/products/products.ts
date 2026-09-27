@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
 import { Auth } from '../../core/auth.service';
@@ -8,6 +8,14 @@ import { Modal } from '../../shared/modal';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { PagedList } from '../../shared/paged-list';
 import { NairaPipe, Pager } from '../../shared/ui';
+
+/** How a product is packed and sold. The value is what's stored and printed next to quantities ("12 Ctn in stock"). */
+const UNITS = [
+  { value: 'Bag', label: 'Bags' },
+  { value: 'Ctn', label: 'Cartons (Ctns)' },
+  { value: 'Pack', label: 'Packs' },
+  { value: 'Pcs', label: 'Pieces (Pcs)' },
+];
 
 @Component({
   selector: 'app-products',
@@ -60,8 +68,12 @@ import { NairaPipe, Pager } from '../../shared/ui';
         <div class="field"><label for="f-name">Name</label><input id="f-name" class="input" formControlName="name" /></div>
         <div class="field"><label for="f-cat">Category</label>
           <div class="inline"><select id="f-cat" class="input" formControlName="categoryId">@for (c of categories(); track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }</select>
-            @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="addCategory()">Add</button> }</div></div>
-        <div class="field"><label for="f-unit">Sold by the</label><input id="f-unit" class="input" formControlName="unit" /><span class="hint">Bag, carton, piece…</span></div>
+            @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="addCategory()">Add</button> }</div>
+          @if (!categories().length) { <span class="hint">No categories yet. Click <strong>Add</strong> to create one, e.g. “Dog food” or “Cat food”.</span> }</div>
+        <div class="field"><label for="f-unit">Sold in</label>
+          <select id="f-unit" class="input" formControlName="unit">
+            @for (u of units(); track u.value) { <option [value]="u.value">{{ u.label }}</option> }
+          </select><span class="hint">How one unit of stock is counted and sold.</span></div>
         <div class="field"><label for="f-r">Retail price</label><input id="f-r" class="input num" type="number" min="0" step="0.01" formControlName="priceRetail" /></div>
         <div class="field"><label for="f-w">Wholesale price</label><input id="f-w" class="input num" type="number" min="0" step="0.01" formControlName="priceWholesaler" /></div>
         <div class="field"><label for="f-d">Distributor price</label><input id="f-d" class="input num" type="number" min="0" step="0.01" formControlName="priceDistributor" /></div>
@@ -100,6 +112,12 @@ export class ProductsPage implements OnInit {
   protected readonly dialogOpen = signal(false);
   protected readonly editing = signal<Product | null>(null);
   protected readonly busy = signal(false);
+  /** The packaging choices. A product saved earlier with some other unit keeps it (it's added to the list while editing it). */
+  protected readonly units = computed(() => {
+    const base = UNITS;
+    const current = this.editing()?.unit;
+    return current && !base.some(u => u.value === current) ? [...base, { value: current, label: current }] : base;
+  });
 
   protected readonly form = this.fb.nonNullable.group({
     sku: ['', [Validators.required, Validators.maxLength(30)]], name: ['', [Validators.required, Validators.maxLength(150)]],

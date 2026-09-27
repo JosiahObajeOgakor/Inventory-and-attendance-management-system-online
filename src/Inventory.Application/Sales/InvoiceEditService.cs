@@ -12,6 +12,8 @@ namespace Inventory.Application.Sales;
 public sealed class InvoiceEditRequest
 {
     public decimal DiscountPct { get; set; }
+    /// <summary>A fixed naira discount; when set (&gt; 0) it wins over <see cref="DiscountPct"/>.</summary>
+    public decimal? DiscountAmount { get; set; }
     public decimal VatRate { get; set; }
     public decimal DeliveryFee { get; set; }
     public DateOnly? DueDate { get; set; }
@@ -32,6 +34,7 @@ public sealed class InvoiceEditRequestValidator : AbstractValidator<InvoiceEditR
     public InvoiceEditRequestValidator()
     {
         RuleFor(x => x.DiscountPct).InclusiveBetween(0, 100);
+        RuleFor(x => x.DiscountAmount).GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue);
         RuleFor(x => x.VatRate).InclusiveBetween(0, 100);
         RuleFor(x => x.DeliveryFee).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Lines).NotEmpty().WithMessage("A sale needs at least one item. To cancel it completely, void it instead.");
@@ -127,10 +130,10 @@ public sealed class InvoiceEditService(IBusinessDbContext db, TransactionRunner 
         }
 
         // 3. Totals (delivery goes on after VAT, as on a new sale).
-        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
+        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate, req.DiscountAmount);
         var oldTotal = invoice.TotalAmount;
         var newTotal = totals.Total + req.DeliveryFee;
-        invoice.Subtotal = totals.Subtotal; invoice.DiscountPct = req.DiscountPct; invoice.DiscountAmount = totals.DiscountAmount;
+        invoice.Subtotal = totals.Subtotal; invoice.DiscountPct = req.DiscountAmount is > 0 ? DocumentCalculator.EffectivePct(totals.Subtotal, totals.DiscountAmount) : req.DiscountPct; invoice.DiscountAmount = totals.DiscountAmount;
         invoice.VatRate = req.VatRate; invoice.VatAmount = totals.VatAmount; invoice.DeliveryFee = req.DeliveryFee; invoice.TotalAmount = newTotal;
 
         // 4. Money. The customer now owes the difference (or is owed it).

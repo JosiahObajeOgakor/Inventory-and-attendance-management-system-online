@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, injec
 import { RouterLink } from '@angular/router';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
+import { Loading } from '../../core/loading.service';
 import { Auth } from '../../core/auth.service';
 import { CalendarData, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
 import { Icon } from '../../shared/icon';
@@ -197,6 +198,7 @@ const POLL_MS = 30_000;
 })
 export class AdminDashboard implements OnInit {
   private readonly api = inject(Api2);
+  private readonly loading = inject(Loading);
   protected readonly auth = inject(Auth);
   private readonly destroy = inject(DestroyRef);
   protected readonly compact = compact;
@@ -257,7 +259,8 @@ export class AdminDashboard implements OnInit {
 
   private async loadOverview(first: boolean) {
     try {
-      const o = await this.api.overview(30);
+      // The first load shows the global spinner; the automatic refreshes after it happen quietly in the background.
+      const o = await (first ? this.api.overview(30) : this.loading.quiet(() => this.api.overview(30)));
       this.o.set(o); this.error.set(''); this.stale.set(false);
       this.updated.set(new Date().toLocaleTimeString('en-GB'));
       if (first) { this.mi.set(o.months.length - 1); const [y, m] = [+o.asOf.slice(0, 4), +o.asOf.slice(5, 7)]; this.calYear = y; this.calMonth = m; }

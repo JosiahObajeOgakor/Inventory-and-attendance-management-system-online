@@ -6,12 +6,13 @@ import { Auth } from './core/auth.service';
 import { Appearance } from './core/appearance.service';
 import { I18n } from './core/i18n.service';
 import { csrfInterceptor, sessionInterceptor } from './core/http';
+import { loadingInterceptor } from './core/loading.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding(), withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
-    provideHttpClient(withInterceptors([csrfInterceptor, sessionInterceptor])),
+    provideHttpClient(withInterceptors([loadingInterceptor, csrfInterceptor, sessionInterceptor])),
     // Pick up an existing session cookie before the first route renders.
     provideAppInitializer(() => inject(Auth).restore()),
     provideAppInitializer(() => inject(Appearance).init()),

@@ -33,6 +33,23 @@ public class DocumentCalculatorTests
     }
 
     [Fact]
+    public void A_naira_discount_is_taken_exactly_before_vat_and_wins_over_a_percentage()
+    {
+        // ₦2,000 off ₦23,000: as a 2-decimal percentage (8.70%) it would come to ₦2,001 — the amount must not drift.
+        var t = DocumentCalculator.Sale([new(1, 2, 11500m)], discountPct: 50, vatRate: 7.5m, discountAmount: 2000m);
+        Assert.Equal((23000m, 2000m, 1575m, 22575m), (t.Subtotal, t.DiscountAmount, t.VatAmount, t.Total));
+        Assert.Equal(8.70m, DocumentCalculator.EffectivePct(t.Subtotal, t.DiscountAmount));
+    }
+
+    [Fact]
+    public void A_naira_discount_can_never_exceed_the_subtotal()
+    {
+        var t = DocumentCalculator.Sale([new(1, 1, 5000m)], 0, 7.5m, discountAmount: 9000m);
+        Assert.Equal((5000m, 0m, 0m), (t.DiscountAmount, t.VatAmount, t.Total));
+        Assert.Equal(100m, DocumentCalculator.EffectivePct(t.Subtotal, t.DiscountAmount));
+    }
+
+    [Fact]
     public void Purchase_totals()
     {
         var t = DocumentCalculator.Purchase([(10, 250m)], vatRate: 7.5m);

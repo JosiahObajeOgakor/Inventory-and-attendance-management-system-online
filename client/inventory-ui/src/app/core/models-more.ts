@@ -15,7 +15,7 @@ export interface QuotationDetail {
   vatRate: number; vatAmount: number; totalAmount: number; priceTier: string; status: string; convertedInvoiceId: number | null; preparedBy: string;
   items: { productId: number; product: string; sku: string; unit: string; quantity: number; unitPrice: number; lineTotal: number }[];
 }
-export interface QuoteRequest { customerId: number; quoteDate?: string | null; priceTier: string; discountPct: number; vatRate: number; lines: SaleLine[]; }
+export interface QuoteRequest { customerId: number; quoteDate?: string | null; priceTier: string; discountPct: number; discountAmount?: number | null; vatRate: number; lines: SaleLine[]; }
 export interface QuoteResult { id: number; number: string; subtotal: number; discountAmount: number; vatAmount: number; total: number; }
 export interface WaybillRow { id: number; waybillNumber: string; issueDate: string; invoiceId: number; invoiceNumber: string; customer: string; driverName: string | null; vehiclePlate: string | null; }
 export interface PendingInvoice { invoiceId: number; invoiceNumber: string; invoiceDate: string; customer: string; warehouse: string | null; totalAmount: number; waybillCount: number; }

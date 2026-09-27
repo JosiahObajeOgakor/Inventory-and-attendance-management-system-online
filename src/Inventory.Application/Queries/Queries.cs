@@ -173,7 +173,9 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
         return new InvoiceDetailDto(i.Id, i.InvoiceNumber, c.Id, c.Name, c.CustomerType, i.InvoiceDate, i.DueDate, i.Subtotal, i.DiscountPct,
             i.DiscountAmount, i.VatRate, i.VatAmount, i.TotalAmount, i.AmountPaid, i.Status, i.PaymentMethod, i.PriceTier, i.WarehouseId,
             names.GetValueOrDefault(i.CreatedByUserId, ""), i.VoidReason, items,
-            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList(), i.DeliveryFee);
+            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList(), i.DeliveryFee,
+            // What the customer owes on their OTHER invoices (their running balance minus this invoice's share) — same figure the receipt prints.
+            i.Status == Domain.PaymentStatuses.Voided ? Math.Max(0m, c.Balance) : Math.Max(0m, c.Balance - (i.TotalAmount - i.AmountPaid)));
     }
 }
 
@@ -197,7 +199,9 @@ public sealed class PurchaseQueries(IBusinessDbContext db)
         var ids = p.Items.Select(i => i.ProductId).ToList();
         var products = await db.Products.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
         return new PurchaseDetailDto(p.Id, p.PoNumber, s.Id, s.Name, p.OrderDate, p.Status, p.PaymentStatus, p.TotalAmount, p.AmountPaid,
-            p.Items.Select(i => new PurchaseItemDto(i.ProductId, products[i.ProductId].Name, products[i.ProductId].Sku, i.Quantity, i.UnitCost, i.Quantity * i.UnitCost)).ToList());
+            p.Items.Select(i => new PurchaseItemDto(i.ProductId, products[i.ProductId].Name, products[i.ProductId].Sku, i.Quantity, i.UnitCost, i.Quantity * i.UnitCost)).ToList(),
+            // What we owe this supplier on OTHER orders (running balance minus this order's unpaid share).
+            p.Status == Domain.PurchaseStatuses.Cancelled ? Math.Max(0m, s.Balance) : Math.Max(0m, s.Balance - (p.TotalAmount - p.AmountPaid)));
     }
 }
 

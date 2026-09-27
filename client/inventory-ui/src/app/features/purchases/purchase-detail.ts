@@ -37,6 +37,10 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
             <div><dt>Total</dt><dd class="figure">{{ p.totalAmount | naira }}</dd></div>
             <div><dt>Paid</dt><dd class="mono">{{ p.amountPaid | naira }}</dd></div>
             @if (owed() > 0) { <div class="owed"><dt>Still owed</dt><dd class="mono">{{ owed() | naira }}</dd></div> }
+            @if (p.owedElsewhere > 0) {
+              <div class="owed"><dt>Owed on earlier orders</dt><dd class="mono">{{ p.owedElsewhere | naira }}</dd></div>
+              <div class="owed"><dt>Total we owe {{ p.supplier }}</dt><dd class="mono">{{ (p.status === 'Cancelled' ? 0 : owed()) + p.owedElsewhere | naira }}</dd></div>
+            }
           </dl>
         </article>
       } @else if (!error()) { <div class="card skeleton" style="height:14rem"></div> }

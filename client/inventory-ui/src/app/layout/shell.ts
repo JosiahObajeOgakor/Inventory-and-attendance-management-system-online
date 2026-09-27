@@ -74,17 +74,19 @@ export class Shell {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   });
 
-  // ---- accordion: a group is open if the person opened it, or (until they choose) when it holds the page they are on
+  // ---- accordion: ONE group open at a time. It's the group holding the current page, until the person opens another one
+  // (which closes the rest) or closes it. Moving to a page re-opens that page's group, so you always see where you are.
   private readonly url = signal(this.router.url);
-  private readonly chosen = signal<Record<string, boolean>>(readOpen());
+  /** undefined = follow the current page; null = everything closed; a title = that group open. */
+  private readonly chosen = signal<string | null | undefined>(undefined);
+  private readonly currentGroup = computed(() =>
+    this.groups().find(g => g.items.some(i => this.url().startsWith(i.path)))?.title ?? this.groups()[0]?.title ?? null);
   protected isOpen(g: NavGroup): boolean {
-    const c = this.chosen()[g.title];
-    return c ?? (g.items.some(i => this.url().startsWith(i.path)) || (g.title === 'Counter' && !this.groups().some(x => x.items.some(i => this.url().startsWith(i.path)))));
+    const c = this.chosen();
+    return (c === undefined ? this.currentGroup() : c) === g.title;
   }
   protected toggle(g: NavGroup): void {
-    const next = { ...this.chosen(), [g.title]: !this.isOpen(g) };
-    this.chosen.set(next);
-    try { localStorage.setItem('nav-open', JSON.stringify(next)); } catch { /* private mode */ }
+    this.chosen.set(this.isOpen(g) ? null : g.title);
   }
 
   // ---- logo: the business's uploaded logo when it has one, else the bundled one; changes when the business is switched
@@ -95,7 +97,8 @@ export class Shell {
   protected logoFailed() { this.logoBroken.set(true); }
 
   constructor() {
-    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) this.url.set(this.router.url); });
+    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) { this.url.set(this.router.url); this.chosen.set(undefined); } });
+    try { localStorage.removeItem('nav-open'); } catch { /* private mode */ }   // the old "many groups open" memory
     effect(() => {
       const key = this.auth.company(); if (!this.auth.me()) return;
       untracked(async () => {
@@ -145,5 +148,3 @@ export class Shell {
 
   protected async signOut() { this.idle.stop(); await this.auth.logout(); }
 }
-
-function readOpen(): Record<string, boolean> { try { const v = JSON.parse(localStorage.getItem("nav-open") ?? "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; } }
