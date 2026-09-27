@@ -144,7 +144,8 @@ public class PayPageController(IDataProtectionProvider dp, CompanyRegistry regis
             else
             {
                 body.Append("<p class=\"choose\">Choose how you'd like to pay</p><div class=\"options\">");
-                foreach (var p in i.Providers)
+                // AlatPay first (and so highlighted), then the rest in their usual order.
+                foreach (var p in i.Providers.OrderBy(x => x == PaymentProviders.AlatPay ? 0 : 1))
                 {
                     var (name, blurb) = ProviderText(p);
                     body.Append($"<a class=\"opt\" href=\"/pay/{E(token)}/{E(p)}\"><span class=\"on\">Pay with {E(name)}</span><span class=\"sub\">{E(blurb)}</span><span class=\"arrow\" aria-hidden=\"true\">›</span></a>");
