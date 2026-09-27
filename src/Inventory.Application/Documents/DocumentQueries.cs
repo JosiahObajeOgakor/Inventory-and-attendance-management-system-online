@@ -50,8 +50,16 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var payUrl = i.Status == PaymentStatuses.Voided ? null : await PayUrlAsync(PaymentDocTypes.Invoice, i.Id, i.InvoiceNumber, bal, c, ct);
         return new ReceiptDoc(brand, i.InvoiceNumber, i.InvoiceDate, i.Status, bal > 0 ? i.DueDate : null, Party(c), i.PriceTier, wh, i.PaymentMethod,
             PersonOn(briefs.GetValueOrDefault(i.CreatedByUserId), brand.Name), lines, i.Subtotal, i.DiscountPct, i.DiscountAmount, i.VatRate, i.VatAmount,
-            i.TotalAmount, i.AmountPaid, i.Status == PaymentStatuses.Voided ? 0m : elsewhere, rebate, clock.BusinessNow, payUrl);
+            i.TotalAmount, i.AmountPaid, i.Status == PaymentStatuses.Voided ? 0m : elsewhere, rebate, clock.BusinessNow, payUrl,
+            i.Status == PaymentStatuses.Voided ? null : ScanUrl(PaymentDocTypes.Invoice, i.Id, bal));
     }
+
+    /// <summary>
+    /// The address behind the printed "scan to pay" QR code: it goes straight into an AlatPay checkout for what is owed at the moment of scanning
+    /// (no choosing screen). Only when AlatPay is set up and the site address is configured — a QR that can't pay is worse than none.
+    /// </summary>
+    private string? ScanUrl(string docType, int docId, decimal amount) =>
+        amount > 0 && pay.Providers.Contains(PaymentProviders.AlatPay) && payPages?.UrlFor(docType, docId) is { } page ? $"{page}/{PaymentProviders.AlatPay}" : null;
 
     /// <summary>
     /// The "pay online" link printed on the document: our own page where the customer picks Paystack or AlatPay and pays what is owed at that
@@ -78,7 +86,8 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var briefs = await users.BriefsAsync([q.CreatedByUserId], ct);
         var payUrl = q.Status == QuotationStatuses.Open ? await PayUrlAsync(PaymentDocTypes.Quotation, q.Id, q.QuotationNumber, q.TotalAmount, c, ct) : null;
         return new QuotationDoc(brand, q.QuotationNumber, q.QuotationDate, q.Status, Party(c), q.PriceTier, PersonOn(briefs.GetValueOrDefault(q.CreatedByUserId), brand.Name),
-            lines, q.Subtotal, q.DiscountPct, q.DiscountAmount, q.VatRate, q.VatAmount, q.TotalAmount, clock.BusinessNow, payUrl);
+            lines, q.Subtotal, q.DiscountPct, q.DiscountAmount, q.VatRate, q.VatAmount, q.TotalAmount, clock.BusinessNow, payUrl,
+            q.Status == QuotationStatuses.Open ? ScanUrl(PaymentDocTypes.Quotation, q.Id, q.TotalAmount) : null);
     }
 
     public async Task<WaybillDoc> WaybillAsync(int id, CancellationToken ct)

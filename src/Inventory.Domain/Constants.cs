@@ -65,6 +65,8 @@ public static class MovementReferences
     public const string OpeningBalance = "OpeningBalance";
     /// <summary>New: reversal of a voided invoice.</summary>
     public const string InvoiceVoid = "InvoiceVoid";
+    /// <summary>Stock returned because a sale was deleted (the sale itself no longer exists; the movement keeps its old id and number).</summary>
+    public const string InvoiceDelete = "InvoiceDelete";
     /// <summary>New: stock moved because a sale's lines were edited (IN = units handed back, OUT = extra units taken).</summary>
     public const string InvoiceEdit = "InvoiceEdit";
     /// <summary>New: stock moved because a received purchase's lines were edited.</summary>

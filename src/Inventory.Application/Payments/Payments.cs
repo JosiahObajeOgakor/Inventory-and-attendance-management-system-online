@@ -157,6 +157,25 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         if (!string.Equals(v.Currency, "NGN", StringComparison.OrdinalIgnoreCase)) return new SettleResult(false, false, "Unexpected currency.");
         var paid = v.AmountKobo / 100m;
 
+        // Paid on a link whose sale was deleted: there is nothing to attach it to, so it's recorded on the link (once) and the admin is told to refund it.
+        if (link.Status == PaymentLinkStatuses.Cancelled)
+        {
+            var first = await tx.RunAsync(async inner =>
+            {
+                var l = await db.PaymentLinks.FromSqlInterpolated($"SELECT * FROM payment_links WHERE Reference = {reference} FOR UPDATE").SingleAsync(inner);
+                if (l.PaidAt is not null) return false;
+                l.PaidAt = clock.UtcNow; l.PaidAmount = paid; l.Channel = v.Channel;
+                db.AuditLogs.Add(new AuditLog { UserId = null, UserName = processor, Action = "PAYMENT_ON_DELETED_SALE", Entity = l.DocType, EntityId = l.DocId.ToString(), At = clock.UtcNow,
+                    Detail = $"{l.DocNumber} ₦{paid:N2} by {l.CustomerName} via {processor} — the sale had been deleted; refund needed" });
+                await db.SaveChangesAsync(inner);
+                return true;
+            }, ct);
+            if (first)
+                try { await notifier.NotifyAsync($"{company.LegalName}: refund needed", $"₦{paid:N2} was paid via {processor} by {link.CustomerName} for {link.DocNumber}, which had been deleted. Please refund it from your {processor} dashboard.", ct); }
+                catch (Exception) { /* recorded in the activity log above */ }
+            return new SettleResult(false, true, "Paid on a deleted sale — refund needed.");
+        }
+
         string? summary = null; var already = false;
         int? invoiceId = null; int? custId = null; string? custPhone = null;
         await tx.RunAsync<bool>(async inner =>

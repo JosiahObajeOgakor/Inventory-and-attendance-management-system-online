@@ -153,6 +153,9 @@ export class StockPage implements OnInit {
       case 'Transfer': return m.type === 'OUT' ? 'Transfer out' : 'Transfer in';
       case 'OpeningBalance': return 'Opening stock';
       case 'InvoiceVoid': return 'Sale voided';
+      case 'InvoiceDelete': return 'Sale deleted — returned';
+      case 'InvoiceEdit': return m.type === 'OUT' ? 'Sale edited — taken' : 'Sale edited — returned';
+      case 'PurchaseEdit': return m.type === 'OUT' ? 'Purchase edited — removed' : 'Purchase edited — added';
       default: return m.referenceType ?? '—';
     }
   }

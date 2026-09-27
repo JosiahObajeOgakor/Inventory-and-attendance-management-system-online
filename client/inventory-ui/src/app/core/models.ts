@@ -73,6 +73,11 @@ export interface InvoiceEditResult {
   invoiceId: number; invoiceNumber: string; oldTotal: number; newTotal: number; outstanding: number; status: string;
   stockBack: StockChange[]; stockOut: StockChange[]; movedToOtherSales: number; creditHeld: number;
 }
+/** What deleting a sale does (or did): stock back, money to refund, credit restored, debt cleared. */
+export interface SaleDeleteResult {
+  invoiceNumber: string; customer: string; stockReturned: StockChange[]; refundDue: number;
+  refundOnline: { method: string; amount: number }[]; creditRestored: number; owedCleared: number;
+}
 export interface PurchaseEditRequest { vatRate: number; lines: { productId: number; quantity: number; unitCost: number }[]; }
 export interface PurchaseEditResult {
   purchaseOrderId: number; poNumber: string; oldTotal: number; newTotal: number; outstanding: number; paymentStatus: string;

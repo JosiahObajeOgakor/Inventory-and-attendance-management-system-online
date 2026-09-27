@@ -14,7 +14,8 @@ public sealed record PartyInfo(string Name, string Contact, string Address, stri
 public sealed record ReceiptDoc(
     Branding Brand, string Number, DateOnly Date, string Status, DateOnly? DueDate, PartyInfo Customer, string PriceTier, string Warehouse,
     string PaymentMethod, string ServedBy, IReadOnlyList<DocLine> Lines, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount,
-    decimal VatRate, decimal VatAmount, decimal Total, decimal Paid, decimal OwedElsewhere, decimal RebateAvailable, DateTime GeneratedAt, string? PayUrl = null)
+    decimal VatRate, decimal VatAmount, decimal Total, decimal Paid, decimal OwedElsewhere, decimal RebateAvailable, DateTime GeneratedAt, string? PayUrl = null,
+    string? ScanPayUrl = null)
 {
     public decimal BalanceDue => Total - Paid;
 }
@@ -22,7 +23,7 @@ public sealed record ReceiptDoc(
 public sealed record QuotationDoc(
     Branding Brand, string Number, DateOnly Date, string Status, PartyInfo Customer, string PriceTier, string PreparedBy,
     IReadOnlyList<DocLine> Lines, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount, decimal VatRate, decimal VatAmount,
-    decimal Total, DateTime GeneratedAt, string? PayUrl = null);
+    decimal Total, DateTime GeneratedAt, string? PayUrl = null, string? ScanPayUrl = null);
 
 public sealed record WaybillDoc(
     Branding Brand, string Number, DateOnly IssueDate, string InvoiceNumber, DateOnly InvoiceDate, PartyInfo Customer, string DestinationAddress,

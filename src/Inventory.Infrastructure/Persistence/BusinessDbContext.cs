@@ -250,7 +250,8 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Action).HasMaxLength(60).IsRequired();
             e.Property(x => x.Entity).HasMaxLength(60).IsRequired();
             e.Property(x => x.EntityId).HasMaxLength(60);
-            e.Property(x => x.Detail).HasMaxLength(1000);
+            // text, not varchar(1000): a deleted sale keeps its full record here.
+            e.Property(x => x.Detail).HasColumnType("text");
             e.Property(x => x.At).HasPrecision(6);
             e.HasIndex(x => x.At);
         });

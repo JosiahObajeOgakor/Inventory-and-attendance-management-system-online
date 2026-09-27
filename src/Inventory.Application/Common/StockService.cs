@@ -89,14 +89,15 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
         return batch;
     }
 
-    /// <summary>What a sale still holds, per batch: units it took (its sale + any edits) minus units an edit handed back.</summary>
+    /// <summary>What a sale still holds, per batch: units it took (its sale + any edits) minus units handed back by an edit, a void or a delete.</summary>
     public sealed record HeldStock(int ProductId, int WarehouseId, int? BatchId, int Quantity, int LastMovementId);
 
     public async Task<IReadOnlyList<HeldStock>> HeldByInvoiceAsync(int invoiceId, CancellationToken ct)
     {
         var moves = await db.StockMovements.AsNoTracking()
             .Where(m => m.ReferenceId == invoiceId
-                        && (m.ReferenceType == MovementReferences.Invoice || m.ReferenceType == MovementReferences.InvoiceEdit)
+                        && (m.ReferenceType == MovementReferences.Invoice || m.ReferenceType == MovementReferences.InvoiceEdit
+                            || m.ReferenceType == MovementReferences.InvoiceVoid || m.ReferenceType == MovementReferences.InvoiceDelete)
                         && (m.MovementType == MovementTypes.Out || m.MovementType == MovementTypes.In))
             .ToListAsync(ct);
         return moves.GroupBy(m => (m.ProductId, m.WarehouseId, m.BatchId))

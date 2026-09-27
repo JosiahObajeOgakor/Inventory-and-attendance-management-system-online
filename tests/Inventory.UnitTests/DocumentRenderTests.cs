@@ -164,6 +164,17 @@ public class DocumentRenderTests
     }
 
     [Fact]
+    public void A_receipt_with_a_balance_prints_a_scan_to_pay_code_next_to_the_pay_button()
+    {
+        var r = new QuestDocumentRenderer();
+        var withQr = Receipt() with { PayUrl = "https://chewypetsfeeds.com/pay/abc", ScanPayUrl = "https://chewypetsfeeds.com/pay/abc/alatpay" };
+        var text = Text(r.Receipt(withQr));
+        Has(text, "SCAN TO PAY"); Has(text, "Choose Paystack or AlatPay");
+        Lacks(Text(r.Receipt(withQr with { ScanPayUrl = null })), "SCAN TO PAY");        // no AlatPay → no code
+        Lacks(Text(r.Receipt(withQr with { ScanPayUrl = "http://insecure.example" })), "SCAN TO PAY");
+    }
+
+    [Fact]
     public void Code128_refuses_characters_it_cannot_carry()
     {
         Assert.False(Code128.CanEncode("Café"));
@@ -177,7 +188,8 @@ public class DocumentRenderTests
         if (string.IsNullOrEmpty(dir)) return;   // opt-in: `INVENTORY_PREVIEW_DIR=... dotnet test`
         Directory.CreateDirectory(dir);
         var r = new QuestDocumentRenderer();
-        File.WriteAllBytes(Path.Combine(dir, "receipt.png"), r.ReceiptImages(Receipt(owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m))[0]);
+        File.WriteAllBytes(Path.Combine(dir, "receipt.png"), r.ReceiptImages(Receipt(owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m) with
+            { PayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview", ScanPayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview/alatpay" })[0]);
         var w = new WaybillDoc(Brand(), "ChewyStock-19092026-150001", new DateOnly(2026, 9, 19), "ChewyStock-19092026-143205", new DateOnly(2026, 9, 19), Customer,
             "22 Awolowo Rd, Ikoyi", "Lawal warehouse, Lawal site", "ChewyPets Farm & Feeds Company Ltd (Clerk)", "Musa Ibrahim", "0801 234 5678", "LSD 123 AB", "Deliver before noon",
             [new DocLine(1, "SKU-1001", "Adult Dog Food 20kg", "Bag", 40, 0, 0), new DocLine(2, "SKU-1002", "Puppy Starter 10kg", "Bag", 12, 0, 0)], new DateTime(2026, 9, 19, 15, 0, 0));

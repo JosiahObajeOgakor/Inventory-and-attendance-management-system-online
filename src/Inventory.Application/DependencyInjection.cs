@@ -25,6 +25,7 @@ public static class DependencyInjection
         s.AddScoped<CustomerPaymentService>();
         s.AddScoped<InvoiceVoidService>();
         s.AddScoped<InvoiceEditService>();
+        s.AddScoped<InvoiceDeleteService>();
         s.AddScoped<PurchaseService>();
         s.AddScoped<PurchaseEditService>();
         s.AddScoped<StockOperations>();

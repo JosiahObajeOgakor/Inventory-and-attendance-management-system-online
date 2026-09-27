@@ -82,7 +82,7 @@ public sealed class InvoiceEditService(IBusinessDbContext db, TransactionRunner 
         var deltas = productIds.Select(pid => (Pid: pid, Delta: after.GetValueOrDefault(pid) - before.GetValueOrDefault(pid))).Where(d => d.Delta != 0).ToList();
         var serial = deltas.Where(d => products[d.Pid].TracksSerial).Select(d => products[d.Pid].Name).ToList();
         if (serial.Count > 0)
-            throw new BusinessRuleException($"{string.Join(", ", serial)} {(serial.Count == 1 ? "is" : "are")} tracked by serial number, so the quantity can't be edited here. Void the sale and enter it again.");
+            throw new BusinessRuleException($"{string.Join(", ", serial)} {(serial.Count == 1 ? "is" : "are")} tracked by serial number, so the quantity can't be edited here. Delete the sale and enter it again.");
 
         // Refuse up front if any added units aren't on the shelf — nothing has been touched yet.
         var shortfalls = new List<Shortfall>();

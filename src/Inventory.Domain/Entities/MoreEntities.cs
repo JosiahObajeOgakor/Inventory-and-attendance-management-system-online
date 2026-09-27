@@ -211,6 +211,8 @@ public static class PaymentLinkStatuses
 {
     public const string Pending = "Pending";
     public const string Paid = "Paid";
+    /// <summary>Its document was deleted: never settled, even if the customer pays on an old link (they are refunded instead).</summary>
+    public const string Cancelled = "Cancelled";
 }
 
 /// <summary>A place we deliver to (a state, city or area) and what delivery there costs. Managed by an admin; offered by the sales assistant.</summary>

@@ -108,7 +108,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             if (r.OwedElsewhere > 0) notes.Add(($"This customer also owes {Money(r.OwedElsewhere)} from earlier purchases — please collect the full amount owed where possible.", true));
             notes.Add(($"Rebate balance with us: {Money(r.RebateAvailable)} (redeemable as goods)", false));
             Totals(col, accent, totals, notes);
-            if (r.BalanceDue > 0) PayBlock(col, accent, r.PayUrl, r.BalanceDue);
+            if (r.BalanceDue > 0) PayBlock(col, accent, r.PayUrl, r.BalanceDue, r.ScanPayUrl);
 
             BankTable(col, accent, r.Brand.Banks);
             Barcode(col, r.Number, "Scan to look this receipt up  ·  " + r.Number);
@@ -137,7 +137,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             totals.Add(("TOTAL (quoted)", Money(q.Total), 1));
             Totals(col, accent, totals, [($"{q.Lines.Count} product line(s)", false),
                 ("This is a price quotation, not an invoice — no stock has been reserved and nothing is owed until it's converted to a sale.", true)]);
-            PayBlock(col, accent, q.PayUrl, q.Total);
+            PayBlock(col, accent, q.PayUrl, q.Total, q.ScanPayUrl);
             Barcode(col, q.Number, "Scan to look this quotation up  ·  " + q.Number);
             ConnectBand(col, q.Brand, accent);
             col.Item().PaddingTop(8).AlignCenter().Text("Thanks for your interest — let us know if you'd like to go ahead.").FontSize(9).FontColor(Muted).Italic();
@@ -416,18 +416,51 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     /// A clickable button in the PDF. It opens our payment page, where the customer picks Paystack or AlatPay and pays what is owed at that
     /// moment (or, on a server without a site address, a Paystack checkout directly).
     /// </summary>
-    private static void PayBlock(ColumnDescriptor col, string accent, string? url, decimal amount)
+    private static void PayBlock(ColumnDescriptor col, string accent, string? url, decimal amount, string? scanUrl = null)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps) return;
         var ownPage = u.AbsolutePath.StartsWith("/pay/", StringComparison.Ordinal);
-        col.Item().PaddingTop(8).Hyperlink(url).Background(accent).CornerRadius(6).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
+        var qr = !string.IsNullOrWhiteSpace(scanUrl) && scanUrl.StartsWith("https://", StringComparison.Ordinal) ? QrPng(scanUrl) : null;
+        col.Item().PaddingTop(8).Row(row =>
         {
-            c.Item().AlignCenter().Text($"PAY {Money(amount)} ONLINE — CLICK HERE").Bold().FontSize(11).FontColor("#FFFFFF");
-            c.Item().AlignCenter().Text(ownPage ? "Choose Paystack or AlatPay · card, bank transfer or USSD" : "Card, bank transfer or USSD · secured by Paystack")
-                .FontSize(8).FontColor("#FFFFFF");
+            row.RelativeItem().AlignMiddle().Column(left =>
+            {
+                left.Item().Hyperlink(url).Background(accent).CornerRadius(6).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
+                {
+                    c.Item().AlignCenter().Text($"PAY {Money(amount)} ONLINE — CLICK HERE").Bold().FontSize(11).FontColor("#FFFFFF");
+                    c.Item().AlignCenter().Text(ownPage ? "Choose Paystack or AlatPay · card, bank transfer or USSD" : "Card, bank transfer or USSD · secured by Paystack")
+                        .FontSize(8).FontColor("#FFFFFF");
+                });
+                // The address itself, for someone reading a printed copy (our own page's address is long and never typed, so it's shown shortened).
+                left.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(ownPage ? $"{u.Host}/pay" : url).FontSize(6.5f).FontColor(Muted);
+            });
+            if (qr is not null)
+            {
+                // Scan to pay: the phone camera opens an AlatPay checkout straight away, for what is owed at that moment.
+                row.ConstantItem(14);
+                row.ConstantItem(150).Border(0.8f).BorderColor(Hairline).CornerRadius(8).Padding(6).Row(q =>
+                {
+                    q.ConstantItem(64).Height(64).Hyperlink(scanUrl!).Image(qr).FitArea();
+                    q.RelativeItem().PaddingLeft(7).AlignMiddle().Column(t =>
+                    {
+                        t.Item().Text("SCAN TO PAY").Bold().FontSize(8.5f).LetterSpacing(0.05f).FontColor(accent);
+                        t.Item().PaddingTop(2).Text("Point your phone camera here to pay with AlatPay.").FontSize(7).FontColor(Muted).LineHeight(1.25f);
+                    });
+                });
+            }
         });
-        // The address itself, for someone reading a printed copy (our own page's address is long and never typed, so it's shown shortened).
-        col.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(ownPage ? $"{u.Host}/pay" : url).FontSize(6.5f).FontColor(Muted);
+    }
+
+    /// <summary>A QR code (PNG) for a link; medium error correction so a slightly smudged print still scans. Null if it can't be made.</summary>
+    private static byte[]? QrPng(string text)
+    {
+        try
+        {
+            using var gen = new QRCoder.QRCodeGenerator();
+            using var data = gen.CreateQrCode(text, QRCoder.QRCodeGenerator.ECCLevel.M);
+            return new QRCoder.PngByteQRCode(data).GetGraphic(8, darkColorRgba: [0x16, 0x20, 0x2A, 0xFF], lightColorRgba: [0xFF, 0xFF, 0xFF, 0xFF], drawQuietZones: true);
+        }
+        catch { return null; }   // a symbol is a convenience; never lose the document over one
     }
 
     /// <summary>Platform badge (short mark + the platform's own colour) for the "follow us" chips. Letters, not logos: they print reliably.</summary>

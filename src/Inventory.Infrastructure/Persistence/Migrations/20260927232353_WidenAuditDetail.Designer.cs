@@ -3,6 +3,7 @@ using System;
 using Inventory.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Inventory.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BusinessDbContext))]
-    partial class BusinessDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260927232353_WidenAuditDetail")]
+    partial class WidenAuditDetail
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -967,7 +970,7 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("payment_links", null, t =>
                         {
-                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','Cancelled')");
+                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid')");
                         });
                 });
 

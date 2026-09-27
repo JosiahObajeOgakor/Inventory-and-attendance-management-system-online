@@ -12,13 +12,22 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Api.Controllers;
 
 public sealed record VoidRequest(string Reason);
+public sealed record RefundLine(string Method, decimal Amount);
+/// <summary>JSON shape of <see cref="InvoiceDeleteResult"/> (tuples don't serialise to named fields).</summary>
+public sealed record DeletePreviewDto(string InvoiceNumber, string Customer, IReadOnlyList<StockChange> StockReturned, decimal RefundDue,
+    IReadOnlyList<RefundLine> RefundOnline, decimal CreditRestored, decimal OwedCleared)
+{
+    public static DeletePreviewDto From(InvoiceDeleteResult r) => new(r.InvoiceNumber, r.Customer, r.StockReturned, r.RefundDue,
+        r.RefundOnline.Select(x => new RefundLine(x.Method, x.Amount)).ToList(), r.CreditRestored, r.OwedCleared);
+}
 public sealed record PaymentRequest(decimal Amount, string? Method);
 public sealed record ReceiveRequest(int WarehouseId);
 public sealed record SalePreviewResult(decimal Subtotal, decimal DiscountAmount, decimal VatAmount, decimal Total, decimal PreviousBalance,
     decimal AppliedToInvoice, decimal AppliedToPreviousBalance, decimal Outstanding, string Status);
 
 [ApiController, Route("api/sales")]
-public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, InvoiceEditService edits, IBusinessDbContext db) : AppController(cu)
+public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, InvoiceEditService edits, InvoiceDeleteService deletes,
+    IBusinessDbContext db) : AppController(cu)
 {
     private const string IdempotencyHeader = "Idempotency-Key";
 
@@ -57,6 +66,14 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     /// </summary>
     [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
     public Task<InvoiceEditResult> Edit(int id, InvoiceEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
+
+    /// <summary>What deleting this sale would do (stock back, refund due, credit restored) — shown before the admin confirms. Changes nothing.</summary>
+    [HttpGet("{id:int}/delete-preview"), Authorize(Policy = Policies.Admin)]
+    public async Task<DeletePreviewDto> DeletePreview(int id, CancellationToken ct) => DeletePreviewDto.From(await deletes.PreviewAsync(id, ct));
+
+    /// <summary>Deletes the sale: stock back, money reversed (refund / credit restored / debt cleared), record removed, copy kept in the activity log. Admin only.</summary>
+    [HttpPost("{id:int}/delete"), Authorize(Policy = Policies.Admin)]
+    public async Task<DeletePreviewDto> Delete(int id, VoidRequest r, CancellationToken ct) => DeletePreviewDto.From(await deletes.DeleteAsync(id, r.Reason, Me, ct));
 
     /// <summary>Send a unique <c>Idempotency-Key</c> header per submit: a retry or double click returns the same invoice.</summary>
     [HttpPost, Authorize(Policy = Policies.Staff)]

@@ -160,7 +160,7 @@ public partial class BusinessDbContext
             e.Property(x => x.ProviderReference).HasMaxLength(100);
             e.HasIndex(x => new { x.Provider, x.ProviderReference });
             e.HasIndex(x => new { x.DocType, x.DocId, x.Status });
-            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid')"));
+            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','Cancelled')"));
         });
 
 
