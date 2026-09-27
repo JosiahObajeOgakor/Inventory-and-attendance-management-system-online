@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
-import { messageOf } from '../../core/api.service';
+import { Api, messageOf } from '../../core/api.service';
+import { Warehouse } from '../../core/models';
 import { AssetKind, DeliveryZone } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Confirm, Toasts } from '../../shared/feedback';
@@ -67,6 +68,23 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
       </section>
 
       <section class="card card-pad zones">
+        <h2 class="display sub">Warehouses</h2>
+        <p class="muted">Where stock is kept. Every product's stock, every sale and every purchase belongs to a warehouse, so add at least one before adding products.
+          The first one you add is where online and WhatsApp orders are taken from.</p>
+        @if (warehouses().length) {
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>#</th><th>Warehouse</th><th>Location</th></tr></thead>
+            <tbody>@for (w of warehouses(); track w.id) { <tr><td class="mono">{{ w.id }}</td><td class="strong">{{ w.name }}</td><td>{{ w.location ?? '—' }}</td></tr> }</tbody>
+          </table></div>
+        } @else { <div class="empty"><strong>No warehouses yet</strong>Add your first one below — for example “Main store”.</div> }
+        <form class="add-zone" (submit)="addWarehouse(wn.value, wl.value); wn.value = ''; wl.value = ''; $event.preventDefault()">
+          <div class="field"><label for="wn">Warehouse name</label><input #wn id="wn" class="input" placeholder="e.g. Main store" maxlength="100" /></div>
+          <div class="field"><label for="wl">Location (optional)</label><input #wl id="wl" class="input" placeholder="e.g. Ikeja, Lagos" maxlength="200" /></div>
+          <button type="submit" class="btn"><app-icon name="plus" [size]="16" /> Add warehouse</button>
+        </form>
+      </section>
+
+      <section class="card card-pad zones">
         <h2 class="display sub">Delivery zones</h2>
         <p class="muted">The delivery fee added to online and WhatsApp orders, by state or area. Switch a zone off to stop offering it without losing its price.</p>
         <div class="table-wrap"><table class="table">
@@ -114,6 +132,8 @@ export class CompanyPage implements OnInit {
   protected readonly have = signal<string[]>([]);
   protected readonly stamp = signal(Date.now());
   protected readonly zones = signal<DeliveryZone[]>([]);
+  protected readonly warehouses = signal<Warehouse[]>([]);
+  private readonly core = inject(Api);
   protected readonly dirty = signal<number[]>([]);
   protected readonly form = this.fb.nonNullable.group({
     legalName: ['', [Validators.required, Validators.maxLength(150)]], address: [''], phone: [''], email: ['', Validators.email], taxId: [''],
@@ -135,7 +155,19 @@ export class CompanyPage implements OnInit {
       this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebateRatePct: p.defaultRebateRatePct });
       this.banks.clear(); p.banks.forEach(b => this.banks.push(this.bankGroup(b))); this.have.set(p.assets);
     } catch (e) { this.toasts.error(messageOf(e)); }
-    await this.loadZones();
+    await Promise.all([this.loadZones(), this.loadWarehouses()]);
+  }
+
+  // ---- warehouses ----
+  private async loadWarehouses() {
+    try { this.warehouses.set(await this.core.warehouses()); } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+  protected async addWarehouse(name: string, location: string) {
+    if (!name.trim()) { this.toasts.error('Enter the warehouse’s name.'); return; }
+    try {
+      await this.core.addWarehouse(name.trim(), location.trim() || null);
+      this.toasts.ok(`${name.trim()} added.`); await this.loadWarehouses();
+    } catch (e) { this.toasts.error(messageOf(e)); }
   }
 
   // ---- delivery zones ----
