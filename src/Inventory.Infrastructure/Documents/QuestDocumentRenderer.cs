@@ -113,6 +113,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             BankTable(col, accent, r.Brand.Banks);
             Barcode(col, r.Number, "Scan to look this receipt up  ·  " + r.Number);
             StampBlock(col, r.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, r.Brand, accent);
             col.Item().PaddingTop(8).AlignCenter().Text("Thanks for your patronage.").FontSize(9).FontColor(Muted).Italic();
         });
     }));
@@ -138,6 +139,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
                 ("This is a price quotation, not an invoice — no stock has been reserved and nothing is owed until it's converted to a sale.", true)]);
             PayBlock(col, accent, q.PayUrl, q.Total);
             Barcode(col, q.Number, "Scan to look this quotation up  ·  " + q.Number);
+            ConnectBand(col, q.Brand, accent);
             col.Item().PaddingTop(8).AlignCenter().Text("Thanks for your interest — let us know if you'd like to go ahead.").FontSize(9).FontColor(Muted).Italic();
         });
     }));
@@ -420,6 +422,77 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             c.Item().AlignCenter().Text("Card, bank transfer or USSD · secured by Paystack").FontSize(8).FontColor("#FFFFFF");
         });
         col.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(url).FontSize(6.5f).FontColor(Muted);
+    }
+
+    /// <summary>Platform badge (short mark + the platform's own colour) for the "follow us" chips. Letters, not logos: they print reliably.</summary>
+    private static (string Mark, string Colour) SocialBadge(string platform) => platform.Trim().ToLowerInvariant() switch
+    {
+        "facebook" => ("f", "#1877F2"),
+        "instagram" => ("IG", "#E1306C"),
+        "youtube" => ("YT", "#FF0000"),
+        "telegram" => ("TG", "#229ED9"),
+        "x" or "twitter" => ("X", "#111111"),
+        "tiktok" => ("TT", "#111111"),
+        _ => (platform.Length > 0 ? platform[..1].ToUpperInvariant() : "•", Ink),
+    };
+
+    /// <summary>A light wash of the business colour for panel backgrounds.</summary>
+    private static string Tint(string accent) => accent == "#6A2C5B" ? "#F5EEF3" : "#EEF5F1";
+
+    /// <summary>
+    /// The closing "shop online / follow us" band on receipts and quotations: the website (order any time, pay online) on the left,
+    /// the social accounts as tappable chips on the right. Every item is a live link in the PDF. Skipped for a business without either.
+    /// </summary>
+    private static void ConnectBand(ColumnDescriptor col, Branding b, string accent)
+    {
+        var socials = b.Socials ?? [];
+        var site = string.IsNullOrWhiteSpace(b.Website) ? null : b.Website.Trim();
+        if (site is null && socials.Count == 0) return;
+        var siteLabel = site is null ? null : site.Replace("https://", "").Replace("http://", "").TrimEnd('/');
+
+        col.Item().PaddingTop(12).Background(Tint(accent)).CornerRadius(8).Border(0.6f).BorderColor(Hairline).Padding(12).Row(row =>
+        {
+            if (site is not null)
+            {
+                row.RelativeItem(1f).PaddingRight(12).Column(c =>
+                {
+                    c.Item().Text("SHOP & PAY ONLINE").Bold().FontSize(7.5f).LetterSpacing(0.08f).FontColor(accent);
+                    c.Item().PaddingTop(3).Hyperlink(site).Text(siteLabel!).Bold().FontSize(15).FontColor(Ink);
+                    c.Item().PaddingTop(3).Text("Order any time and pay securely online by card, bank transfer or USSD — we'll deliver to you.")
+                        .FontSize(8).FontColor(Muted).LineHeight(1.3f);
+                    c.Item().PaddingTop(6).AlignLeft().Hyperlink(site).Background(accent).CornerRadius(12).PaddingVertical(4).PaddingHorizontal(10)
+                        .Text("Order online  ›").Bold().FontSize(8).FontColor("#FFFFFF");
+                });
+                if (socials.Count > 0) row.ConstantItem(0.8f).Background(Hairline);
+            }
+            if (socials.Count > 0)
+            {
+                row.RelativeItem(1.25f).PaddingLeft(site is null ? 0 : 12).Column(c =>
+                {
+                    c.Item().Text("FOLLOW US · STAY UPDATED").Bold().FontSize(7.5f).LetterSpacing(0.08f).FontColor(accent);
+                    c.Item().PaddingTop(2).Text("New stock, offers and pet-care tips — first on our socials.").FontSize(8).FontColor(Muted);
+                    c.Item().PaddingTop(6).Table(t =>
+                    {
+                        t.ColumnsDefinition(cd => { cd.RelativeColumn(); cd.RelativeColumn(); });
+                        foreach (var s in socials)
+                        {
+                            var (mark, colour) = SocialBadge(s.Platform);
+                            t.Cell().PaddingBottom(4).PaddingRight(4).Hyperlink(s.Url).Background("#FFFFFF").CornerRadius(6)
+                                .Border(0.5f).BorderColor(Hairline).PaddingVertical(3).PaddingHorizontal(4).Row(chip =>
+                                {
+                                    chip.ConstantItem(17).Height(17).Background(colour).CornerRadius(4).AlignCenter().AlignMiddle()
+                                        .Text(mark).Bold().FontSize(mark.Length > 1 ? 6.5f : 8.5f).FontColor("#FFFFFF");
+                                    chip.RelativeItem().PaddingLeft(5).AlignMiddle().Column(tc =>
+                                    {
+                                        tc.Item().Text(s.Platform).FontSize(6.5f).FontColor(Muted);
+                                        tc.Item().Text(s.Handle).Bold().FontSize(8).FontColor(Ink);
+                                    });
+                                });
+                        }
+                    });
+                });
+            }
+        });
     }
 
     private static void BankTable(ColumnDescriptor col, string accent, IReadOnlyList<BankInfo> banks)

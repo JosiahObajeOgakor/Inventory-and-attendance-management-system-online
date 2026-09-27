@@ -4,7 +4,8 @@ public sealed record BankInfo(string Bank, string AccountName, string AccountNum
 
 /// <summary>Everything about the business that is printed on a document.</summary>
 public sealed record Branding(string CompanyKey, string Name, string Address, string Phone, string Email, string TaxId,
-    byte[]? Logo, byte[]? Signature, byte[]? WaybillStamp, IReadOnlyList<BankInfo> Banks);
+    byte[]? Logo, byte[]? Signature, byte[]? WaybillStamp, IReadOnlyList<BankInfo> Banks,
+    string? Website = null, IReadOnlyList<Abstractions.SocialLink>? Socials = null);
 
 public sealed record DocLine(int No, string Sku, string Description, string Unit, int Qty, decimal Price, decimal Amount);
 

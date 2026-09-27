@@ -1,3 +1,4 @@
+using Inventory.Application.Abstractions;
 using Inventory.Application.Documents;
 using Inventory.Infrastructure.Documents;
 using UglyToad.PdfPig;
@@ -17,7 +18,15 @@ public class DocumentRenderTests
 
     private static Branding Brand(string key = "chewypets") => new(key, "ChewyPets Farm & Feeds Company Ltd", "12 Feed Mill Road, Ikeja, Lagos", "0803 000 0000", "sales@chewypets.example", "TIN-1234567",
         Asset("chewypetfeedslogo.jpeg"), Asset("signature.jpeg"), Asset("waybillrecipt for chewypet.jpeg"),
-        [new BankInfo("FirstMonie Bank", "ChewyPets Farm & Feeds", "8676752988"), new BankInfo("First Bank PLC", "ChewyPets Farm & Feeds", "2047950632")]);
+        [new BankInfo("FirstMonie Bank", "ChewyPets Farm & Feeds", "8676752988"), new BankInfo("First Bank PLC", "ChewyPets Farm & Feeds", "2047950632")],
+        key == "chewypets" ? "https://chewypetsfeeds.com" : null, key == "chewypets" ? Socials : null);
+
+    private static readonly SocialLink[] Socials =
+    [
+        new("Facebook", "chewypetsfeeds", "https://www.facebook.com/chewypetsfeeds"), new("Instagram", "chewypetsfeeds", "https://www.instagram.com/chewypetsfeeds"),
+        new("YouTube", "Chewypets TV", "https://www.youtube.com/results?search_query=Chewypets+TV"), new("Telegram", "chewypetsfeeds", "https://t.me/chewypetsfeeds"),
+        new("X", "chewypetsfeeds", "https://x.com/chewypetsfeeds"), new("TikTok", "chewypetsfeeds", "https://www.tiktok.com/@chewypetsfeeds"),
+    ];
 
     private static PartyInfo Customer => new("PetMart Lagos", "Amaka Obi", "22 Awolowo Rd, Ikoyi, Lagos", "0803 555 2210", "buyer@petmart.example", "TIN-5561200", "Distributor");
 
@@ -135,6 +144,23 @@ public class DocumentRenderTests
         // start (11) + one symbol per character (11 each) + checksum (11) + stop (13)
         Assert.Equal(11 * (value.Length + 2) + 13, Code128.Widths(value).Sum());
         Assert.Equal(0, Code128.Widths(value).Count % 2 == 1 ? 0 : 0);   // bars and spaces alternate, ending on the stop bar
+    }
+
+    [Fact]
+    public void Receipts_and_quotations_invite_online_ordering_and_list_every_social_account()
+    {
+        var r = new QuestDocumentRenderer();
+        var quote = new QuotationDoc(Brand(), "Q-1", new DateOnly(2026, 9, 19), "Open", Customer, "Retailer", "Ada",
+            [new DocLine(1, "SKU-1", "Adult Dog Food 20kg", "Bag", 1, 11500m, 11500m)], 11500m, 0, 0, 0, 0, 11500m, new DateTime(2026, 9, 19));
+        foreach (var text in new[] { Text(r.Receipt(Receipt())), Text(r.Quotation(quote)) })
+        {
+            Has(text, "SHOP & PAY ONLINE"); Has(text, "chewypetsfeeds.com"); Has(text, "FOLLOW US · STAY UPDATED");
+            foreach (var p in new[] { "Facebook", "Instagram", "YouTube", "Telegram", "TikTok" }) Has(text, p);
+            Has(text, "Chewypets TV");
+        }
+        // A business without a site or socials (Candid Purrfect) prints neither — never another business's accounts.
+        var candid = Text(r.Receipt(Receipt() with { Brand = Brand("candid") }));
+        Lacks(candid, "FOLLOW US"); Lacks(candid, "chewypetsfeeds");
     }
 
     [Fact]

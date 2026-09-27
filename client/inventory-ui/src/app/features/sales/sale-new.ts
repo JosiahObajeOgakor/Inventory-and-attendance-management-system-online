@@ -83,23 +83,23 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
             }
 
             @if (lines().length) {
-              <div class="table-wrap"><table class="table">
-                <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th><th><span class="sr-only">Remove</span></th></tr></thead>
+              <div class="table-wrap lines-wrap"><table class="table lines">
+                <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Price (₦)</th><th class="num">Line total</th><th><span class="sr-only">Remove</span></th></tr></thead>
                 <tbody>
                   @for (l of lines(); track l.productId; let i = $index) {
                     <tr>
-                      <td><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }} · {{ l.stock }} {{ l.unit }} in stock{{ l.orig ? ' · ' + l.orig + ' on this sale' : '' }}</div>
+                      <td class="prod"><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }} · {{ l.stock }} {{ l.unit }} in stock{{ l.orig ? ' · ' + l.orig + ' on this sale' : '' }}</div>
                         @if (l.qty - l.orig > l.stock && !quote) { <div class="short">Only {{ l.stock }} more in stock</div> }
                         @if (l.tracks && edit) { <div class="muted sm">Individually tracked — to change this quantity, void the sale and enter it again.</div> }
                         @if (l.tracks && !quote && !edit) {
                           <label class="serial"><span>Serial numbers — one per line ({{ serialCount(l) }} of {{ l.qty }})</span>
                             <textarea class="input" rows="2" [value]="l.serials" (input)="setSerials(i, $any($event.target).value)" [attr.aria-label]="'Serial numbers for ' + l.name"></textarea></label>
                         }</td>
-                      <td class="num"><input class="input num w-qty" type="number" min="1" step="1" [value]="l.qty" [attr.aria-label]="'Quantity of ' + l.name" (input)="setQty(i, $any($event.target).value)" /></td>
-                      <td class="num"><input class="input num w-price" type="number" min="0" step="0.01" [value]="l.price" [attr.aria-label]="'Price of ' + l.name" (input)="setPrice(i, $any($event.target).value)" />
-                        @if (l.price !== l.standard) { <div class="ovr">Changed from {{ l.standard | naira }}</div> }</td>
-                      <td class="num mono">{{ l.qty * l.price | naira }}</td>
-                      <td class="actions"><button type="button" class="btn btn-quiet btn-icon" (click)="remove(i)" [attr.aria-label]="'Remove ' + l.name"><app-icon name="close" [size]="18" /></button></td>
+                      <td class="num qty" data-label="Qty"><input class="input num w-qty" type="number" min="1" step="1" inputmode="numeric" [value]="l.qty" [attr.aria-label]="'Quantity of ' + l.name" (input)="setQty(i, $any($event.target).value)" /></td>
+                      <td class="num price" data-label="Price (₦) — tap to change"><input class="input num w-price" type="number" min="0" step="0.01" inputmode="decimal" [value]="l.price" [attr.aria-label]="'Price of ' + l.name" (input)="setPrice(i, $any($event.target).value)" />
+                        @if (l.price !== l.standard) { <div class="ovr">Changed from {{ l.standard | naira }} <button type="button" class="reset" (click)="setPrice(i, '' + l.standard)" [attr.aria-label]="'Reset the price of ' + l.name">Reset</button></div> }</td>
+                      <td class="num mono lt" data-label="Line total">{{ l.qty * l.price | naira }}</td>
+                      <td class="actions rm"><button type="button" class="btn btn-quiet btn-icon" (click)="remove(i)" [attr.aria-label]="'Remove ' + l.name"><app-icon name="close" [size]="18" /></button></td>
                     </tr>
                   }
                 </tbody>
@@ -257,6 +257,23 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
     .short { color: var(--stamp); font-weight: 600; font-size: .75rem; } .ovr { font-size: .6875rem; color: var(--signal-ink); background: var(--signal-tint); display: inline-block; padding: 0 .35rem; border-radius: 2px; margin-top: .2rem; }
     .serial { display: block; margin-top: .4rem; font-size: .75rem; color: var(--muted); } .serial textarea { margin-top: .2rem; font: .8125rem var(--font-mono); }
     .w-qty { width: 5rem; } .w-price { width: 8rem; }
+    .reset { border: 0; background: none; padding: 0 0 0 .3rem; font: inherit; color: var(--brand); text-decoration: underline; cursor: pointer; }
+    /* When the lines are narrow (phones, or a laptop with the sidebar open), each line becomes a small card so Qty, Price and
+       the line total are always on screen instead of scrolled off to the right. */
+    .lines-wrap { container-type: inline-size; }
+    @container (max-width: 560px) {
+      .lines thead { display: none; }
+      .lines tr { display: grid; grid-template-columns: 1fr 1fr auto; gap: .55rem .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); }
+      .lines td { display: block; padding: 0; border: 0; text-align: left; }
+      .lines td.prod { grid-column: 1 / 3; grid-row: 1; }
+      .lines td.rm { grid-column: 3; grid-row: 1; align-self: start; }
+      .lines td.qty { grid-column: 1; grid-row: 2; }
+      .lines td.price { grid-column: 2 / 4; grid-row: 2; }
+      .lines td.lt { grid-column: 1 / -1; grid-row: 3; text-align: right; font-weight: 700; }
+      .lines td[data-label]::before { content: attr(data-label); display: block; font: 600 .6875rem/1.2 var(--font-body); color: var(--muted); margin-bottom: .25rem; }
+      .lines td.lt::before { display: inline; margin-right: .5rem; }
+      .lines .w-qty, .lines .w-price { width: 100%; }
+    }
     .totals { margin: 0; display: grid; gap: .35rem; } .totals div { display: flex; justify-content: space-between; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
     .totals .grand { border-top: 2px solid var(--ink); padding-top: .55rem; margin-top: .25rem; align-items: baseline; } .grand dt { font-weight: 700; color: var(--ink); } .grand dd { font-size: 2rem; color: var(--brand); }
     .inline { display: flex; gap: .4rem; } .split { font-size: .8125rem; } .owed { font-size: .875rem; }

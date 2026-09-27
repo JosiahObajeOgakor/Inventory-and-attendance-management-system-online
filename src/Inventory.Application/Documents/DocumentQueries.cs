@@ -18,7 +18,8 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var assets = await db.CompanyAssets.AsNoTracking().ToDictionaryAsync(a => a.Kind, a => a.Data, ct);
         return new Branding(company.Key, p.LegalName, p.Address, p.Phone, p.Email, p.TaxId,
             assets.GetValueOrDefault(AssetKinds.Logo), assets.GetValueOrDefault(AssetKinds.Signature), assets.GetValueOrDefault(AssetKinds.WaybillStamp),
-            p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankInfo(b.BankName, b.AccountName, b.AccountNumber)).ToList());
+            p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankInfo(b.BankName, b.AccountName, b.AccountNumber)).ToList(),
+            company.Website, company.Socials);
     }
 
     /// <summary>A clerk login is shared front-desk staff, not one named person, so their documents show "&lt;Company&gt; (Clerk)"; only an admin's own name is printed.</summary>

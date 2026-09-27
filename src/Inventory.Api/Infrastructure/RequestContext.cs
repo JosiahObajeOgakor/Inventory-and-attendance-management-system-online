@@ -30,6 +30,8 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     public int DefaultWarehouseId => Info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
+    public string? Website => Info.Website;
+    public IReadOnlyList<Inventory.Application.Abstractions.SocialLink> Socials => Info.Socials ?? [];
 }
 
 public sealed class HttpCurrentUser(IHttpContextAccessor http) : ICurrentUser

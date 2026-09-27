@@ -79,7 +79,16 @@ public interface ICompanyContext
     /// <summary>The warehouse the sales assistant fulfills online orders from (config-set; 0 means unconfigured).</summary>
     int DefaultWarehouseId { get; }
     IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks { get; }
+    /// <summary>Where customers order and pay online (printed on receipts and quotations). Null when the business has no shop site.</summary>
+    string? Website => null;
+    /// <summary>The business's social accounts, printed as "follow us" links on receipts and quotations.</summary>
+    IReadOnlyList<SocialLink> Socials => [];
 }
+
+/// <param name="Platform">Facebook, Instagram, YouTube, Telegram, X or TikTok.</param>
+/// <param name="Handle">What's printed, e.g. "chewypetsfeeds" or "Chewypets TV".</param>
+/// <param name="Url">Where the printed link goes.</param>
+public sealed record SocialLink(string Platform, string Handle, string Url);
 
 /// <summary>Lets Application code react to provider-specific transient failures without referencing the provider.</summary>
 public interface IDbErrorClassifier

@@ -63,14 +63,14 @@ const VAT = 7.5;
               <ul class="pick">@for (p of results(); track p.id) { <li><button type="button" (click)="add(p); q.value = ''; results.set([])"><span><strong>{{ p.name }}</strong> <span class="muted mono">{{ p.sku }}</span></span><span class="mono muted">last cost {{ p.costPrice | naira }}</span></button></li> }</ul>
             }
             @if (lines().length) {
-              <div class="table-wrap"><table class="table">
-                <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Unit cost</th><th class="num">Line total</th><th><span class="sr-only">Remove</span></th></tr></thead>
+              <div class="table-wrap lines-wrap"><table class="table lines">
+                <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Unit cost (₦)</th><th class="num">Line total</th><th><span class="sr-only">Remove</span></th></tr></thead>
                 <tbody>@for (l of lines(); track l.productId; let i = $index) {
-                  <tr><td><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }}</div></td>
-                    <td class="num"><input class="input num w-qty" type="number" min="1" step="1" [value]="l.qty" [attr.aria-label]="'Quantity of ' + l.name" (input)="patch(i, { qty: whole($any($event.target).value) })" /></td>
-                    <td class="num"><input class="input num w-price" type="number" min="0" step="0.01" [value]="l.cost" [attr.aria-label]="'Unit cost of ' + l.name" (input)="patch(i, { cost: money($any($event.target).value) })" /></td>
-                    <td class="num mono">{{ l.qty * l.cost | naira }}</td>
-                    <td class="actions"><button type="button" class="btn btn-quiet btn-icon" (click)="remove(i)" [attr.aria-label]="'Remove ' + l.name"><app-icon name="close" [size]="18" /></button></td></tr>
+                  <tr><td class="prod"><span class="strong">{{ l.name }}</span><div class="muted mono sm">{{ l.sku }}</div></td>
+                    <td class="num qty" data-label="Qty"><input class="input num w-qty" type="number" min="1" step="1" inputmode="numeric" [value]="l.qty" [attr.aria-label]="'Quantity of ' + l.name" (input)="patch(i, { qty: whole($any($event.target).value) })" /></td>
+                    <td class="num price" data-label="Unit cost (₦)"><input class="input num w-price" type="number" min="0" step="0.01" inputmode="decimal" [value]="l.cost" [attr.aria-label]="'Unit cost of ' + l.name" (input)="patch(i, { cost: money($any($event.target).value) })" /></td>
+                    <td class="num mono lt" data-label="Line total">{{ l.qty * l.cost | naira }}</td>
+                    <td class="actions rm"><button type="button" class="btn btn-quiet btn-icon" (click)="remove(i)" [attr.aria-label]="'Remove ' + l.name"><app-icon name="close" [size]="18" /></button></td></tr>
                 }</tbody>
               </table></div>
             } @else { <div class="empty"><strong>No items yet</strong>Search above to add what you’re buying.</div> }
@@ -138,6 +138,20 @@ const VAT = 7.5;
     .pick button:hover, .pick button:focus-visible { background: var(--brand-tint); }
     .sm { font-size: .75rem; } .owes { color: var(--stamp) !important; font-weight: 600; } .credit { color: var(--ok, #1a7f4b) !important; font-weight: 600; }
     .inline { display: flex; gap: .4rem; }
+    .lines-wrap { container-type: inline-size; }
+    @container (max-width: 560px) {
+      .lines thead { display: none; }
+      .lines tr { display: grid; grid-template-columns: 1fr 1fr auto; gap: .55rem .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--line); }
+      .lines td { display: block; padding: 0; border: 0; text-align: left; }
+      .lines td.prod { grid-column: 1 / 3; grid-row: 1; }
+      .lines td.rm { grid-column: 3; grid-row: 1; align-self: start; }
+      .lines td.qty { grid-column: 1; grid-row: 2; }
+      .lines td.price { grid-column: 2 / 4; grid-row: 2; }
+      .lines td.lt { grid-column: 1 / -1; grid-row: 3; text-align: right; font-weight: 700; }
+      .lines td[data-label]::before { content: attr(data-label); display: block; font: 600 .6875rem/1.2 var(--font-body); color: var(--muted); margin-bottom: .25rem; }
+      .lines td.lt::before { display: inline; margin-right: .5rem; }
+      .lines .w-qty, .lines .w-price { width: 100%; }
+    }
     .totals .sale-total { border-top: 1px solid var(--line); padding-top: .4rem; }
     .totals .bf dt, .totals .bf dd { color: var(--stamp); font-weight: 600; }
     .totals .cr dt, .totals .cr dd { color: var(--ok, #1a7f4b); font-weight: 600; }
