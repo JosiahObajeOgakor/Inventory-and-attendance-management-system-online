@@ -22,14 +22,16 @@ public interface IPayPageLinks
 /// <param name="Closed">Why nothing can be paid (paid in full, cancelled, already a sale), or null when payment is open.</param>
 /// <param name="Awaiting">A payment was started on this document and hasn't been confirmed yet — it may just be on its way.</param>
 public sealed record PayPageInfo(string Business, string DocKind, string DocNumber, string Customer, decimal Amount, string? Closed, bool Awaiting,
-    IReadOnlyList<string> Providers);
+    IReadOnlyList<string> Providers, string? Phone = null);
 
 /// <summary>What the payment page shows, and starting a checkout on the processor the customer picks.</summary>
 public sealed class PayPageService(IBusinessDbContext db, PaymentLinkService pay, CompanyProfileService profile, ICompanyContext company)
 {
     public async Task<PayPageInfo> GetAsync(string docType, int docId, CancellationToken ct)
     {
-        var business = (await profile.EnsureAsync(ct)).LegalName is { Length: > 0 } n ? n : company.LegalName;
+        var p = await profile.EnsureAsync(ct);
+        var business = p.LegalName is { Length: > 0 } n ? n : company.LegalName;
+        var phone = string.IsNullOrWhiteSpace(p.Phone) ? null : p.Phone.Trim();
         var awaiting = await db.PaymentLinks.AsNoTracking().AnyAsync(l => l.DocType == docType && l.DocId == docId && l.Status == PaymentLinkStatuses.Pending, ct);
         if (docType == PaymentDocTypes.Invoice)
         {
@@ -38,7 +40,7 @@ public sealed class PayPageService(IBusinessDbContext db, PaymentLinkService pay
             var owed = i.TotalAmount - i.AmountPaid;
             var closed = i.Status == PaymentStatuses.Voided ? "This sale was cancelled, so there is nothing to pay."
                        : owed <= 0 ? "This receipt is paid in full. Thank you!" : null;
-            return new PayPageInfo(business, "Receipt", i.InvoiceNumber, customer, Math.Max(0, owed), closed, awaiting && closed is null, pay.Providers);
+            return new PayPageInfo(business, "Receipt", i.InvoiceNumber, customer, Math.Max(0, owed), closed, awaiting && closed is null, pay.Providers, phone);
         }
         if (docType == PaymentDocTypes.Quotation)
         {
@@ -46,7 +48,7 @@ public sealed class PayPageService(IBusinessDbContext db, PaymentLinkService pay
             var customer = await db.Customers.AsNoTracking().Where(c => c.Id == q.CustomerId).Select(c => c.Name).SingleAsync(ct);
             var closed = q.Status == QuotationStatuses.Converted ? "This quotation has already been paid for or turned into a sale."
                        : q.Status != QuotationStatuses.Open ? "This quotation is no longer open." : null;
-            return new PayPageInfo(business, "Quotation", q.QuotationNumber, customer, q.TotalAmount, closed, awaiting && closed is null, pay.Providers);
+            return new PayPageInfo(business, "Quotation", q.QuotationNumber, customer, q.TotalAmount, closed, awaiting && closed is null, pay.Providers, phone);
         }
         throw new NotFoundException("Document");
     }
