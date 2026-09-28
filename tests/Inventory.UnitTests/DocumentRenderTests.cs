@@ -50,7 +50,7 @@ public class DocumentRenderTests
     private static int Pages(byte[] pdf) { using var d = PdfDocument.Open(pdf); return d.NumberOfPages; }
 
     [Fact]
-    public void Receipt_is_a_pdf_with_the_company_details_lines_totals_banks_and_barcode_caption()
+    public void Receipt_is_a_pdf_with_the_company_details_lines_totals_banks_and_the_pay_only_here_note()
     {
         var pdf = new QuestDocumentRenderer().Receipt(Receipt(owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m));
         Assert.StartsWith("%PDF", System.Text.Encoding.ASCII.GetString(pdf, 0, 4));
@@ -64,8 +64,38 @@ public class DocumentRenderTests
         Has(t, "Discount (5%)");
         Has(t, "VAT (7.5%)");
         Has(t, "TOTAL NOW OWED (all invoices)");     // earlier debt is never buried
-        Has(t, "Scan to look this receipt up");
+        Has(t, "Please note: make payment only into the accounts and payment options on this receipt");
+        Lacks(t, "Scan to look this receipt up");        // the lookup barcode is gone (the scan-to-pay QR stays)
         Has(t, "(Clerk)");
+    }
+
+    /// <summary>
+    /// A receipt with its busiest totals must fit ONE A4 page at full size — ChewyPets with 12 lines, Candid Purrfect with 15. The page's
+    /// shrink-to-fit is only a safety net; if it kicked in, every glyph would print smaller than its nominal size, which is what this checks.
+    /// </summary>
+    [Theory]
+    [InlineData("chewypets", 12, 8.8)]
+    [InlineData("candid", 15, 8.3)]
+    public void A_full_receipt_fits_one_page_at_full_size(string company, int lines, double itemFontSize)
+    {
+        var r = Receipt(lines: lines, owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m) with
+        {
+            Brand = Brand(company), PayUrl = "https://chewypetsfeeds.com/pay/abc", ScanPayUrl = "https://chewypetsfeeds.com/pay/abc/alatpay",
+        };
+        var pdf = new QuestDocumentRenderer().Receipt(r);
+        using var doc = PdfDocument.Open(pdf);
+        Assert.Equal(1, doc.NumberOfPages);
+        var itemLetters = doc.GetPage(1).Letters.Where(l => l.Value == "A").Select(l => l.PointSize).ToList();   // "Adult Dog Food …" on every line
+        Assert.NotEmpty(itemLetters);
+        Assert.True(itemLetters.Max() >= itemFontSize - 0.05, $"The receipt was shrunk to fit: largest 'A' is {itemLetters.Max():0.00}pt, expected {itemFontSize}pt.");
+    }
+
+    [Fact]
+    public void Documents_leave_YouTube_and_X_off_paper_to_save_space()
+    {
+        var t = Text(new QuestDocumentRenderer().Receipt(Receipt()));
+        Has(t, "FOLLOW US");
+        Lacks(t, "Chewypets TV");
     }
 
     [Fact]
@@ -155,8 +185,10 @@ public class DocumentRenderTests
         foreach (var text in new[] { Text(r.Receipt(Receipt())), Text(r.Quotation(quote)) })
         {
             Has(text, "SHOP & PAY ONLINE"); Has(text, "chewypetsfeeds.com"); Has(text, "FOLLOW US · STAY UPDATED");
-            foreach (var p in new[] { "Facebook", "Instagram", "YouTube", "Telegram", "TikTok" }) Has(text, p);
-            Has(text, "Chewypets TV");
+            Has(text, "Order online");
+            // Four chips (Facebook, Instagram, Telegram, TikTok), each showing the handle next to its platform badge.
+            Assert.True(Squash(text).Split("chewypetsfeeds").Length - 1 >= 4 + 1, "expected the site plus four social handles");
+            Lacks(text, "Chewypets TV");   // YouTube and X are left off paper
         }
         // A business without a site or socials (Candid Purrfect) prints neither — never another business's accounts.
         var candid = Text(r.Receipt(Receipt() with { Brand = Brand("candid") }));
@@ -169,7 +201,7 @@ public class DocumentRenderTests
         var r = new QuestDocumentRenderer();
         var withQr = Receipt() with { PayUrl = "https://chewypetsfeeds.com/pay/abc", ScanPayUrl = "https://chewypetsfeeds.com/pay/abc/alatpay" };
         var text = Text(r.Receipt(withQr));
-        Has(text, "SCAN TO PAY"); Has(text, "Choose Paystack or AlatPay");
+        Has(text, "SCAN TO PAY"); Has(text, "secure online checkout");
         Lacks(Text(r.Receipt(withQr with { ScanPayUrl = null })), "SCAN TO PAY");        // no AlatPay → no code
         Lacks(Text(r.Receipt(withQr with { ScanPayUrl = "http://insecure.example" })), "SCAN TO PAY");
     }
@@ -188,8 +220,11 @@ public class DocumentRenderTests
         if (string.IsNullOrEmpty(dir)) return;   // opt-in: `INVENTORY_PREVIEW_DIR=... dotnet test`
         Directory.CreateDirectory(dir);
         var r = new QuestDocumentRenderer();
-        File.WriteAllBytes(Path.Combine(dir, "receipt.png"), r.ReceiptImages(Receipt(owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m) with
+        File.WriteAllBytes(Path.Combine(dir, "receipt.png"), r.ReceiptImages(Receipt(lines: 12, owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m) with
             { PayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview", ScanPayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview/alatpay" })[0]);
+        File.WriteAllBytes(Path.Combine(dir, "receipt-candid.png"), r.ReceiptImages(Receipt(lines: 15, owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m) with
+            { Brand = Brand("candid") with { Name = "Candid Purrfect Pets Company Ltd" }, PayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview",
+              ScanPayUrl = "https://chewypetsfeeds.com/pay/CfDJ8preview/alatpay" })[0]);
         var w = new WaybillDoc(Brand(), "ChewyStock-19092026-150001", new DateOnly(2026, 9, 19), "ChewyStock-19092026-143205", new DateOnly(2026, 9, 19), Customer,
             "22 Awolowo Rd, Ikoyi", "Lawal warehouse, Lawal site", "ChewyPets Farm & Feeds Company Ltd (Clerk)", "Musa Ibrahim", "0801 234 5678", "LSD 123 AB", "Deliver before noon",
             [new DocLine(1, "SKU-1001", "Adult Dog Food 20kg", "Bag", 40, 0, 0), new DocLine(2, "SKU-1002", "Puppy Starter 10kg", "Bag", 12, 0, 0)], new DateTime(2026, 9, 19, 15, 0, 0));

@@ -83,6 +83,8 @@ public interface ICompanyContext
     string? Website => null;
     /// <summary>The business's social accounts, printed as "follow us" links on receipts and quotations.</summary>
     IReadOnlyList<SocialLink> Socials => [];
+    /// <summary>Which online processors this business may use ("paystack", "alatpay"); null = every one set up on the server.</summary>
+    IReadOnlyList<string>? PaymentProviders => null;
 }
 
 /// <param name="Platform">Facebook, Instagram, YouTube, Telegram, X or TikTok.</param>

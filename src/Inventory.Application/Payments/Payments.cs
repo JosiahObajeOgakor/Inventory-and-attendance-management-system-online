@@ -68,19 +68,26 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
     /// <summary>Metadata key a gateway reads as "send the customer back here after paying"; it is not stored on the processor's side.</summary>
     public const string ReturnUrlKey = "return_url";
 
-    public bool Enabled => gateways.Configured.Count > 0;
-    public IReadOnlyList<string> Providers => gateways.Configured;
+    public bool Enabled => Providers.Count > 0;
 
-    /// <summary>The link for this document at this exact amount on the default processor (Paystack when set up) — the one printed on documents.</summary>
+    /// <summary>
+    /// The processors this business can take payment through: set up on the server AND allowed for the business (Companies:PaymentProviders).
+    /// Both businesses share the AlatPay account; Paystack is ChewyPets' account, so Candid Purrfect doesn't offer it until it has its own.
+    /// Everything that offers a way to pay — the pay page, the QR code, the PDF button, the sales assistant — reads this list.
+    /// </summary>
+    public IReadOnlyList<string> Providers =>
+        gateways.Configured.Where(p => company.PaymentProviders is not { } allowed || allowed.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The link for this document at this exact amount on the business's default processor — the fallback printed on documents.</summary>
     public Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, CancellationToken ct) =>
-        GetOrCreateAsync(docType, docId, docNumber, amount, customerEmail, customerName, gateways.Configured.FirstOrDefault(), ct);
+        GetOrCreateAsync(docType, docId, docNumber, amount, customerEmail, customerName, Providers.FirstOrDefault(), ct);
 
     /// <summary>The link for this document at this exact amount on the chosen processor, creating it if needed. Null when that processor isn't set up or nothing is owed.</summary>
     public async Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, string? provider, CancellationToken ct,
         string? returnUrl = null)
     {
         var gateway = gateways.Get(provider);
-        if (gateway is null || !gateway.IsConfigured || amount <= 0) return null;
+        if (gateway is null || !gateway.IsConfigured || amount <= 0 || !Providers.Contains(gateway.Provider)) return null;   // not offered by this business
         var cutoff = clock.UtcNow - Reuse;
         var existing = await db.PaymentLinks.AsNoTracking()
             .Where(l => l.DocType == docType && l.DocId == docId && l.Provider == gateway.Provider && l.Status == PaymentLinkStatuses.Pending && l.Amount == amount && l.CreatedAt > cutoff)

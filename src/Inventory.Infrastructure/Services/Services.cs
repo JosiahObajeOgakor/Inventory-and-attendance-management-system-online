@@ -15,7 +15,8 @@ public sealed class SystemClock : IClock
 public sealed record BankDefault(string Bank, string AccountName, string AccountNumber);
 
 public sealed record CompanyInfo(string Key, string DisplayName, string DocumentPrefix, string Schema, string LegalName = "", bool HasPriceLists = false,
-    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, string? Website = null, List<SocialLink>? Socials = null);
+    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, string? Website = null, List<SocialLink>? Socials = null,
+    List<string>? PaymentProviders = null);
 
 public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
 {
@@ -29,6 +30,7 @@ public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
         (info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
     public string? Website => info.Website;
     public IReadOnlyList<SocialLink> Socials => info.Socials ?? [];
+    public IReadOnlyList<string>? PaymentProviders => info.PaymentProviders;
 }
 
 public sealed class MySqlErrorClassifier : IDbErrorClassifier

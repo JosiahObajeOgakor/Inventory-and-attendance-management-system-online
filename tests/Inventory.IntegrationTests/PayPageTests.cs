@@ -107,6 +107,29 @@ public class PayPageTests(MySqlFixture mysql)
     }
 
     [Fact]
+    public async Task A_business_only_offers_the_processors_allowed_for_it_even_when_others_are_set_up()
+    {
+        var (cs, _, invoiceId) = await Invoice();
+        var paystack = new FakeGateway(); var alat = new FakeGateway(provider: PaymentProviders.AlatPay);
+        // Candid Purrfect: AlatPay only (the Paystack account belongs to ChewyPets).
+        var candid = new CompanyContext(new CompanyInfo("test", "Candid", "CandidPurrfect", "x", "Candid Purrfect Pets Company Ltd", PaymentProviders: [PaymentProviders.AlatPay]));
+        await using var db = NewContext(cs);
+        var clock = new SystemClock();
+        var pay = new PaymentLinkService(db, Wire.Tx(db), clock, candid, new PaymentGateways([paystack, alat]), new RecordingNotifier(),
+            new CustomerPaymentService(db, Wire.Tx(db), clock), Wire.Quotes(db));
+
+        Assert.Equal([PaymentProviders.AlatPay], pay.Providers);
+        Assert.Null(await pay.GetOrCreateAsync(PaymentDocTypes.Invoice, invoiceId, "INV", 23000m, null, "PetMart", PaymentProviders.Paystack, default));
+        var fallback = await pay.GetOrCreateAsync(PaymentDocTypes.Invoice, invoiceId, "INV", 23000m, null, "PetMart", default);   // the document default
+        Assert.Equal(PaymentProviders.AlatPay, fallback!.Provider);
+        Assert.Equal((0, 1), (paystack.Initialized, alat.Initialized));
+
+        var page = new PayPageService(db, pay, new CompanyProfileService(db, candid, clock), candid);
+        Assert.Equal([PaymentProviders.AlatPay], (await page.GetAsync(PaymentDocTypes.Invoice, invoiceId, default)).Providers);
+        await Assert.ThrowsAsync<BusinessRuleException>(() => page.StartAsync(PaymentDocTypes.Invoice, invoiceId, PaymentProviders.Paystack, null, default));
+    }
+
+    [Fact]
     public async Task The_receipt_button_opens_the_payment_page_not_a_single_processor()
     {
         var (cs, _, invoiceId) = await Invoice();

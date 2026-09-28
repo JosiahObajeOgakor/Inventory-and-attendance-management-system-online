@@ -32,6 +32,7 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
     public string? Website => Info.Website;
     public IReadOnlyList<Inventory.Application.Abstractions.SocialLink> Socials => Info.Socials ?? [];
+    public IReadOnlyList<string>? PaymentProviders => Info.PaymentProviders;
 }
 
 public sealed class HttpCurrentUser(IHttpContextAccessor http) : ICurrentUser
