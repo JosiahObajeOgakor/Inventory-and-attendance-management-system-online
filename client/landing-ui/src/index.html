@@ -7,6 +7,8 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="logo.png">
+  <!-- The hero's first frame, fetched first so the top of the page is never blank while the video starts. -->
+  <link rel="preload" as="image" href="/hero-poster.jpg" fetchpriority="high">
 </head>
 <body>
   <app-root></app-root>
