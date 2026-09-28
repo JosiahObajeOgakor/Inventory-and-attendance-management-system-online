@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { Auth } from '../../core/auth.service';
 import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { Api, messageOf } from '../../core/api.service';
@@ -60,7 +61,7 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
               </div>
               <div class="row">
                 <label class="btn btn-sm"><input type="file" accept="image/png,image/jpeg" hidden (change)="upload(a.kind, $event)" /> {{ has(a.kind) ? 'Replace' : 'Upload' }}</label>
-                @if (has(a.kind)) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(a.kind)">Remove</button> }
+                @if (has(a.kind) && auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(a.kind)">Remove</button> }
               </div>
             </div>
           }
@@ -97,7 +98,7 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
                 <td><label class="check"><input type="checkbox" [checked]="z.isActive" (change)="patchZone(z.id, { isActive: $any($event.target).checked })" /> {{ z.isActive ? 'Yes' : 'No' }}</label></td>
                 <td class="actions">
                   @if (dirty().includes(z.id)) { <button type="button" class="btn btn-sm btn-primary" (click)="saveZone(z)">Save</button> }
-                  <button type="button" class="btn btn-sm btn-danger" (click)="deleteZone(z)">Remove</button>
+                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteZone(z)">Remove</button> }
                 </td>
               </tr>
             }
@@ -123,6 +124,7 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
   `,
 })
 export class CompanyPage implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api2);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);
@@ -137,7 +139,7 @@ export class CompanyPage implements OnInit {
   protected readonly dirty = signal<number[]>([]);
   protected readonly form = this.fb.nonNullable.group({
     legalName: ['', [Validators.required, Validators.maxLength(150)]], address: [''], phone: [''], email: ['', Validators.email], taxId: [''],
-    defaultVatRate: [7.5, [Validators.min(0), Validators.max(100)]], defaultRebateRatePct: [1],
+    defaultVatRate: [7.5, [Validators.min(0), Validators.max(100)]], defaultRebatePerUnit: [0],
     banks: this.fb.array([] as ReturnType<CompanyPage['bankGroup']>[]),
   });
   protected get banks() { return this.form.controls.banks as FormArray; }
@@ -152,7 +154,7 @@ export class CompanyPage implements OnInit {
   async ngOnInit() {
     try {
       const p = await this.api.companyProfile();
-      this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebateRatePct: p.defaultRebateRatePct });
+      this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebatePerUnit: p.defaultRebatePerUnit });
       this.banks.clear(); p.banks.forEach(b => this.banks.push(this.bankGroup(b))); this.have.set(p.assets);
     } catch (e) { this.toasts.error(messageOf(e)); }
     await Promise.all([this.loadZones(), this.loadWarehouses()]);

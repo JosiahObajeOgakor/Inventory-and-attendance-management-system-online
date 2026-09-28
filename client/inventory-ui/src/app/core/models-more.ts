@@ -3,7 +3,7 @@ import { Paged, SaleLine } from './models';
 // ---- company profile ----
 export interface Bank { bankName: string; accountName: string; accountNumber: string; }
 export interface CompanyProfile {
-  legalName: string; address: string; phone: string; email: string; taxId: string; defaultVatRate: number; defaultRebateRatePct: number;
+  legalName: string; address: string; phone: string; email: string; taxId: string; defaultVatRate: number; defaultRebatePerUnit: number;
   banks: Bank[]; assets: string[]; hasPriceLists: boolean; buysGoods: boolean;
 }
 export type AssetKind = 'logo' | 'signature' | 'waybill-stamp';
@@ -45,7 +45,8 @@ export interface ExpenseRow { id: number; category: string; expenseDate: string;
 export interface ExpenseList { page: Paged<ExpenseRow>; total: number; byCategory: { category: string; total: number }[]; }
 export interface ExpenseInput { category: string; expenseDate: string | null; amount: number; note: string | null; }
 export interface RebateCustomer { customerId: number; customer: string; ranking: string; available: number; redeemed: number; lifetime: number; }
-export interface RebateSummary { customers: RebateCustomer[]; outstandingTotal: number; redeemedTotal: number; defaultRatePct: number; }
+export interface RebateSummary { customers: RebateCustomer[]; outstandingTotal: number; redeemedTotal: number; defaultPerUnit: number; }
+export interface SupplierItem { id: number; productId: number; product: string; sku: string; unit: string; unitCost: number; isActive: boolean; }
 export interface RebateEntry { id: number; entryDate: string; invoiceNumber: string | null; amount: number; status: string; redeemedDate: string | null; note: string | null; }
 
 // ---- price book ----

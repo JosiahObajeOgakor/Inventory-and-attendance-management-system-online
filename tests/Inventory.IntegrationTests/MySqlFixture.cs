@@ -53,7 +53,7 @@ public sealed class MySqlFixture : IAsyncLifetime
         db.AddRange(cat, wh);
         await db.SaveChangesAsync();
         var product = new Product { Sku = "SKU-1", Name = "Adult Dog Food 20kg", CategoryId = cat.Id, CostPrice = 8500, PriceRetail = 11500, PriceWholesaler = 11000, PriceDistributor = 10500, SellingPrice = 11500, ReorderLevel = 5 };
-        var customer = new Customer { Name = "PetMart", CustomerType = customerType, Balance = balance, RebateRatePct = 1m };
+        var customer = new Customer { Name = "PetMart", CustomerType = customerType, Balance = balance, RebatePerUnit = 100m };
         db.AddRange(product, customer);
         await db.SaveChangesAsync();
         db.StockBatches.Add(new StockBatch { ProductId = product.Id, WarehouseId = wh.Id, BatchNumber = "B1", QuantityOnHand = stock });

@@ -77,8 +77,23 @@ export class Api2 {
   writeOffSerial(productId: number, serial: string, reason: string) { return this.post<void>(`/api/serials/product/${productId}/write-off`, { serial, reason }); }
   serialDiscrepancies() { return this.get<N.SerialDiscrepancy[]>('/api/serials/discrepancies'); }
 
+  // product photos (printed on the catalog)
+  uploadProductImage(id: number, file: File) { const f = new FormData(); f.append('file', file); return firstValueFrom(this.http.put<void>(`/api/products/${id}/image`, f)); }
+  removeProductImage(id: number) { return this.del<void>(`/api/products/${id}/image`); }
+
+  // supplier item lists
+  supplierItems(supplierId: number) { return this.get<N.SupplierItem[]>(`/api/suppliers/${supplierId}/items`); }
+  setSupplierItems(supplierId: number, items: { productId: number; unitCost: number }[]) { return this.put<void>(`/api/suppliers/${supplierId}/items`, items); }
+
+  // clearing history (CEO)
+  clearPreview(what: string[]) { return firstValueFrom(this.http.get<{ table: string; rows: number }[]>('/api/admin/archive/clear-preview', { params: new HttpParams({ fromObject: { what } }) })); }
+  clearHistory(what: string[], confirm: string) { return this.post<{ records: number; file: string; bytes: number }>('/api/admin/archive/clear', { what, confirm }); }
+
   // expenses & rebates
   expenseCategories() { return this.get<string[]>('/api/expenses/categories'); }
+  expenseCategoriesAll() { return this.get<{ name: string; custom: boolean }[]>('/api/expenses/categories/all'); }
+  addExpenseCategory(name: string) { return this.post<{ name: string }>('/api/expenses/categories', { name }); }
+  deleteExpenseCategory(name: string) { return this.del<void>(`/api/expenses/categories/${encodeURIComponent(name)}`); }
   expenses(q: PageQuery & { from: string; to: string; category?: string }) { return this.get<N.ExpenseList>('/api/expenses', q); }
   createExpense(i: N.ExpenseInput) { return this.post<{ id: number }>('/api/expenses', i); }
   updateExpense(id: number, i: N.ExpenseInput) { return this.put<void>(`/api/expenses/${id}`, i); }

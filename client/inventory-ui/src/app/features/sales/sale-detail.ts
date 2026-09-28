@@ -22,7 +22,7 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
           @if (auth.isAdmin() && s() && s()!.status !== 'Voided') {
             <a class="btn" [routerLink]="['/sales', id(), 'edit']"><app-icon name="edit" [size]="18" /> Edit sale</a>
           }
-          @if (auth.isAdmin() && s()) { <button type="button" class="btn btn-danger" (click)="deleteIt()">Delete sale</button> }
+          @if (auth.canDelete() && s()) { <button type="button" class="btn btn-danger" (click)="deleteIt()">Delete sale</button> }
         </div>
       </div>
 

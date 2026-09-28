@@ -11,8 +11,11 @@ namespace Inventory.Application.Finance;
 
 public static class ExpenseCategories
 {
-    public static readonly string[] All = ["Rent", "Salaries", "Utilities", "Logistics", "Maintenance", "Other"];
+    /// <summary>Built in; the business adds its own on top (stored in expense_categories).</summary>
+    public static readonly string[] All = ["Rent", "Salaries", "Utilities", "Fuel", "Logistics", "Maintenance", "Other"];
 }
+
+public sealed record ExpenseCategoryDto(string Name, bool Custom);
 
 public sealed record ExpenseInput(string Category, DateOnly? ExpenseDate, decimal Amount, string? Note);
 public sealed record ExpenseDto(int Id, string Category, DateOnly ExpenseDate, decimal Amount, string? Note);
@@ -23,7 +26,7 @@ public sealed class ExpenseInputValidator : AbstractValidator<ExpenseInput>
 {
     public ExpenseInputValidator()
     {
-        RuleFor(x => x.Category).Must(c => ExpenseCategories.All.Contains(c)).WithMessage("Choose one of the listed categories.");
+        RuleFor(x => x.Category).NotEmpty().MaximumLength(40).WithMessage("Choose a category.");
         RuleFor(x => x.Amount).GreaterThan(0).WithMessage("Enter an amount greater than zero.");
         RuleFor(x => x.Note).MaximumLength(250);
     }
@@ -48,9 +51,46 @@ public sealed class ExpenseService(IBusinessDbContext db, IClock clock)
 
     private static ExpenseDto Map(Expense e) => new(e.Id, e.Category, e.ExpenseDate, e.Amount, e.Note);
 
+    // ---- categories: the built-in list plus the ones the business added ----
+    public async Task<List<ExpenseCategoryDto>> CategoriesAsync(CancellationToken ct = default)
+    {
+        var custom = await db.ExpenseCategories.AsNoTracking().OrderBy(c => c.Name).Select(c => c.Name).ToListAsync(ct);
+        return ExpenseCategories.All.Where(b => b != "Other").Select(b => new ExpenseCategoryDto(b, false))
+            .Concat(custom.Where(c => !ExpenseCategories.All.Contains(c, StringComparer.OrdinalIgnoreCase)).Select(c => new ExpenseCategoryDto(c, true)))
+            .Append(new ExpenseCategoryDto("Other", false)).ToList();
+    }
+
+    public async Task<string> AddCategoryAsync(string name, CurrentUser user, CancellationToken ct = default)
+    {
+        name = string.Join(' ', (name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (name.Length is 0 or > 40) throw new BusinessRuleException("Enter a category name (up to 40 characters).");
+        if (ExpenseCategories.All.Contains(name, StringComparer.OrdinalIgnoreCase) || await db.ExpenseCategories.AnyAsync(c => c.Name == name, ct))
+            throw new BusinessRuleException($"\"{name}\" is already a category.");
+        db.ExpenseCategories.Add(new ExpenseCategory { Name = name });
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "EXPENSE_CATEGORY_ADDED", Entity = "ExpenseCategory", EntityId = name, At = clock.UtcNow });
+        await db.SaveChangesAsync(ct);
+        return name;
+    }
+
+    /// <summary>Removes an added category. Expenses already booked under it keep their category name.</summary>
+    public async Task DeleteCategoryAsync(string name, CurrentUser user, CancellationToken ct = default)
+    {
+        var c = await db.ExpenseCategories.SingleOrDefaultAsync(x => x.Name == name, ct) ?? throw new NotFoundException("Expense category");
+        db.ExpenseCategories.Remove(c);
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "EXPENSE_CATEGORY_DELETED", Entity = "ExpenseCategory", EntityId = name, At = clock.UtcNow });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task CheckCategoryAsync(string category, CancellationToken ct)
+    {
+        if (!(await CategoriesAsync(ct)).Any(c => string.Equals(c.Name, category, StringComparison.OrdinalIgnoreCase)))
+            throw new BusinessRuleException($"\"{category}\" isn't a category yet. Add it first.");
+    }
+
     public async Task<int> CreateAsync(ExpenseInput i, CurrentUser user, CancellationToken ct = default)
     {
         await new ExpenseInputValidator().ValidateAndThrowAsync(i, ct);
+        await CheckCategoryAsync(i.Category, ct);
         var e = new Expense { Category = i.Category, ExpenseDate = i.ExpenseDate ?? clock.BusinessToday, Amount = i.Amount, Note = N(i.Note), CreatedByUserId = user.Id };
         db.Expenses.Add(e);
         await db.SaveChangesAsync(ct);
@@ -63,6 +103,7 @@ public sealed class ExpenseService(IBusinessDbContext db, IClock clock)
     {
         await new ExpenseInputValidator().ValidateAndThrowAsync(i, ct);
         var e = await db.Expenses.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Expense");
+        if (!string.Equals(e.Category, i.Category, StringComparison.OrdinalIgnoreCase)) await CheckCategoryAsync(i.Category, ct);
         e.Category = i.Category; e.Amount = i.Amount; e.Note = N(i.Note);
         if (i.ExpenseDate.HasValue) e.ExpenseDate = i.ExpenseDate.Value;
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "EXPENSE_UPDATED", Entity = "Expense", EntityId = id.ToString(), At = clock.UtcNow, Detail = $"{e.Category} {e.Amount:N2}" });
@@ -79,7 +120,7 @@ public sealed class ExpenseService(IBusinessDbContext db, IClock clock)
 }
 
 public sealed record RebateCustomerDto(int CustomerId, string Customer, string Ranking, decimal Available, decimal Redeemed, decimal Lifetime);
-public sealed record RebateSummaryDto(IReadOnlyList<RebateCustomerDto> Customers, decimal OutstandingTotal, decimal RedeemedTotal, decimal DefaultRatePct);
+public sealed record RebateSummaryDto(IReadOnlyList<RebateCustomerDto> Customers, decimal OutstandingTotal, decimal RedeemedTotal, decimal DefaultPerUnit);
 public sealed record RebateEntryDto(int Id, DateOnly EntryDate, string? InvoiceNumber, decimal Amount, string Status, DateOnly? RedeemedDate, string? Note);
 public sealed record RedeemResult(string Customer, decimal Amount);
 
@@ -96,7 +137,7 @@ public sealed class RebateService(IBusinessDbContext db, TransactionRunner tx, I
             .Where(r => r.Lifetime > 0).ToList();
         var outstanding = rows.Sum(r => r.Available); var redeemed = rows.Sum(r => r.Redeemed);
         if (!string.IsNullOrWhiteSpace(term)) rows = rows.Where(r => r.Customer.Contains(term.Trim(), StringComparison.OrdinalIgnoreCase) || r.Ranking.Contains(term.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-        return new RebateSummaryDto(rows.OrderByDescending(r => r.Available).ThenBy(r => r.Customer).ToList(), outstanding, redeemed, (await profile.GetAsync(ct)).DefaultRebateRatePct);
+        return new RebateSummaryDto(rows.OrderByDescending(r => r.Available).ThenBy(r => r.Customer).ToList(), outstanding, redeemed, (await profile.GetAsync(ct)).DefaultRebatePerUnit);
     }
 
     public async Task<List<RebateEntryDto>> EntriesAsync(int customerId, CancellationToken ct = default)
@@ -124,9 +165,9 @@ public sealed class RebateService(IBusinessDbContext db, TransactionRunner tx, I
 
     public async Task SetDefaultRateAsync(decimal pct, CurrentUser user, CancellationToken ct = default)
     {
-        if (pct is < 0 or > 100) throw new BusinessRuleException("The rate must be between 0 and 100.");
-        (await profile.EnsureAsync(ct)).DefaultRebateRatePct = pct;
-        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "REBATE_RATE_SET", Entity = "Company", At = clock.UtcNow, Detail = $"{pct}%" });
+        if (pct is < 0 or > 1_000_000) throw new BusinessRuleException("Enter an amount between ₦0 and ₦1,000,000 per unit.");
+        (await profile.EnsureAsync(ct)).DefaultRebatePerUnit = pct;
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "REBATE_RATE_SET", Entity = "Company", At = clock.UtcNow, Detail = $"₦{pct:N2} per unit" });
         await db.SaveChangesAsync(ct);
     }
 }

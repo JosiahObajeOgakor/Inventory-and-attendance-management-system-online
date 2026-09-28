@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
-import { Auth } from '../../core/auth.service';
+import { Auth, roleLabel } from '../../core/auth.service';
 import { UserRow } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
@@ -25,9 +25,12 @@ import { StampTimePipe } from '../../shared/ui';
           <tbody>
             @for (u of users(); track u.id) {
               <tr><td><span class="strong">{{ u.fullName }}</span><div class="muted mono sm">{{ u.username }}</div></td>
-                <td>{{ u.role === 'ADMIN' ? 'Administrator' : 'Warehouse clerk' }}</td><td>{{ names(u.companyAccess) }}</td><td>{{ u.lastLoginAt ? (u.lastLoginAt | stampTime) : 'Never' }}</td>
+                <td><span class="role" [attr.data-role]="u.role">{{ label(u.role) }}</span></td><td>{{ names(u.companyAccess) }}</td><td>{{ u.lastLoginAt ? (u.lastLoginAt | stampTime) : 'Never' }}</td>
                 <td>@if (!u.isActive) { <span class="stamp stamp-bad">Disabled</span> } @else if (u.mustChangePassword) { <span class="stamp stamp-warn">Must set password</span> } @else { <span class="stamp stamp-ok">Active</span> }</td>
-                <td class="actions"><button type="button" class="btn btn-sm" (click)="openEdit(u)">Edit</button> <button type="button" class="btn btn-sm" (click)="openReset(u)">Reset password</button></td></tr>
+                <td class="actions">
+                  @if (u.role === 'CLERK') { <button type="button" class="btn btn-sm" (click)="setRole(u, 'MANAGER')" [disabled]="busy()">Make manager</button> }
+                  @if (u.role === 'MANAGER') { <button type="button" class="btn btn-sm" (click)="setRole(u, 'CLERK')" [disabled]="busy()">Revoke manager</button> }
+                  <button type="button" class="btn btn-sm" (click)="openEdit(u)">Edit</button> <button type="button" class="btn btn-sm" (click)="openReset(u)">Reset password</button></td></tr>
             }
           </tbody>
         </table></div>
@@ -41,7 +44,8 @@ import { StampTimePipe } from '../../shared/ui';
           <div class="field"><label for="u-u">Username</label><input id="u-u" class="input" formControlName="username" autocapitalize="none" autocomplete="off" /></div>
           <div class="field"><label for="u-p">First password</label><input id="u-p" class="input" type="text" formControlName="password" autocomplete="off" /><span class="hint">They must change it when they first sign in.</span></div>
         }
-        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role"><option value="CLERK">Warehouse clerk</option><option value="ADMIN">Administrator</option></select></div>
+        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role"><option value="CLERK">Clerk</option><option value="MANAGER">Manager</option><option value="ADMIN">CEO</option></select>
+          <span class="hint">{{ roleHint(form.controls.role.value) }}</span></div>
         <fieldset class="field"><legend class="label">Can open</legend>
           @for (c of companyOptions(); track c.key) { <label class="check"><input type="checkbox" [checked]="hasCompany(c.key)" (change)="toggleCompany(c.key, $any($event.target).checked)" /> {{ c.displayName }}</label> }</fieldset>
         @if (editing()) { <label class="check span-2"><input type="checkbox" formControlName="isActive" /> This person can sign in</label> }
@@ -58,7 +62,7 @@ import { StampTimePipe } from '../../shared/ui';
       }
       <ng-container modal-actions><button type="button" class="btn" (click)="resetting.set(null)">Cancel</button><button type="submit" form="rf" class="btn btn-primary" [disabled]="resetForm.invalid || busy()">Set password</button></ng-container>
     </app-modal>`,
-  styles: `.sm { font-size: .75rem; } fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: .5rem; }`,
+  styles: `.sm { font-size: .75rem; } .role { font-weight: 600; } .role[data-role='ADMIN'] { color: var(--brand); } .role[data-role='MANAGER'] { color: var(--ink-2, #33434f); } td.actions { white-space: nowrap; } fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: .5rem; }`,
 })
 export class UsersPage implements OnInit {
   private readonly api = inject(Api);
@@ -77,6 +81,23 @@ export class UsersPage implements OnInit {
     fullName: ['', Validators.required], username: [''], password: [''], role: ['CLERK'], isActive: [true],
   });
   protected readonly resetForm = this.fb.nonNullable.group({ password: ['', [Validators.required, Validators.minLength(8)]] });
+
+  protected label(role: string) { return roleLabel(role); }
+  protected roleHint(role: string) {
+    return role === 'ADMIN' ? 'Everything, including deleting records, clearing history and managing people.'
+      : role === 'MANAGER' ? 'Supervises clerks. Adds and edits records like the CEO, but cannot delete.'
+      : 'Makes sales, quotations and waybills. Cannot add or delete records.';
+  }
+
+  /** Delegate the manager role to a clerk, or take it back. Takes effect on their session within a minute. */
+  protected async setRole(u: UserRow, role: string) {
+    this.busy.set(true);
+    try {
+      await this.api.updateUser(u.id, { fullName: u.fullName, role, companies: u.companyAccess.split(',').map(s => s.trim()).filter(Boolean), isActive: u.isActive });
+      this.toasts.ok(role === 'MANAGER' ? ` is now a manager.` : ` is a clerk again.`);
+      await this.load();
+    } catch (e) { this.toasts.error(messageOf(e)); } finally { this.busy.set(false); }
+  }
 
   protected companyOptions() { return this.auth.me()?.companies ?? []; }
   protected names(access: string) { return access.split(',').map(k => this.companyOptions().find(c => c.key === k.trim())?.displayName ?? k).join(' · '); }

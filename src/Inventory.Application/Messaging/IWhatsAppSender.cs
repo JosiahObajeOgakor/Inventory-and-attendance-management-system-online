@@ -11,6 +11,9 @@ public interface IWhatsAppSender
     /// <summary>Free-form text. Meta only delivers it within 24 hours of the recipient's last message to us.</summary>
     Task SendTextAsync(string companyKey, string toE164, string text, CancellationToken ct);
     Task SendDocumentAsync(string companyKey, string toE164, byte[] pdf, string filename, string caption, CancellationToken ct);
+    /// <summary>A PNG shown inline in the chat (e.g. the product catalog). Same 24-hour rule as text.</summary>
+    Task SendImageAsync(string companyKey, string toE164, byte[] png, string caption, CancellationToken ct) =>
+        throw new NotSupportedException("This WhatsApp sender can't send images.");
     /// <summary>Up to three reply buttons under a message (same 24-hour rule as text).</summary>
     Task SendButtonsAsync(string companyKey, string toE164, string body, IReadOnlyList<WhatsAppButton> buttons, CancellationToken ct);
     /// <summary>A pre-approved template — the only way to message someone (admin, rider) who hasn't written to us in the last 24 hours.

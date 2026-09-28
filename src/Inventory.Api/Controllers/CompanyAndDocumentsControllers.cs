@@ -10,6 +10,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Api.Controllers;
 
+/// <summary>A catalog to send: what to build, and where to (an email address, or a WhatsApp number; blank = the customer's own).</summary>
+public sealed record CatalogSendRequest(CatalogRequest Request, string? To, string? Note);
+
 [ApiController, Route("api/company")]
 public class CompanyController(ICurrentUser cu, CompanyProfileService svc) : AppController(cu)
 {
@@ -46,7 +49,7 @@ public class CompanyController(ICurrentUser cu, CompanyProfileService svc) : App
         return File(a.Data, a.ContentType);
     }
 
-    [HttpDelete("assets/{kind}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("assets/{kind}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> RemoveAsset(string kind, CancellationToken ct)
     {
         if (!AssetKinds.All.Contains(kind)) return NotFound();
@@ -72,7 +75,7 @@ public class DeliveryZonesController(ICurrentUser cu, DeliveryZoneService svc) :
         return NoContent();
     }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct)
     {
         await svc.DeleteAsync(id, Me, ct);
@@ -120,6 +123,27 @@ public class DocumentsController(ICurrentUser cu, DocumentQueries docs, IDocumen
         var d = await docs.PriceListAsync(tier, customer, includeOutOfStock, ct);
         return Pdf(renderer.PriceList(d), "PriceList-" + d.Reference);
     }
+
+    /// <summary>
+    /// The price list / catalog for chosen items (or all), in a tier, as a PDF or one PNG image — for any business. Opens inline so it can be
+    /// printed, saved or shared from the phone.
+    /// </summary>
+    [HttpPost("catalog/file"), Authorize(Policy = Policies.Staff)]
+    public async Task<IActionResult> CatalogFile(CatalogRequest r, [FromServices] CatalogService catalog, CancellationToken ct)
+    {
+        var f = await catalog.FileAsync(r, ct);
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.ContentDisposition = $"inline; filename=\"{f.FileName}\"";
+        return File(f.Bytes, f.ContentType);
+    }
+
+    [HttpPost("catalog/email"), Authorize(Policy = Policies.Staff)]
+    public Task<CatalogSent> CatalogEmail(CatalogSendRequest r, [FromServices] CatalogService catalog, CancellationToken ct) =>
+        catalog.EmailAsync(r.Request, r.To, r.Note, Me, ct);
+
+    [HttpPost("catalog/whatsapp"), Authorize(Policy = Policies.Staff)]
+    public Task<CatalogSent> CatalogWhatsApp(CatalogSendRequest r, [FromServices] CatalogService catalog, CancellationToken ct) =>
+        catalog.WhatsAppAsync(r.Request, r.To, Me, ct);
 
     [HttpGet("products/{id:int}/label.pdf"), Authorize(Policy = Policies.Staff)]
     public async Task<IActionResult> ShelfLabel(int id, CancellationToken ct)

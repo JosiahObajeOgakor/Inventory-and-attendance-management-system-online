@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { Auth } from '../../core/auth.service';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
+import { Api2 } from '../../core/api-more';
 import { Customer, CustomerInput, CustomerType } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { CustomerMetricsDialog } from './customer-metrics';
@@ -25,17 +27,17 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
           <input class="input" type="search" placeholder="Search name, phone or location" aria-label="Search customers" (input)="list.setSearch($any($event.target).value)" /></div></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
-          <thead><tr><th>Customer</th><th>Type</th><th>Last 12 months</th><th class="num">Owes</th><th class="num">Rebate rate</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th>Customer</th><th>Type</th><th>Last 12 months</th><th class="num">Owes</th><th class="num">Rebate per unit</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             @for (c of list.items(); track c.id) {
               <tr><td><span class="strong">{{ c.name }}</span><div class="muted sm">{{ c.phone }}{{ c.location ? ' · ' + c.location : '' }}</div></td><td>{{ c.customerType }}</td>
                 <td><span class="mono">{{ c.trailingTwelveMonthSpend | naira }}</span> <app-stamp [label]="c.ranking" /></td>
-                <td class="num mono" [class.owes]="c.balance > 0" [class.credit]="c.balance < 0">@if (c.balance < 0) { Credit {{ -c.balance | naira }} } @else { {{ c.balance | naira }} }</td><td class="num mono">{{ c.rebateRatePct }}%</td>
+                <td class="num mono" [class.owes]="c.balance > 0" [class.credit]="c.balance < 0">@if (c.balance < 0) { Credit {{ -c.balance | naira }} } @else { {{ c.balance | naira }} }</td><td class="num mono">{{ c.rebatePerUnit | naira }}</td>
                 <td class="actions">
                   @if (c.balance > 0) { <button type="button" class="btn btn-sm btn-primary" (click)="openPay(c)">Record payment</button> }
                   <button type="button" class="btn btn-sm" (click)="metricsFor.set(c.id)">History</button>
                   <button type="button" class="btn btn-sm" (click)="openEdit(c)">Edit</button>
-                  <button type="button" class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button></td></tr>
+                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button> }</td></tr>
             }
           </tbody>
         </table></div>
@@ -56,7 +58,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
         <div class="field"><label for="c-l">Location</label><input id="c-l" class="input" formControlName="location" placeholder="Lagos, Lagos State" /></div>
         <div class="field"><label for="c-x">Tax ID</label><input id="c-x" class="input" formControlName="taxId" /></div>
         <div class="field span-2"><label for="c-a">Address</label><input id="c-a" class="input" formControlName="address" /></div>
-        <div class="field"><label for="c-r">Rebate rate (% of net sales)</label><input id="c-r" class="input num" type="number" min="0" max="100" step="0.1" formControlName="rebateRatePct" /></div>
+        <div class="field"><label for="c-r">Rebate amount (₦ per unit bought)</label><input id="c-r" class="input num" type="number" min="0" step="0.01" formControlName="rebatePerUnit" /><span class="hint">E.g. 100 = ₦100 back for every bag. 0 = no rebate.</span></div>
         <div class="field"><label for="c-cl">Credit limit</label><input id="c-cl" class="input num" type="number" min="0" formControlName="creditLimit" /></div>
       </form>
       <ng-container modal-actions><button type="button" class="btn" (click)="formOpen.set(false)">Cancel</button><button type="submit" form="cf" class="btn btn-primary" [disabled]="form.invalid || busy()">{{ editing() ? 'Save changes' : 'Add customer' }}</button></ng-container>
@@ -75,8 +77,12 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
   styles: `.sm { font-size: .75rem; } .owes { color: var(--stamp); font-weight: 600; } .credit { color: var(--ok, #1a7f4b); font-weight: 600; }`,
 })
 export class CustomersPage implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
+  private readonly api2 = inject(Api2);
   private readonly fb = inject(FormBuilder);
+  /** The company's default rebate (₦ per unit) filled in for a new customer. */
+  private defaultRebate = 0;
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
   protected readonly list = new PagedList<Customer>(q => this.api.customers(q));
@@ -88,17 +94,20 @@ export class CustomersPage implements OnInit {
 
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(150)]], customerType: ['Retailer' as CustomerType], contactName: [''], phone: [''], email: ['', Validators.email],
-    location: [''], taxId: [''], address: [''], rebateRatePct: [1, [Validators.min(0), Validators.max(100)]], creditLimit: [0, Validators.min(0)],
+    location: [''], taxId: [''], address: [''], rebatePerUnit: [0, [Validators.min(0)]], creditLimit: [0, Validators.min(0)],
   });
   protected readonly payForm = this.fb.nonNullable.group({ amount: [0, [Validators.required, Validators.min(0.01)]], method: ['Cash'] });
 
-  ngOnInit() { void this.list.load(); }
+  ngOnInit() {
+    void this.list.load();
+    void this.api2.companyProfile().then(p => (this.defaultRebate = p.defaultRebatePerUnit ?? 0), () => { /* 0 is a fine default */ });
+  }
 
-  protected openNew() { this.editing.set(null); this.form.reset({ customerType: 'Retailer', rebateRatePct: 1, creditLimit: 0 }); this.formOpen.set(true); }
+  protected openNew() { this.editing.set(null); this.form.reset({ customerType: 'Retailer', rebatePerUnit: this.defaultRebate, creditLimit: 0 }); this.formOpen.set(true); }
   protected openEdit(c: Customer) {
     this.editing.set(c);
     this.form.reset({ name: c.name, customerType: c.customerType, contactName: c.contactName ?? '', phone: c.phone ?? '', email: c.email ?? '', location: c.location ?? '',
-      taxId: c.taxId ?? '', address: c.address ?? '', rebateRatePct: c.rebateRatePct, creditLimit: c.creditLimit });
+      taxId: c.taxId ?? '', address: c.address ?? '', rebatePerUnit: c.rebatePerUnit, creditLimit: c.creditLimit });
     this.formOpen.set(true);
   }
   protected openPay(c: Customer) { this.paying.set(c); this.payForm.reset({ amount: c.balance, method: 'Cash' }); }
@@ -108,7 +117,7 @@ export class CustomersPage implements OnInit {
     const v = this.form.getRawValue();
     const n = (s: string) => s.trim() || null;
     const input: CustomerInput = { name: v.name.trim(), customerType: v.customerType, contactName: n(v.contactName), phone: n(v.phone), email: n(v.email), location: n(v.location),
-      taxId: n(v.taxId), address: n(v.address), rebateRatePct: v.rebateRatePct, creditLimit: v.creditLimit };
+      taxId: n(v.taxId), address: n(v.address), rebatePerUnit: v.rebatePerUnit, creditLimit: v.creditLimit };
     this.busy.set(true);
     try {
       const e = this.editing();

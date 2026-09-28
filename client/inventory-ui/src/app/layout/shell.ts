@@ -11,7 +11,7 @@ import { Toasts } from '../shared/feedback';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
-interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; needs?: 'hasPriceLists'; }
+interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; ceoOnly?: boolean; needs?: 'hasPriceLists'; }
 interface NavGroup { title: string; icon: string; items: NavItem[]; }
 
 const NAV: NavGroup[] = [
@@ -38,12 +38,12 @@ const NAV: NavGroup[] = [
   ] },
   { title: 'People', icon: 'users', items: [
     { label: 'Team', path: '/team', icon: 'clock', adminOnly: true },
-    { label: 'People & access', path: '/users', icon: 'users', adminOnly: true },
+    { label: 'People & access', path: '/users', icon: 'users', ceoOnly: true },
   ] },
   { title: 'System', icon: 'settings', items: [
     { label: 'Company & documents', path: '/company', icon: 'settings', adminOnly: true },
     { label: 'Activity log', path: '/activity', icon: 'audit', adminOnly: true },
-    { label: 'Database storage', path: '/storage', icon: 'stock', adminOnly: true },
+    { label: 'Database storage', path: '/storage', icon: 'stock', ceoOnly: true },
   ] },
 ];
 
@@ -67,7 +67,7 @@ export class Shell {
   protected readonly navOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly groups = computed(() =>
-    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.needs || this.auth.flags()[i.needs])) })).filter(g => g.items.length));
+    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.ceoOnly || this.auth.isCeo()) && (!i.needs || this.auth.flags()[i.needs])) })).filter(g => g.items.length));
   protected readonly initials = computed(() => (this.auth.me()?.fullName ?? '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
   protected readonly countdown = computed(() => {
     const s = this.idle.secondsLeft();
@@ -108,8 +108,9 @@ export class Shell {
       });
     });
     effect(() => { if (this.auth.isAdmin()) this.idle.start(); else this.idle.stop(); });
-    // A clerk is asked to clock on once per day, when they first arrive.
-    effect(() => { if (this.auth.me() && !this.auth.isAdmin()) void this.askCheckIn(); });
+    // A clerk is asked to clock on once per day, when they first arrive. The request runs untracked: an HTTP call started inside an effect
+    // would otherwise make the effect depend on the spinner's own state and re-fire on every show/hide (an endless loading loop on a slow line).
+    effect(() => { if (this.auth.me() && !this.auth.isCeo()) untracked(() => void this.askCheckIn()); });
   }
 
   private async askCheckIn() {

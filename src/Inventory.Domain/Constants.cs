@@ -2,11 +2,21 @@ namespace Inventory.Domain;
 
 public static class RoleNames
 {
+    /// <summary>The CEO: everything, including deleting records, clearing history and managing people and roles.</summary>
     public const string Admin = "ADMIN";
+    /// <summary>Supervises clerks; adds and edits records like the CEO but cannot delete. The CEO can make a clerk manager (and back) at any time.</summary>
+    public const string Manager = "MANAGER";
     public const string Clerk = "CLERK";
+    public static readonly string[] All = [Admin, Manager, Clerk];
     /// <summary>Legacy role names in the SQL Server data, mapped on import.</summary>
     public const string LegacyAdmin = "Admin";
     public const string LegacyClerk = "Warehouse Clerk";
+}
+
+/// <summary>How far back records can be dated, reported and exported.</summary>
+public static class BusinessDates
+{
+    public static readonly DateOnly Earliest = new(2020, 1, 1);
 }
 
 public static class PriceTiers

@@ -26,12 +26,14 @@ public sealed record MovementRowDto(int Id, DateTime At, int ProductId, string P
 
 public sealed record SupplierDto(int Id, string Name, string? Category, string? ContactName, string? Phone, string? Email, string? Address, string? TaxId, decimal Balance);
 public sealed record SupplierInput(string Name, string? Category, string? ContactName, string? Phone, string? Email, string? Address, string? TaxId);
+public sealed record SupplierItemDto(int Id, int ProductId, string Product, string Sku, string Unit, decimal UnitCost, bool IsActive);
+public sealed record SupplierItemInput(int ProductId, decimal UnitCost);
 
 public sealed record CustomerDto(int Id, string Name, string CustomerType, string? ContactName, string? Phone, string? Location, string? Address,
-    string? Email, string? TaxId, decimal RebateRatePct, decimal CreditLimit, decimal Balance, decimal TrailingTwelveMonthSpend, string Ranking);
+    string? Email, string? TaxId, decimal RebatePerUnit, decimal CreditLimit, decimal Balance, decimal TrailingTwelveMonthSpend, string Ranking);
 public sealed record CustomerLookupDto(int Id, string Name, string CustomerType, string? Phone, decimal Balance);
 public sealed record CustomerInput(string Name, string CustomerType, string? ContactName, string? Phone, string? Location, string? Address,
-    string? Email, string? TaxId, decimal RebateRatePct, decimal CreditLimit);
+    string? Email, string? TaxId, decimal RebatePerUnit, decimal CreditLimit);
 
 public sealed record InvoiceRowDto(int Id, string InvoiceNumber, string Customer, DateOnly InvoiceDate, string PaymentMethod, decimal TotalAmount,
     string Status, decimal? EstProfit);

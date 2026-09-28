@@ -13,7 +13,8 @@ namespace Inventory.Api.Controllers;
 public abstract class AppController(ICurrentUser current) : ControllerBase
 {
     protected CurrentUser Me => current.User ?? throw new UnauthorizedAccessException();
-    protected bool IsAdmin => User.IsInRole(RoleNames.Admin);
+    /// <summary>CEO or manager (sees cost and profit).</summary>
+    protected bool IsAdmin => User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.Manager);
 }
 
 [ApiController, Route("api/products")]
@@ -32,7 +33,7 @@ public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductServic
     public async Task<ActionResult<ProductDto>> ByBarcode(string code, CancellationToken ct) =>
         await q.ProductByBarcodeAsync(code, IsAdmin, ct) is { } p ? p : NotFound();
 
-    [HttpPost, Authorize(Policy = Policies.Staff)]   // clerks can add items in the desktop app
+    [HttpPost, Authorize(Policy = Policies.Admin)]   // managers and the CEO add products; clerks don't add records
     public async Task<IActionResult> Create(NewProductRequest req, CancellationToken ct)
     {
         var id = await svc.CreateAsync(req, Me, ct);
@@ -46,9 +47,33 @@ public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductServic
         return NoContent();
     }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) =>
         await DeleteAsync(id, ct);
+
+    /// <summary>The product's photo for the customer catalog. PNG or JPEG, up to 2 MB.</summary>
+    [HttpPut("{id:int}/image"), Authorize(Policy = Policies.Admin)]
+    [RequestSizeLimit(Inventory.Application.Company.CompanyProfileService.MaxImageBytes + 4096)]
+    public async Task<IActionResult> SetImage(int id, IFormFile file, CancellationToken ct)
+    {
+        if (file is null) throw new BusinessRuleException("Choose an image file.");
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        await svc.SetImageAsync(id, ms.ToArray(), Me, ct);
+        return NoContent();
+    }
+
+    [HttpGet("{id:int}/image"), Authorize(Policy = Policies.Staff)]
+    public async Task<IActionResult> Image(int id, CancellationToken ct)
+    {
+        var img = await svc.ImageAsync(id, ct);
+        if (img is null) return NotFound();
+        Response.Headers.CacheControl = "private, max-age=300";
+        return File(img.Data, img.ContentType);
+    }
+
+    [HttpDelete("{id:int}/image"), Authorize(Policy = Policies.Ceo)]
+    public async Task<IActionResult> RemoveImage(int id, CancellationToken ct) { await svc.RemoveImageAsync(id, Me, ct); return NoContent(); }
 
     private async Task<IActionResult> DeleteAsync(int id, CancellationToken ct)
     {
@@ -107,7 +132,7 @@ public class StockController(ICurrentUser cu, StockOperations ops, IClock clock)
     }
 
     /// <summary>"Delete" a production entry: reverses its stock and keeps the history row with quantity 0 (defect D6).</summary>
-    [HttpDelete("production/{movementId:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("production/{movementId:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> DeleteProduction(int movementId, CancellationToken ct)
     {
         await ops.CorrectProductionAsync(movementId, 0, clock.BusinessToday, Me, ct);

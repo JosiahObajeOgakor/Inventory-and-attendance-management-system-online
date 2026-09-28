@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { Auth } from '../../core/auth.service';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
@@ -28,7 +29,7 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
                 <button type="button" class="btn btn-sm" (click)="openLoans(e)">Loans</button>
                 <button type="button" class="btn btn-sm" (click)="openEdit(e)">Edit</button>
                 <button type="button" class="btn btn-sm" (click)="toggle(e)">{{ e.isActive ? 'Switch off' : 'Switch on' }}</button>
-                @if (!e.payrollMonths && !e.loans) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }
+                @if (auth.canDelete() && !e.payrollMonths && !e.loans) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }
               </td>
             </tr>
           }
@@ -65,7 +66,7 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
           @for (r of l.repayments; track $index) { <div class="rep"><span>{{ r.paidDate | day }} · {{ r.note ?? 'Repayment' }}</span><span class="mono">{{ r.amount | naira }}</span></div> }
           <footer>
             @if (!l.closed) { <button type="button" class="btn btn-sm" (click)="repay(l)">Record a repayment</button> }
-            @if (!l.repayments.length) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteLoan(l)">Delete loan</button> }
+            @if (auth.canDelete() && !l.repayments.length) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteLoan(l)">Delete loan</button> }
           </footer>
         </article>
       } @empty { <div class="empty"><strong>No loans</strong></div> }
@@ -79,6 +80,7 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
   `,
 })
 export class EmployeesTab implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api2);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);

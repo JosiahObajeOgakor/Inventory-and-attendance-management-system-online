@@ -197,11 +197,15 @@ public class RebateAndRankingTests
 {
     [Fact]
     public void Walk_in_customers_accrue_no_rebate() =>
-        Assert.Equal(0m, RebateCalculator.Accrue("Walk-in", 1075m, 75m, 1m));
+        Assert.Equal(0m, RebateCalculator.Accrue("Walk-in", 10, 100m));
 
     [Fact]
-    public void Rebate_is_on_net_sales() =>
-        Assert.Equal(10m, RebateCalculator.Accrue("Distributor", 1075m, 75m, 1m));
+    public void Rebate_is_a_naira_amount_per_unit() =>
+        Assert.Equal(1_250m, RebateCalculator.Accrue("Distributor", 25, 50m));
+
+    [Fact]
+    public void No_rebate_amount_means_no_rebate() =>
+        Assert.Equal(0m, RebateCalculator.Accrue("Retailer", 25, 0m));
 
     [Theory]
     [InlineData(800_000, "Gold")]

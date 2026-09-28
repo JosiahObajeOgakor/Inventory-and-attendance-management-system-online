@@ -29,7 +29,7 @@ public class QuotationsController(ICurrentUser cu, QuotationService svc) : AppCo
     [HttpPost("{id:int}/convert"), Authorize(Policy = Policies.Staff)]
     public async Task<IActionResult> Convert(int id, ConvertQuoteRequest req, CancellationToken ct) => Ok(await svc.ConvertAsync(id, req, Me, ct));
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteAsync(id, Me, ct); return NoContent(); }
 }
 
@@ -99,7 +99,7 @@ public class EmployeesController(ICurrentUser cu, PayrollService svc) : AppContr
     [HttpPut("{id:int}/active")]
     public async Task<IActionResult> SetActive(int id, ActiveRequest r, CancellationToken ct) { await svc.SetActiveAsync(id, r.Active, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}")]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteEmployeeAsync(id, Me, ct); return NoContent(); }
 
     [HttpGet("{id:int}/payroll")]
@@ -124,7 +124,7 @@ public class PayrollController(ICurrentUser cu, PayrollService svc) : AppControl
     [HttpPut("rows/{id:int}")]
     public async Task<IActionResult> Edit(int id, PayrollEditInput i, CancellationToken ct) { await svc.EditRowAsync(id, i, Me, ct); return NoContent(); }
 
-    [HttpDelete("rows/{id:int}")]
+    [HttpDelete("rows/{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteRowAsync(id, Me, ct); return NoContent(); }
 
     [HttpPost("rows/{id:int}/pay")]
@@ -136,7 +136,7 @@ public class PayrollController(ICurrentUser cu, PayrollService svc) : AppControl
     [HttpPost("loans/{loanId:int}/repay")]
     public async Task<IActionResult> Repay(int loanId, LoanRequest r, CancellationToken ct) { await svc.RepayLoanAsync(loanId, r.Amount, r.Note, Me, ct); return NoContent(); }
 
-    [HttpDelete("loans/{loanId:int}")]
+    [HttpDelete("loans/{loanId:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> DeleteLoan(int loanId, CancellationToken ct) { await svc.DeleteLoanAsync(loanId, Me, ct); return NoContent(); }
 }
 
@@ -176,7 +176,17 @@ public sealed record RateRequest(decimal Pct);
 public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppController(cu)
 {
     [HttpGet("categories")]
-    public string[] Categories() => ExpenseCategories.All;
+    public async Task<string[]> Categories(CancellationToken ct) => (await svc.CategoriesAsync(ct)).Select(c => c.Name).ToArray();
+
+    /// <summary>Built-in categories plus the ones added here (Custom = true can be removed by the CEO).</summary>
+    [HttpGet("categories/all")]
+    public Task<List<ExpenseCategoryDto>> AllCategories(CancellationToken ct) => svc.CategoriesAsync(ct);
+
+    [HttpPost("categories")]
+    public async Task<IActionResult> AddCategory(NameRequest r, CancellationToken ct) => Ok(new { name = await svc.AddCategoryAsync(r.Name, Me, ct) });
+
+    [HttpDelete("categories/{name}"), Authorize(Policy = Policies.Ceo)]
+    public async Task<IActionResult> DeleteCategory(string name, CancellationToken ct) { await svc.DeleteCategoryAsync(name, Me, ct); return NoContent(); }
 
     [HttpGet]
     public Task<ExpenseListDto> List([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] string? category, [FromQuery] PageRequest page, CancellationToken ct) => svc.ListAsync(from, to, category, page, ct);
@@ -187,7 +197,7 @@ public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppContro
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, ExpenseInput i, CancellationToken ct) { await svc.UpdateAsync(id, i, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}")]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteAsync(id, Me, ct); return NoContent(); }
 }
 
@@ -249,7 +259,7 @@ public class ExportsController(ICurrentUser cu, ExcelExporter x, IClock clock, I
         var t = to ?? clock.BusinessToday;
         var f = from ?? new DateOnly(t.Year, t.Month, 1);
         if (f > t) throw new BusinessRuleException("The start date is after the end date.");
-        if (t.DayNumber - f.DayNumber > 1830) throw new BusinessRuleException("Choose a period of five years or less.");
+        if (f < global::Inventory.Domain.BusinessDates.Earliest) f = global::Inventory.Domain.BusinessDates.Earliest;   // nothing is recorded before then; any longer period is fine
         return (f, t);
     }
 

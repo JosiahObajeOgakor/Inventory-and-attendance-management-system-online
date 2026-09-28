@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Fonts/*.ttf" />
+    <!-- The companies' own stamps (from Assets/), printed when no stamp has been uploaded on the Company page. -->
+    <EmbeddedResource Include="Documents/Stamps/*.png" LogicalName="Stamps.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

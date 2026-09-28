@@ -36,7 +36,7 @@
     <div class="rail-foot">
       <span class="eyebrow">Signed in as</span>
       <strong>{{ auth.me()?.fullName }}</strong>
-      <span class="role">{{ auth.isAdmin() ? 'Administrator' : 'Warehouse clerk' }}</span>
+      <span class="role">{{ auth.roleLabel() }}</span>
     </div>
   </aside>
   @if (navOpen()) { <button type="button" class="scrim" (click)="navOpen.set(false)" aria-label="Close menu"></button> }

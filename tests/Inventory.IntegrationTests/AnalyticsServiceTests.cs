@@ -29,7 +29,7 @@ public class AnalyticsServiceTests(MySqlFixture mysql)
             var req = Sale(seed, 10, vat: 0);
             req.SaleDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-7 * w + 1);
             req.Lines.Add(new SaleLineDto { ProductId = treats, Quantity = 5, UnitPrice = 1200 });
-            await SalesFor(s).SaveAsync(req, Clerk, null);
+            await SalesFor(s).SaveAsync(req, Wire.Admin, null);   // back-dated sales are entered by a manager or the CEO
         }
         return (cs, seed, treats);
     }

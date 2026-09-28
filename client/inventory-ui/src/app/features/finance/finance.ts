@@ -5,6 +5,7 @@ import { Icon } from '../../shared/icon';
 import { PagedList } from '../../shared/paged-list';
 import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
 
+const EARLIEST = new Date(2020, 0, 1);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 @Component({
@@ -84,7 +85,9 @@ export class FinancePage implements OnInit {
 
   protected readonly months = (() => {
     const out: { value: string; label: string }[] = []; const now = new Date();
-    for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ value: `${d.getFullYear()}-${d.getMonth() + 1}`, label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }); }
+    // Every month from now back to January 2020, newest first.
+    for (let d = new Date(now.getFullYear(), now.getMonth(), 1); d >= EARLIEST; d = new Date(d.getFullYear(), d.getMonth() - 1, 1))
+      out.push({ value: `${d.getFullYear()}-${d.getMonth() + 1}`, label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` });
     return out;
   })();
   protected readonly selectedMonth = signal(this.months[0].value);

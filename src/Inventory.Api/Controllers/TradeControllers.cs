@@ -68,11 +68,11 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     public Task<InvoiceEditResult> Edit(int id, InvoiceEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
 
     /// <summary>What deleting this sale would do (stock back, refund due, credit restored) — shown before the admin confirms. Changes nothing.</summary>
-    [HttpGet("{id:int}/delete-preview"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("{id:int}/delete-preview"), Authorize(Policy = Policies.Ceo)]
     public async Task<DeletePreviewDto> DeletePreview(int id, CancellationToken ct) => DeletePreviewDto.From(await deletes.PreviewAsync(id, ct));
 
     /// <summary>Deletes the sale: stock back, money reversed (refund / credit restored / debt cleared), record removed, copy kept in the activity log. Admin only.</summary>
-    [HttpPost("{id:int}/delete"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("{id:int}/delete"), Authorize(Policy = Policies.Ceo)]
     public async Task<DeletePreviewDto> Delete(int id, VoidRequest r, CancellationToken ct) => DeletePreviewDto.From(await deletes.DeleteAsync(id, r.Reason, Me, ct));
 
     /// <summary>Send a unique <c>Idempotency-Key</c> header per submit: a retry or double click returns the same invoice.</summary>
@@ -86,7 +86,7 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     }
 
     /// <summary>Replaces "Delete invoice": reverses stock, balance and rebate, keeps the record (defect D1). Admin only.</summary>
-    [HttpPost("{id:int}/void"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("{id:int}/void"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Void(int id, VoidRequest r, CancellationToken ct)
     {
         await voids.VoidAsync(id, r.Reason, Me, ct);
@@ -104,14 +104,14 @@ public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     [HttpGet("lookup"), Authorize(Policy = Policies.Staff)]
     public Task<List<CustomerLookupDto>> Lookup([FromQuery] string? search, CancellationToken ct) => q.LookupAsync(search, ct);
 
-    /// <summary>Clerks can add a customer while making a sale (as in the desktop app) — decision D10 is open.</summary>
-    [HttpPost, Authorize(Policy = Policies.Staff)]
+    /// <summary>A manager or the CEO adds customers; clerks pick from the list (clerks don't add records).</summary>
+    [HttpPost, Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Create(CustomerInput input, CancellationToken ct) => Ok(new { id = await svc.CreateCustomerAsync(input, Me, ct) });
 
     [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Update(int id, CustomerInput input, CancellationToken ct) { await svc.UpdateCustomerAsync(id, input, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteCustomerAsync(id, Me, ct); return NoContent(); }
 
     [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
@@ -131,8 +131,15 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Update(int id, SupplierInput input, CancellationToken ct) { await svc.UpdateSupplierAsync(id, input, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteSupplierAsync(id, Me, ct); return NoContent(); }
+
+    /// <summary>The goods we buy from this supplier (with usual costs) — the new-purchase form picks from this list.</summary>
+    [HttpGet("{id:int}/items"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierItemDto>> Items(int id, CancellationToken ct) => svc.SupplierItemsAsync(id, ct);
+
+    [HttpPut("{id:int}/items"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> SetItems(int id, List<SupplierItemInput> items, CancellationToken ct) { await svc.SetSupplierItemsAsync(id, items ?? [], Me, ct); return NoContent(); }
 }
 
 [ApiController, Route("api/purchases")]

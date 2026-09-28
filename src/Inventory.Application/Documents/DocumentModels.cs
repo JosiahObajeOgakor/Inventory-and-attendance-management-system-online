@@ -30,9 +30,11 @@ public sealed record WaybillDoc(
     string FromWarehouse, string IssuedBy, string DriverName, string DriverPhone, string VehiclePlate, string Notes,
     IReadOnlyList<DocLine> Lines, DateTime GeneratedAt);
 
-public sealed record PriceListLine(string Category, string Product, string Sku, string Unit, decimal Price, int InStock);
+public sealed record PriceListLine(string Category, string Product, string Sku, string Unit, decimal Price, int InStock, byte[]? Image = null);
 
-public sealed record PriceListDoc(Branding Brand, string Tier, string? CustomerName, string Reference, DateOnly Date, IReadOnlyList<PriceListLine> Lines, DateTime GeneratedAt);
+/// <summary>A price list for one tier; <c>Catalog</c> = a picture catalog (a card per product with its photo and price) instead of the plain table.</summary>
+public sealed record PriceListDoc(Branding Brand, string Tier, string? CustomerName, string Reference, DateOnly Date, IReadOnlyList<PriceListLine> Lines, DateTime GeneratedAt,
+    bool Catalog = false);
 
 /// <summary>Turns a document model into a PDF. Implemented in Infrastructure so the Application layer has no PDF dependency.</summary>
 public interface IDocumentRenderer
@@ -41,6 +43,8 @@ public interface IDocumentRenderer
     byte[] Quotation(QuotationDoc d);
     byte[] Waybill(WaybillDoc d);
     byte[] PriceList(PriceListDoc d);
+    /// <summary>The same price list / catalog as ONE tall PNG image — easy to send on WhatsApp.</summary>
+    byte[] PriceListPng(PriceListDoc d);
     /// <summary>A Code 128 label the way the desktop app printed shelf labels: name, SKU, price and a scannable barcode.</summary>
     byte[] ShelfLabel(Branding brand, string productName, string sku, string barcode, decimal price);
 }

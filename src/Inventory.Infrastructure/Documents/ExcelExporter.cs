@@ -93,7 +93,7 @@ public sealed class ExcelExporter(IBusinessDbContext db, ICompanyContext company
         {
             ws.Cell(r, 1).Value = Safe(c.Name); ws.Cell(r, 2).Value = c.CustomerType; ws.Cell(r, 3).Value = Safe(c.ContactName); ws.Cell(r, 4).Value = Safe(c.Phone);
             ws.Cell(r, 5).Value = Safe(c.Email); ws.Cell(r, 6).Value = Safe(c.Location); ws.Cell(r, 7).Value = Safe(c.Address); ws.Cell(r, 8).Value = Safe(c.TaxId);
-            ws.Cell(r, 9).Value = c.RebateRatePct; ws.Cell(r, 10).Value = c.CreditLimit; ws.Cell(r, 11).Value = c.Balance;
+            ws.Cell(r, 9).Value = c.RebatePerUnit; ws.Cell(r, 10).Value = c.CreditLimit; ws.Cell(r, 11).Value = c.Balance;
             r++;
         }
         ws.Column(10).Style.NumberFormat.Format = Money; ws.Column(11).Style.NumberFormat.Format = Money;

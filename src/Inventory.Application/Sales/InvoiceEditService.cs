@@ -177,12 +177,13 @@ public sealed class InvoiceEditService(IBusinessDbContext db, TransactionRunner 
         if (rebates.All(r => r.Status == "Accrued"))
         {
             db.RebateEntries.RemoveRange(rebates);
-            var rebate = RebateCalculator.Accrue(customer.CustomerType, totals.Total, totals.VatAmount, customer.RebateRatePct);
+            var units = req.Lines.Sum(l => l.Quantity);
+            var rebate = RebateCalculator.Accrue(customer.CustomerType, units, customer.RebatePerUnit);
             if (rebate > 0)
                 db.RebateEntries.Add(new RebateEntry
                 {
                     CustomerId = customer.Id, InvoiceId = invoice.Id, EntryDate = invoice.InvoiceDate, Amount = rebate, Status = "Accrued",
-                    Note = $"{customer.RebateRatePct}% of ₦{totals.Total - totals.VatAmount:N2} — {invoice.InvoiceNumber} (edited)",
+                    Note = $"₦{customer.RebatePerUnit:N2} × {units:N0} unit(s) — {invoice.InvoiceNumber} (edited)",
                 });
         }
 

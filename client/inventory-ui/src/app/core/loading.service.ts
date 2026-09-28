@@ -1,5 +1,5 @@
 import { HttpContextToken, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal, untracked } from '@angular/core';
 import { finalize } from 'rxjs';
 
 /** Mark one request as background: `this.http.get(url, { context: new HttpContext().set(SILENT, true) })`. */
@@ -41,14 +41,19 @@ export class Loading {
 
   get isQuiet(): boolean { return this.quietDepth > 0; }
 
-  begin(): void {
+  // begin/end run inside whatever started the request — possibly an effect or a computed — so their signal reads are untracked:
+  // otherwise that caller would come to depend on the spinner and re-run every time it shows or hides.
+  begin(): void { untracked(() => this.beginNow()); }
+  end(): void { untracked(() => this.endNow()); }
+
+  private beginNow(): void {
     this.pending.update(n => n + 1);
     if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
     if (!this.shown() && !this.showTimer)
       this.showTimer = setTimeout(() => { this.showTimer = null; if (this.pending() > 0) { this.shown.set(true); this.shownAt = Date.now(); } }, Loading.SHOW_AFTER_MS);
   }
 
-  end(): void {
+  private endNow(): void {
     this.pending.update(n => Math.max(0, n - 1));
     if (this.pending() > 0) return;
     if (this.showTimer) { clearTimeout(this.showTimer); this.showTimer = null; }

@@ -28,7 +28,7 @@ public class ArchiveTests(MySqlFixture mysql) : IDisposable
         {
             await using var s = NewContext(cs);
             var r = Sale(seed, 1, vat: 0, paid: paid); r.SaleDate = date;
-            return (await SalesFor(s).SaveAsync(r, Clerk, null)).InvoiceId;
+            return (await SalesFor(s).SaveAsync(r, Wire.Admin, null)).InvoiceId;   // back-dated sales are entered by a manager or the CEO
         }
         var settled = await Sell(old, 11500); var unpaid = await Sell(old, 0); var recent = await Sell(null, 11500);
         await using var db = NewContext(cs);

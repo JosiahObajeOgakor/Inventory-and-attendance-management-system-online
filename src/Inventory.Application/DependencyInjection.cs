@@ -54,6 +54,7 @@ public static class DependencyInjection
         s.AddScoped<Ai.AssistantService>();
         s.AddScoped<Ai.InsightService>();
         s.AddScoped<Email.DocumentEmailService>();
+        s.AddScoped<Documents.CatalogService>();
         s.AddScoped<Company.DeliveryZoneService>();
         s.AddScoped<Payments.PaymentGateways>();
         s.AddScoped<Payments.PaymentLinkService>();

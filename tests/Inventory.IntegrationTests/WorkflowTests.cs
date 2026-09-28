@@ -173,26 +173,27 @@ public class StockOperationTests(MySqlFixture mysql)
     }
 
     [Fact]
-    public async Task Deleting_a_product_never_removes_stock_silently()
+    public async Task Deleting_a_product_takes_its_stock_with_it_and_says_so_in_the_log()
     {
         var cs = await mysql.NewSchemaAsync();
         var seed = await SeedAsync(cs, stock: 4);
-        await using var db = NewContext(cs);
-        await Assert.ThrowsAsync<BusinessRuleException>(() => new Services(db).Products.DeleteAsync(seed.ProductId, Clerk));
+        await using (var db = NewContext(cs)) Assert.True(await new Services(db).Products.DeleteAsync(seed.ProductId, Clerk));
         await using var check = NewContext(cs);
-        Assert.Equal(4, await check.StockBatches.SumAsync(b => b.QuantityOnHand));   // the desktop app deleted these first
+        Assert.Empty(await check.Products.ToListAsync());
+        Assert.Empty(await check.StockBatches.ToListAsync());
+        Assert.Contains("4 unit(s) in stock removed", (await check.AuditLogs.SingleAsync(a => a.Action == "PRODUCT_DELETED")).Detail);
     }
 
     [Fact]
-    public async Task A_product_with_history_and_no_stock_is_deactivated_not_deleted()
+    public async Task A_product_on_a_sale_cannot_be_deleted()
     {
         var cs = await mysql.NewSchemaAsync();
         var seed = await SeedAsync(cs, stock: 1);
         await using (var a = NewContext(cs)) await new Services(a).Sales.SaveAsync(Sale(seed, 1), Clerk, null);
         await using var db = NewContext(cs);
-        Assert.False(await new Services(db).Products.DeleteAsync(seed.ProductId, Clerk));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => new Services(db).Products.DeleteAsync(seed.ProductId, Clerk));
         await using var check = NewContext(cs);
-        Assert.False((await check.Products.SingleAsync()).IsActive);
+        Assert.True((await check.Products.SingleAsync()).IsActive);   // the sale still prints its name
     }
 
     [Fact]

@@ -43,6 +43,9 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatLogMessage> ChatMessages => Set<ChatLogMessage>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
+    public DbSet<SupplierItem> SupplierItems => Set<SupplierItem>();
+    public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
@@ -161,6 +164,7 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.CustomerType).HasMaxLength(20).IsRequired();
             e.Property(x => x.TaxId).HasMaxLength(40);
             e.Property(x => x.RebateRatePct).HasPrecision(5, 2);
+            e.Property(x => x.RebatePerUnit).HasPrecision(12, 2);
             e.Property(x => x.CreditLimit).HasPrecision(14, 2);
             e.Property(x => x.Balance).HasPrecision(14, 2);
         });

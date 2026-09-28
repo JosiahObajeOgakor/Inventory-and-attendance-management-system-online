@@ -5,7 +5,7 @@ import { Auth } from '../../core/auth.service';
 import { BatchRow, MovementRow, Product, Warehouse } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
-import { Toasts } from '../../shared/feedback';
+import { Confirm, Toasts } from '../../shared/feedback';
 import { PagedList } from '../../shared/paged-list';
 import { DayPipe, Pager, Stamp, StampTimePipe } from '../../shared/ui';
 
@@ -49,7 +49,8 @@ type Dialog = 'production' | 'transfer' | 'adjust' | null;
                 <tr><td><span class="strong">{{ b.product }}</span><div class="muted mono sm">{{ b.sku }} · {{ b.category }}</div></td><td>{{ b.warehouse }}</td>
                   <td class="mono">{{ b.batchNumber }}</td><td>{{ b.expiryDate ? (b.expiryDate | day) : '—' }}</td><td class="num mono strong">{{ b.quantity }}</td>
                   <td><app-stamp [label]="b.status" /></td>
-                  @if (auth.isAdmin()) { <td class="actions"><button type="button" class="btn btn-sm" (click)="openAdjust(b)">Adjust</button></td> }</tr>
+                  @if (auth.isAdmin()) { <td class="actions"><button type="button" class="btn btn-sm" (click)="openAdjust(b)">Adjust</button>
+                    @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteItem(b)">Delete item</button> }</td> }</tr>
               }
             </tbody>
           </table></div>
@@ -78,9 +79,9 @@ type Dialog = 'production' | 'transfer' | 'adjust' | null;
         <div class="field span-2"><label for="pp">Product</label><select id="pp" class="input" formControlName="productId">@for (p of products(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }</select></div>
         <div class="field"><label for="pw">Into warehouse</label><select id="pw" class="input" formControlName="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div>
         <div class="field"><label for="pq">Quantity produced</label><input id="pq" class="input num" type="number" min="1" formControlName="quantity" /></div>
-        <div class="field"><label for="pd">Production date</label><input id="pd" class="input" type="date" formControlName="producedOn" /></div>
+        <div class="field"><label for="pd">Production date</label><input id="pd" class="input" type="date" min="2020-01-01" formControlName="producedOn" /></div>
         <div class="field"><label for="pb">Batch number</label><input id="pb" class="input" formControlName="batchNumber" /><span class="hint">Leave blank to name it after the date.</span></div>
-        <div class="field"><label for="pe">Best before</label><input id="pe" class="input" type="date" formControlName="expiryDate" /></div>
+        <div class="field"><label for="pe">Best before</label><input id="pe" class="input" type="date" min="2020-01-01" formControlName="expiryDate" /></div>
       </form>
       <ng-container modal-actions><button type="button" class="btn" (click)="close()">Cancel</button><button type="submit" form="prod" class="btn btn-primary" [disabled]="prodForm.invalid || busy()">Add to stock</button></ng-container>
     </app-modal>
@@ -113,6 +114,7 @@ export class StockPage implements OnInit {
   private readonly api = inject(Api);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
   protected readonly auth = inject(Auth);
 
   protected readonly tab = signal<Tab>('batches');
@@ -143,6 +145,16 @@ export class StockPage implements OnInit {
   protected current() { return this.tab() === 'batches' ? this.batches : this.moves; }
   protected setTab(t: Tab) { this.tab.set(t); void (t === 'batches' ? this.batches : this.moves).load(); }
   protected onlyLow(v: boolean) { this.low = v; this.batches.page.set(1); void this.batches.load(); }
+
+  /** Removes the product from the stock records for good (all its batches and history); refused while a sale, purchase or quotation lists it. */
+  protected async deleteItem(b: BatchRow) {
+    const ok = await this.confirm.ask({
+      title: `Delete ${b.product} permanently?`, danger: true, confirmLabel: 'Delete permanently',
+      message: 'The product, all of its batches in every warehouse and its stock history are deleted. This can’t be undone. A product that is on a sale, purchase or quotation can’t be deleted until those are.',
+    });
+    if (ok === null) return;
+    try { await this.api.deleteProduct(b.productId); this.toasts.ok(`${b.product} deleted.`); await this.batches.load(); } catch (e) { this.toasts.error(messageOf(e)); }
+  }
 
   protected reason(m: MovementRow): string {
     if (m.note) return m.note;

@@ -85,6 +85,19 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(o =>
     .AddPasswordValidator<DesktopPasswordPolicy>()
     .AddDefaultTokenProviders();   // needed for admin password resets
 builder.Services.AddScoped<IPasswordHasher<AppUser>, LegacyAwarePasswordHasher>();
+// A role the CEO grants or revokes (e.g. manager delegated to a clerk and taken back) reaches that person's session within a minute.
+builder.Services.Configure<SecurityStampValidatorOptions>(o =>
+{
+    o.ValidationInterval = TimeSpan.FromMinutes(1);
+    // The refresh rebuilds the principal from the user store (fresh roles); carry over the claims we add at sign-in.
+    o.OnRefreshingPrincipal = ctx =>
+    {
+        var carried = ctx.CurrentPrincipal?.Claims.Where(c => c.Type is AppClaims.Company or AppClaims.FullName or MustChangePasswordMiddleware.ClaimType).ToList() ?? [];
+        if (ctx.NewPrincipal?.Identity is System.Security.Claims.ClaimsIdentity id)
+            foreach (var c in carried) if (!id.HasClaim(c.Type, c.Value)) id.AddClaim(new System.Security.Claims.Claim(c.Type, c.Value));
+        return Task.CompletedTask;
+    };
+});
 builder.Services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "inventory.auth";
@@ -101,8 +114,9 @@ builder.Services.ConfigureApplicationCookie(o =>
 // ---- authorization: deny by default, explicit policies per endpoint ----
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
-    .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin))
-    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Clerk));
+    .AddPolicy(Policies.Ceo, p => p.RequireRole(RoleNames.Admin))
+    .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager))
+    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Clerk));
 
 builder.Services.AddRateLimiter(o =>
 {

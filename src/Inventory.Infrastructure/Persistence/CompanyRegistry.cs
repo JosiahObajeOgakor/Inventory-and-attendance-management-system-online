@@ -50,7 +50,7 @@ public sealed class DatabaseProvisioner(CompanyRegistry registry, IServiceProvid
             var store = scope.ServiceProvider.GetRequiredService<IdentityStore>();
             await store.Database.MigrateAsync(ct);
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
-            foreach (var r in new[] { RoleNames.Admin, RoleNames.Clerk })
+            foreach (var r in RoleNames.All)
                 if (!await roles.RoleExistsAsync(r)) await roles.CreateAsync(new IdentityRole<int>(r));
         }
         foreach (var c in registry.All)

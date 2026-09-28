@@ -7,7 +7,10 @@ namespace Inventory.Api.Infrastructure;
 
 public static class Policies
 {
+    /// <summary>CEO or manager: management screens, adding and editing.</summary>
     public const string Admin = "Admin";
+    /// <summary>The CEO only: deleting, clearing history, people and roles.</summary>
+    public const string Ceo = "Ceo";
     public const string Staff = "Staff";
     public const string AuthRateLimit = "auth";
     public const string WhatsAppRateLimit = "whatsapp";

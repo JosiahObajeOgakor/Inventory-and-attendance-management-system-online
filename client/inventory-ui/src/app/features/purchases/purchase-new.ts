@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -6,6 +6,7 @@ import { map } from 'rxjs';
 import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { AdviceLine, SuggestedLine } from '../../core/models-dash';
+import { SupplierItem } from '../../core/models-more';
 import { Product, PurchaseDetail, PurchaseRequest, Supplier, Warehouse } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Toasts } from '../../shared/feedback';
@@ -38,9 +39,27 @@ const VAT = 7.5;
               @if (supplier(); as s) { @if (s.balance > 0 && !edit) { <span class="hint owes">We already owe them {{ s.balance | naira }}</span> } @if (s.balance < 0) { <span class="hint credit">We have {{ -s.balance | naira }} credit with them</span> } }</div>
             @if (!edit) {
               <div class="field"><label>&nbsp;</label><button type="button" class="btn" [disabled]="!supplier() || suggesting()" (click)="suggest()"><app-icon name="spark" [size]="16" /> {{ suggesting() ? 'Working it out…' : 'Suggest what to order' }}</button></div>
-              <div class="field"><label for="od">Order date</label><input id="od" class="input" type="date" formControlName="orderDate" /></div>
+              <div class="field"><label for="od">Order date</label><input id="od" class="input" type="date" min="2020-01-01" formControlName="orderDate" /></div>
             }
           </section>
+
+          @if (!edit && supplier()) {
+            <section class="card">
+              <div class="toolbar"><strong class="grow">Items from {{ supplier()!.name }}</strong>
+                @if (supplierItems().length) { <button type="button" class="btn btn-sm btn-primary" [disabled]="!anyQty()" (click)="addFromList()">Add to order</button> }
+                <a class="btn btn-sm" routerLink="/suppliers">Edit list</a></div>
+              @if (supplierItems().length) {
+                <div class="table-wrap"><table class="table">
+                  <thead><tr><th>Product</th><th>Unit</th><th class="num">Usual cost</th><th class="num">Quantity</th></tr></thead>
+                  <tbody>@for (it of supplierItems(); track it.productId) {
+                    <tr><td><span class="strong">{{ it.product }}</span><div class="muted mono sm">{{ it.sku }}</div></td><td>{{ it.unit }}</td>
+                      <td class="num mono">{{ it.unitCost | naira }}</td>
+                      <td class="num"><input class="input num w-qty" type="number" min="0" step="1" inputmode="numeric" [value]="listQty()[it.productId] || ''" [attr.aria-label]="'Quantity of ' + it.product" (input)="setListQty(it.productId, $any($event.target).value)" (keydown.enter)="$event.preventDefault(); addFromList()" /></td></tr>
+                  }</tbody>
+                </table></div>
+              } @else { <div class="empty"><strong>No item list for this supplier yet</strong>Add the goods you buy from them on the Suppliers page (Items), or search below.</div> }
+            </section>
+          }
 
           @if (suggested().length) {
             <section class="card">
@@ -193,6 +212,19 @@ export class PurchaseNew implements OnInit {
     }, 700);
   });
   protected readonly error = signal('');
+  protected readonly supplierItems = signal<SupplierItem[]>([]);
+  protected readonly listQty = signal<Record<number, number>>({});
+  protected readonly anyQty = computed(() => Object.values(this.listQty()).some(q => q > 0));
+  // Choosing a supplier loads the goods we usually buy from them.
+  // Keyed on the id alone, so typing elsewhere on the form never reloads (or clears) the list.
+  private readonly supplierKey = computed(() => this.supplier()?.id ?? 0);
+  private readonly itemsFx = effect(() => {
+    const id = this.supplierKey(); if (this.edit) return;
+    untracked(() => {
+      this.supplierItems.set([]); this.listQty.set({});
+      if (id) void this.api2.supplierItems(id).then(xs => { if (this.supplierKey() === id) this.supplierItems.set(xs.filter(x => x.isActive)); }, () => { /* the search still works */ });
+    });
+  });
 
   protected readonly form = this.fb.nonNullable.group({
     supplierId: [0, Validators.min(1)], orderDate: [''], vat: [false], receiveNow: [false], warehouseId: [0], paidNow: [0, Validators.min(0)], paymentMethod: ['Cash'],
@@ -277,6 +309,24 @@ export class PurchaseNew implements OnInit {
     this.lines.update(ls => ls.some(l => l.productId === p.id)
       ? ls.map(l => (l.productId === p.id ? { ...l, qty: l.qty + 1 } : l))
       : [...ls, { productId: p.id, name: p.name, sku: p.sku, qty: 1, cost: p.costPrice ?? 0 }]);
+  }
+  protected setListQty(productId: number, v: string) { const q = this.whole(v); this.listQty.update(m => ({ ...m, [productId]: q })); }
+  /** Every listed item with a quantity goes onto the order at the supplier's usual cost (an item already on it gets the quantity added). */
+  protected addFromList() {
+    const qty = this.listQty(); const picked = this.supplierItems().filter(it => (qty[it.productId] ?? 0) > 0);
+    if (!picked.length) return;
+    this.lines.update(ls => {
+      let out = [...ls];
+      for (const it of picked) {
+        const q = qty[it.productId];
+        out = out.some(l => l.productId === it.productId)
+          ? out.map(l => (l.productId === it.productId ? { ...l, qty: l.qty + q } : l))
+          : [...out, { productId: it.productId, name: it.product, sku: it.sku, qty: q, cost: it.unitCost }];
+      }
+      return out;
+    });
+    this.listQty.set({});
+    this.toasts.ok(`${picked.length} item(s) added to the order.`);
   }
   protected patch(i: number, p: Partial<Line>) { this.lines.update(ls => ls.map((l, j) => (j === i ? { ...l, ...p } : l))); }
   protected remove(i: number) { this.lines.update(ls => ls.filter((_, j) => j !== i)); }

@@ -19,6 +19,7 @@ public partial class BusinessDbContext
             e.Property(x => x.TaxId).HasMaxLength(60).IsRequired();
             e.Property(x => x.DefaultVatRate).HasPrecision(5, 2);
             e.Property(x => x.DefaultRebateRatePct).HasPrecision(5, 2);
+            e.Property(x => x.DefaultRebatePerUnit).HasPrecision(12, 2);
             e.HasMany(x => x.Banks).WithOne().HasForeignKey(x => x.CompanyProfileId).OnDelete(DeleteBehavior.Cascade);
         });
         b.Entity<CompanyBank>(e =>
@@ -224,6 +225,33 @@ public partial class BusinessDbContext
             e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();   // a redelivered webhook can't be stored twice
             e.HasIndex(x => new { x.Status, x.NextAttemptAt });            // the worker's "what's due" query
             e.HasIndex(x => new { x.Sender, x.Status });                   // one customer's messages stay in order
+        });
+
+        b.Entity<SupplierItem>(e =>
+        {
+            e.ToTable("supplier_items");
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.HasIndex(x => new { x.SupplierId, x.ProductId }).IsUnique();
+            e.HasOne<Supplier>().WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ProductImage>(e =>
+        {
+            e.ToTable("product_images");
+            e.HasKey(x => x.ProductId);
+            e.Property(x => x.ProductId).ValueGeneratedNever();
+            e.Property(x => x.ContentType).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Data).HasColumnType("mediumblob").IsRequired();
+            e.Property(x => x.UpdatedAt).HasPrecision(6);
+            e.HasOne<Product>().WithOne().HasForeignKey<ProductImage>(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ExpenseCategory>(e =>
+        {
+            e.ToTable("expense_categories");
+            e.Property(x => x.Name).HasMaxLength(40).IsRequired();
+            e.HasIndex(x => x.Name).IsUnique();
         });
     }
 }

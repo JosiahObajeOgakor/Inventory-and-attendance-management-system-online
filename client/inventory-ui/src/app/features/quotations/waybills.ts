@@ -67,7 +67,7 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
           <div class="field"><label for="wd">Driver’s name</label><input id="wd" class="input" formControlName="driverName" /></div>
           <div class="field"><label for="wp">Driver’s phone</label><input id="wp" class="input" inputmode="tel" formControlName="driverPhone" /></div>
           <div class="field"><label for="wv">Vehicle plate</label><input id="wv" class="input" formControlName="vehiclePlate" /></div>
-          <div class="field"><label for="wi">Issue date</label><input id="wi" class="input" type="date" formControlName="issueDate" /></div>
+          <div class="field"><label for="wi">Issue date</label><input id="wi" class="input" type="date" min="2020-01-01" formControlName="issueDate" /></div>
           <div class="field span-2"><label for="wa">Delivery address</label><input id="wa" class="input" formControlName="destinationAddress" /></div>
           <div class="field span-2"><label for="wn">Notes</label><input id="wn" class="input" formControlName="notes" /></div>
         </form>

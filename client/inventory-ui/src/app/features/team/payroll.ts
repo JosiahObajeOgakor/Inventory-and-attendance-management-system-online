@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Auth } from '../../core/auth.service';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
@@ -36,7 +37,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
                 @if (!r.paid) {
                   <button type="button" class="btn btn-sm" (click)="openEdit(r)">Edit</button>
                   <button type="button" class="btn btn-sm btn-primary" (click)="pay(r)">Pay</button>
-                  <button type="button" class="btn btn-sm btn-danger" (click)="remove(r)">Remove</button>
+                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(r)">Remove</button> }
                 }
               </td>
             </tr>
@@ -66,6 +67,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
   styles: `.inline { display: flex; align-items: center; gap: .4rem; } .inline label { margin: 0; } .year { width: 6rem; } .sm { font-size: .75rem; } .actions { white-space: nowrap; } tfoot th { border-top: 2px solid var(--ink); }`,
 })
 export class PayrollTab implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api2);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);

@@ -26,7 +26,7 @@ public sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.CustomerType).Must(t => CustomerTypes.All.Contains(t)).WithMessage("Unknown customer type.");
         RuleFor(x => x.Email).MaximumLength(100).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email));
-        RuleFor(x => x.RebateRatePct).InclusiveBetween(0, 100);
+        RuleFor(x => x.RebatePerUnit).InclusiveBetween(0, 1_000_000).WithMessage("Enter a rebate amount between ₦0 and ₦1,000,000 per unit.");
         RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Phone).MaximumLength(30);
     }
@@ -73,6 +73,36 @@ public sealed class PartnerService(IBusinessDbContext db, IClock clock)
         await db.SaveChangesAsync(ct);
     }
 
+    // ---- the goods each supplier sells us ----
+    public async Task<List<SupplierItemDto>> SupplierItemsAsync(int supplierId, CancellationToken ct)
+    {
+        if (!await db.Suppliers.AnyAsync(s => s.Id == supplierId, ct)) throw new NotFoundException("Supplier");
+        return await (from si in db.SupplierItems.AsNoTracking().Where(x => x.SupplierId == supplierId)
+                      join p in db.Products.AsNoTracking() on si.ProductId equals p.Id
+                      orderby p.Name
+                      select new SupplierItemDto(si.Id, p.Id, p.Name, p.Sku, p.Unit, si.UnitCost > 0 ? si.UnitCost : p.CostPrice, p.IsActive)).ToListAsync(ct);
+    }
+
+    /// <summary>Replaces the supplier's list with these products (and usual costs). Products not listed are dropped from the list; nothing else changes.</summary>
+    public async Task SetSupplierItemsAsync(int supplierId, IReadOnlyList<SupplierItemInput> items, CurrentUser user, CancellationToken ct)
+    {
+        var s = await db.Suppliers.SingleOrDefaultAsync(x => x.Id == supplierId, ct) ?? throw new NotFoundException("Supplier");
+        if (items.Any(i => i.UnitCost < 0)) throw new BusinessRuleException("A cost can't be negative.");
+        var wanted = items.GroupBy(i => i.ProductId).ToDictionary(g => g.Key, g => g.Last().UnitCost);
+        var known = await db.Products.Where(p => wanted.Keys.Contains(p.Id)).Select(p => p.Id).ToListAsync(ct);
+        if (known.Count != wanted.Count) throw new NotFoundException("Product");
+        var existing = await db.SupplierItems.Where(x => x.SupplierId == supplierId).ToListAsync(ct);
+        db.SupplierItems.RemoveRange(existing.Where(e => !wanted.ContainsKey(e.ProductId)));
+        foreach (var (productId, cost) in wanted)
+        {
+            var row = existing.FirstOrDefault(e => e.ProductId == productId);
+            if (row is null) db.SupplierItems.Add(new SupplierItem { SupplierId = supplierId, ProductId = productId, UnitCost = cost });
+            else row.UnitCost = cost;
+        }
+        db.AuditLogs.Add(Audit(user, "SUPPLIER_ITEMS_SET", "Supplier", supplierId, $"{s.Name}: {wanted.Count} item(s)"));
+        await db.SaveChangesAsync(ct);
+    }
+
     // ---- customers ----
     public async Task<int> CreateCustomerAsync(CustomerInput i, CurrentUser user, CancellationToken ct)
     {
@@ -109,7 +139,7 @@ public sealed class PartnerService(IBusinessDbContext db, IClock clock)
     {
         c.Name = i.Name.Trim(); c.CustomerType = i.CustomerType; c.ContactName = N(i.ContactName); c.Phone = N(i.Phone);
         c.Location = N(i.Location); c.Address = N(i.Address); c.Email = N(i.Email); c.TaxId = N(i.TaxId);
-        c.RebateRatePct = i.RebateRatePct; c.CreditLimit = i.CreditLimit;
+        c.RebatePerUnit = i.RebatePerUnit; c.CreditLimit = i.CreditLimit;
     }
 
     // ---- reference data ----

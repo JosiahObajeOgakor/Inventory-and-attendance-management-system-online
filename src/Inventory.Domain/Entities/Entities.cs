@@ -132,7 +132,10 @@ public class Customer
     public string? Email { get; set; }
     public string CustomerType { get; set; } = CustomerTypes.Retailer;
     public string? TaxId { get; set; }
+    /// <summary>Legacy: rebates used to be a percentage of each sale. Kept for old data; <see cref="RebatePerUnit"/> is what accrues now.</summary>
     public decimal RebateRatePct { get; set; } = 1.0m;
+    /// <summary>Rebate in naira earned per unit (bag) bought, on every non-walk-in sale. 0 = no rebate.</summary>
+    public decimal RebatePerUnit { get; set; }
     public decimal CreditLimit { get; set; }
     /// <summary>What this customer owes (maintained running total).</summary>
     public decimal Balance { get; set; }

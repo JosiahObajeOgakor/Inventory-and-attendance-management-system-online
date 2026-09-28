@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, authGuard } from './core/http';
+import { adminGuard, authGuard, ceoGuard } from './core/http';
 import { Shell } from './layout/shell';
 
 // Every feature is lazy-loaded. The guards only shape the UI: the API enforces the same roles on every endpoint.
@@ -27,7 +27,7 @@ export const routes: Routes = [
       { path: 'purchases/:id', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-detail').then(m => m.PurchaseDetail), title: 'Purchase' },
       { path: 'purchases/:id/edit', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-new').then(m => m.PurchaseNew), data: { mode: 'edit' }, title: 'Edit purchase' },
       { path: 'finance', canActivate: [adminGuard], loadComponent: () => import('./features/finance/finance').then(m => m.FinancePage), title: 'Finance' },
-      { path: 'users', canActivate: [adminGuard], loadComponent: () => import('./features/users/users').then(m => m.UsersPage), title: 'People & access' },
+      { path: 'users', canActivate: [ceoGuard], loadComponent: () => import('./features/users/users').then(m => m.UsersPage), title: 'People & access' },
       { path: 'quotations', loadComponent: () => import('./features/quotations/quotations').then(m => m.QuotationsPage), title: 'Quotations' },
       { path: 'quotations/new', loadComponent: () => import('./features/sales/sale-new').then(m => m.SaleNew), data: { mode: 'quote' }, title: 'New quotation' },
       { path: 'waybills', loadComponent: () => import('./features/quotations/waybills').then(m => m.WaybillsPage), title: 'Waybills' },
@@ -38,7 +38,7 @@ export const routes: Routes = [
       { path: 'rebates', canActivate: [adminGuard], loadComponent: () => import('./features/money/rebates').then(m => m.RebatesPage), title: 'Rebates' },
       { path: 'company', canActivate: [adminGuard], loadComponent: () => import('./features/company/company').then(m => m.CompanyPage), title: 'Company & documents' },
       { path: 'analytics', canActivate: [adminGuard], loadComponent: () => import('./features/analytics/analytics').then(m => m.AnalyticsPage), title: 'Analytics' },
-      { path: 'storage', canActivate: [adminGuard], loadComponent: () => import('./features/system/storage').then(m => m.StoragePage), title: 'Database storage' },
+      { path: 'storage', canActivate: [ceoGuard], loadComponent: () => import('./features/system/storage').then(m => m.StoragePage), title: 'Database storage' },
       { path: 'appearance', loadComponent: () => import('./features/system/appearance').then(m => m.AppearancePage), title: 'Appearance' },
       { path: 'activity', canActivate: [adminGuard], loadComponent: () => import('./features/users/activity').then(m => m.ActivityPage), title: 'Activity log' },
     ],

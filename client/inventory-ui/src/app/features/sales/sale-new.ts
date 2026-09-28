@@ -60,7 +60,7 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
                   <li><button type="button" (click)="chooseCustomer(c)"><span>{{ c.name }}</span><span class="muted">{{ c.customerType }}{{ c.phone ? ' · ' + c.phone : '' }}</span></button></li>
                 }
               </ul>
-              <button type="button" class="btn btn-sm" (click)="newCustomerOpen.set(true)"><app-icon name="plus" [size]="16" /> New customer</button>
+              @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="newCustomerOpen.set(true)"><app-icon name="plus" [size]="16" /> New customer</button> }
             }
           </section>
 
@@ -183,6 +183,10 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
 
           @if (!quote && !edit) {
           <div class="form-grid one">
+            @if (auth.isAdmin()) {
+              <div class="field"><label for="sd">Sale date</label><input id="sd" class="input" type="date" min="2020-01-01" [max]="today" formControlName="saleDate" />
+                <span class="hint">Leave as today, or pick an earlier date (back to 2020) to record a past sale.</span></div>
+            }
             <div class="field"><label for="pm">Paid by</label>
               <select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option><option>Credit</option></select></div>
             <div class="field"><label for="paid">Amount received now</label>
@@ -191,7 +195,7 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
                         [attr.title]="carriesBalance() ? 'Fill in everything owed, including the previous balance' : 'Fill in the full amount'">{{ carriesBalance() && (preview()?.previousBalance ?? 0) > 0 ? 'Pay all' : 'Full' }}</button></div>
               @if ((preview()?.previousBalance ?? 0) > 0) { <span class="hint">Pays this sale first, then the previous balance, oldest invoice first.</span> }</div>
             @if ((preview()?.outstanding ?? 0) > 0) {
-              <div class="field"><label for="due">Payment due by</label><input id="due" class="input" type="date" formControlName="dueDate" /></div>
+              <div class="field"><label for="due">Payment due by</label><input id="due" class="input" type="date" min="2020-01-01" formControlName="dueDate" /></div>
             }
           </div>
           }
@@ -319,8 +323,10 @@ export class SaleNew implements OnInit {
     vat: [true],
     paidNow: [0, Validators.min(0)],
     dueDate: [''],
+    saleDate: [''],
     deliveryFee: [0, Validators.min(0)],
   });
+  protected readonly today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   protected readonly custForm = this.fb.nonNullable.group({
     name: ['', Validators.required], customerType: ['Retailer' as CustomerType], phone: [''],
     address: ['', Validators.maxLength(250)], location: ['', Validators.maxLength(100)], email: ['', Validators.email],
@@ -352,7 +358,7 @@ export class SaleNew implements OnInit {
     return {
       customerId: c.id, priceTier: f.priceTier ?? 'Retailer', warehouseId: Number(f.warehouseId), paymentMethod: f.paymentMethod ?? 'Cash',
       discountPct: byAmount ? 0 : dv, discountAmount: byAmount && dv > 0 ? dv : null,
-      vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null,
+      vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null, saleDate: f.saleDate && f.saleDate !== this.today ? f.saleDate : null,
       lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitPrice: l.price, ...(l.tracks && !this.quote && !this.edit ? { serials: splitSerials(l.serials) } : {}) })),
     };
   });
@@ -439,7 +445,7 @@ export class SaleNew implements OnInit {
       const { id } = await this.api.createCustomer({
         name: v.name, customerType: v.customerType, phone: v.phone || null, contactName: null,
         location: v.location.trim() || null, address: v.address.trim() || null, email: v.email.trim() || null,
-        taxId: null, rebateRatePct: 1, creditLimit: 0,
+        taxId: null, rebatePerUnit: 0, creditLimit: 0,
       });
       this.newCustomerOpen.set(false);
       this.chooseCustomer({ id, name: v.name.trim(), customerType: v.customerType, phone: v.phone || null, balance: 0 });

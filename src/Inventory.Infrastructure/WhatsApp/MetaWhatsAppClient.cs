@@ -72,6 +72,18 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
         await SendAsync(cfg, body, ct);
     }
 
+    public async Task SendImageAsync(string companyKey, string toE164, byte[] png, string caption, CancellationToken ct)
+    {
+        var cfg = ForCompany(companyKey) ?? throw new BusinessRuleException("WhatsApp isn't set up for this business.");
+        var mediaId = await UploadMediaAsync(cfg, png, "catalog.png", "image/png", ct);
+        var body = new JsonObject
+        {
+            ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "image",
+            ["image"] = new JsonObject { ["id"] = mediaId, ["caption"] = caption.Length > 1024 ? caption[..1024] : caption },
+        };
+        await SendAsync(cfg, body, ct);
+    }
+
     public async Task SendButtonsAsync(string companyKey, string toE164, string body, IReadOnlyList<WhatsAppButton> buttons, CancellationToken ct)
     {
         var cfg = ForCompany(companyKey) ?? throw new BusinessRuleException("WhatsApp isn't set up for this business.");

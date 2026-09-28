@@ -107,16 +107,31 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
             w.DriverName ?? "", w.DriverPhone ?? "", w.VehiclePlate ?? "", w.Notes ?? "", lines, clock.BusinessNow);
     }
 
-    public async Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, CancellationToken ct)
+    public Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, CancellationToken ct) =>
+        PriceListAsync(tier, customerName, includeOutOfStock, null, false, ct);
+
+    /// <summary>
+    /// The price list for one tier. <paramref name="productIds"/> narrows it to chosen items (null = everything; chosen items are listed even when
+    /// out of stock). <paramref name="catalog"/> builds the picture catalog: each item carries its photo.
+    /// </summary>
+    public async Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, IReadOnlyCollection<int>? productIds, bool catalog, CancellationToken ct)
     {
         if (!PriceTiers.IsValid(tier)) throw new BusinessRuleException("Unknown price list.");
         var brand = await BrandAsync(ct);
         var qty = await db.StockBatches.AsNoTracking().GroupBy(b => b.ProductId).Select(g => new { g.Key, Q = g.Sum(b => b.QuantityOnHand) }).ToDictionaryAsync(x => x.Key, x => x.Q, ct);
-        var products = await db.Products.AsNoTracking().Where(p => p.IsActive).Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
-        var lines = products.Where(x => includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0)
+        var q = db.Products.AsNoTracking().Where(p => p.IsActive);
+        var chosen = productIds is { Count: > 0 };
+        if (chosen) q = q.Where(p => productIds!.Contains(p.Id));
+        var products = await q.Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
+        if (chosen && products.Count == 0) throw new BusinessRuleException("None of the chosen products could be found.");
+        var ids = products.Select(x => x.p.Id).ToList();
+        var images = catalog
+            ? await db.ProductImages.AsNoTracking().Where(i => ids.Contains(i.ProductId)).ToDictionaryAsync(i => i.ProductId, i => i.Data, ct)
+            : [];
+        var lines = products.Where(x => chosen || includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0)
             .OrderBy(x => x.Category).ThenBy(x => x.p.Name)
-            .Select(x => new PriceListLine(x.Category, x.p.Name, x.p.Sku, x.p.Unit, x.p.PriceFor(tier), qty.GetValueOrDefault(x.p.Id))).ToList();
+            .Select(x => new PriceListLine(x.Category, x.p.Name, x.p.Sku, x.p.Unit, x.p.PriceFor(tier), qty.GetValueOrDefault(x.p.Id), images.GetValueOrDefault(x.p.Id))).ToList();
         var today = clock.BusinessToday;
-        return new PriceListDoc(brand, tier, customerName, $"PL-{today:yyyyMMdd}", today, lines, clock.BusinessNow);
+        return new PriceListDoc(brand, tier, customerName, $"{(catalog ? "CAT" : "PL")}-{today:yyyyMMdd}", today, lines, clock.BusinessNow, catalog);
     }
 }

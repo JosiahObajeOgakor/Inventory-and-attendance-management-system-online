@@ -87,9 +87,10 @@ public class AnalyticsController(ICurrentUser cu, AnalyticsService svc) : AppCon
 }
 
 public sealed record ArchiveRequest(DateOnly Cutoff, string Confirm);
+public sealed record ClearHistoryRequest(string[]? What, string Confirm);
 
 /// <summary>Database size and archive. Administrators only; archiving is destructive, so it needs the word ARCHIVE typed and refuses recent dates.</summary>
-[ApiController, Route("api/admin/archive"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/admin/archive"), Authorize(Policy = Policies.Ceo)]
 public class ArchiveController(ICurrentUser cu, ArchiveService svc) : AppController(cu)
 {
     [HttpGet("usage")]
@@ -104,6 +105,19 @@ public class ArchiveController(ICurrentUser cu, ArchiveService svc) : AppControl
         if (!string.Equals(r.Confirm?.Trim(), "ARCHIVE", StringComparison.Ordinal))
             return BadRequest(new ProblemDetails { Status = 400, Title = "Type ARCHIVE to confirm." });
         return Ok(await svc.ArchiveAsync(r.Cutoff, Me, ct));
+    }
+
+    /// <summary>How many records clearing these kinds of history would remove. <paramref name="what"/>: sales, quotations, purchases, expenses, finance, payroll, stock-movements, activity.</summary>
+    [HttpGet("clear-preview")]
+    public Task<List<ArchivePreviewRow>> ClearPreview([FromQuery] string[] what, CancellationToken ct) => svc.ClearPreviewAsync(what, ct);
+
+    /// <summary>Clears all history of the chosen kinds (copied to a ZIP first). Needs the word CLEAR typed.</summary>
+    [HttpPost("clear")]
+    public async Task<IActionResult> Clear(ClearHistoryRequest r, CancellationToken ct)
+    {
+        if (!string.Equals(r.Confirm?.Trim(), "CLEAR", StringComparison.Ordinal))
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Type CLEAR to confirm." });
+        return Ok(await svc.ClearAsync(r.What ?? [], Me, ct));
     }
 
     [HttpGet("files")]

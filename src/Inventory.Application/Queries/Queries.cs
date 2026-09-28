@@ -121,7 +121,7 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
         {
             var s = spend.GetValueOrDefault(c.Id);
             return new CustomerDto(c.Id, c.Name, c.CustomerType, c.ContactName, c.Phone, c.Location, c.Address, c.Email, c.TaxId,
-                c.RebateRatePct, c.CreditLimit, c.Balance, s, CustomerRanking.For(s));
+                c.RebatePerUnit, c.CreditLimit, c.Balance, s, CustomerRanking.For(s));
         }).ToList();
         return new PagedResult<CustomerDto>(items, total, page.SafePage, page.SafeSize);
     }

@@ -38,7 +38,9 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         }
     }
 
-    private static string Accent(string companyKey) => companyKey == "candid" ? "#6A2C5B" : "#1F6B4F";
+    /// <summary>Every business's documents print in one fixed plum (ChewyPets used to be green).</summary>
+    private const string Plum = "#6A2C5B";
+    private static string Accent(string companyKey) => Plum;
     private static string N2(decimal v) => v.ToString("N2", CultureInfo.InvariantCulture);
     private static string Money(decimal v) => "₦" + N2(v);
     private static string D(DateOnly d) => d.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
@@ -57,19 +59,53 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         catch { return null; }
     }
 
-    private static Branding Clean(Branding b) => b with { Logo = Usable(b.Logo), Signature = Usable(b.Signature), WaybillStamp = Usable(b.WaybillStamp) };
+    /// <summary>
+    /// A stamp uploaded on the Company page wins; otherwise the business's own stamp that ships with the app (Assets/ → Documents/Stamps),
+    /// so no receipt, quotation, waybill or price list ever goes out unstamped.
+    /// </summary>
+    private static Branding Clean(Branding b) => b with
+    {
+        Logo = Usable(b.Logo),
+        Signature = Usable(b.Signature) ?? DefaultStamp(b.CompanyKey, waybill: false),
+        WaybillStamp = Usable(b.WaybillStamp) ?? DefaultStamp(b.CompanyKey, waybill: true),
+    };
+
+    private static readonly Dictionary<string, byte[]?> Stamps = [];
+
+    /// <summary>The bundled stamp: "&lt;company&gt;-stamp.png" (receipts etc.) or "&lt;company&gt;-waybill.png"; a business with only a waybill stamp uses it everywhere.</summary>
+    internal static byte[]? DefaultStamp(string companyKey, bool waybill)
+    {
+        lock (Stamps)
+        {
+            var key = $"{companyKey}|{waybill}";
+            if (Stamps.TryGetValue(key, out var hit)) return hit;
+            var names = waybill ? new[] { $"{companyKey}-waybill.png", $"{companyKey}-stamp.png" } : [$"{companyKey}-stamp.png", $"{companyKey}-waybill.png"];
+            byte[]? found = null;
+            var asm = typeof(QuestDocumentRenderer).Assembly;
+            foreach (var n in names)
+            {
+                using var s = asm.GetManifestResourceStream("Stamps." + n);
+                if (s is null) continue;
+                using var ms = new MemoryStream(); s.CopyTo(ms); found = ms.ToArray(); break;
+            }
+            return Stamps[key] = found;
+        }
+    }
 
     public byte[] Receipt(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Quotation(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Waybill(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] PriceList(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    /// <summary>One continuous page rendered to a single PNG (no page breaks), sized for a phone screen and WhatsApp.</summary>
+    public byte[] PriceListPng(PriceListDoc d) =>
+        PriceListDocument(d with { Brand = Clean(d.Brand) }, continuous: true).GenerateImages(new ImageGenerationSettings { RasterDpi = 144, ImageFormat = ImageFormat.Png }).First();
 
     // Page images (PNG) for design review and tests: the same documents, rasterised.
     private static readonly ImageGenerationSettings Preview = new() { RasterDpi = 110 };
-    public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
 
     // ------------------------------------------------------------------------------------------------ receipt
     private static IDocument ReceiptDocument(ReceiptDoc r) => Compose(doc => doc.Page(page =>
@@ -137,6 +173,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             Totals(col, accent, totals, [($"{q.Lines.Count} product line(s)", false),
                 ("This is a price quotation, not an invoice — no stock has been reserved and nothing is owed until it's converted to a sale.", true)]);
             PayBlock(col, accent, q.PayUrl, q.Total, q.ScanPayUrl);
+            SignOff(col, q.Brand.Signature, "Authorised signature & company stamp");
             ConnectBand(col, q.Brand, accent);
             col.Item().PaddingTop(5).AlignCenter().Text("Thanks for your interest — let us know if you'd like to go ahead.").FontSize(9).FontColor(Muted).Italic();
         });
@@ -177,11 +214,14 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             });
             if (!string.IsNullOrWhiteSpace(w.Notes)) { col.Item().PaddingTop(8).Text("NOTES").Bold().FontSize(8.5f).FontColor(accent); col.Item().Text(w.Notes).FontSize(9); }
             Barcode(col, w.Number, "Scan to look this delivery up  ·  " + w.Number);
+            // The business's "confirmed and released" stamp sits immediately under the barcode.
+            if (w.Brand.WaybillStamp is { Length: > 0 } stamp)
+                col.Item().PaddingTop(6).AlignCenter().Height(118).Image(stamp).FitArea();
 
-            // "Dispatched by" is stamped by the business itself; the driver and the receiving customer sign for themselves.
-            col.Item().PaddingTop(14).Row(row =>
+            // The driver and the receiving customer sign for themselves; "Dispatched by" is signed by whoever loaded the goods.
+            col.Item().PaddingTop(10).Row(row =>
             {
-                row.RelativeItem().Element(c => SignatureBox(c, "Dispatched by", w.Brand.WaybillStamp));
+                row.RelativeItem().Element(c => SignatureBox(c, "Dispatched by", null));
                 row.ConstantItem(16);
                 row.RelativeItem().Element(c => SignatureBox(c, "Driver", null));
                 row.ConstantItem(16);
@@ -193,16 +233,18 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     }));
 
     // ------------------------------------------------------------------------------------------------ price list
-    private static IDocument PriceListDocument(PriceListDoc p) => Compose(doc => doc.Page(page =>
+    private static IDocument PriceListDocument(PriceListDoc p, bool continuous = false) => Compose(doc => doc.Page(page =>
     {
         var accent = Accent(p.Brand.CompanyKey);
-        Frame(page, p.Brand, $"{p.Brand.Name}   ·   Price list {p.Reference}   ·   generated {p.GeneratedAt:dd MMM yyyy HH:mm}");
+        var kind = p.Catalog ? "Catalog" : "Price list";
+        Frame(page, p.Brand, $"{p.Brand.Name}   ·   {kind} {p.Reference}   ·   generated {p.GeneratedAt:dd MMM yyyy HH:mm}", continuous);
         page.Content().Column(col =>
         {
-            var meta = new List<(string K, string V)> { ("Reference", p.Reference), ("Date", D(p.Date)), ("Price tier", p.Tier) };
+            var meta = new List<(string K, string V)> { ("Reference", p.Reference), ("Date", D(p.Date)), ("Price tier", TierLabel(p.Tier)) };
             if (!string.IsNullOrWhiteSpace(p.CustomerName)) meta.Add(("Prepared for", p.CustomerName!));
-            Letterhead(col, p.Brand, accent, "PRICE LIST", meta.ToArray());
-            foreach (var g in p.Lines.GroupBy(l => l.Category))
+            Letterhead(col, p.Brand, accent, p.Catalog ? "PRODUCT CATALOG" : "PRICE LIST", meta.ToArray());
+            if (p.Catalog) CatalogGrid(col, accent, p.Lines);
+            else foreach (var g in p.Lines.GroupBy(l => l.Category))
             {
                 col.Item().PaddingTop(8).Text(g.Key.ToUpperInvariant()).Bold().FontSize(8.5f).FontColor(accent);
                 col.Item().PaddingTop(2).Table(t =>
@@ -220,8 +262,48 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             }
             col.Item().PaddingTop(10).Text("Prices are in naira and exclude VAT unless stated. Availability subject to stock.").FontSize(8).FontColor(Muted);
             BankTable(col, accent, p.Brand.Banks);
+            SignOff(col, p.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, p.Brand, accent);
         });
     }));
+
+    private static string TierLabel(string tier) => tier switch { "Wholesaler" => "Wholesale", "Retailer" => "Retail", _ => tier };
+
+    /// <summary>The picture catalog: three cards a row, each with the product photo (or a lettered tile), name, pack, price and stock note.</summary>
+    private static void CatalogGrid(ColumnDescriptor col, string accent, IReadOnlyList<PriceListLine> lines)
+    {
+        col.Item().PaddingTop(4).Table(t =>
+        {
+            t.ColumnsDefinition(c => { c.RelativeColumn(); c.RelativeColumn(); c.RelativeColumn(); });
+            foreach (var l in lines)
+                t.Cell().Padding(4).Border(0.6f).BorderColor(Hairline).CornerRadius(6).Background("#FFFFFF").Padding(7).Column(card =>
+                {
+                    var img = Usable(l.Image);
+                    if (img is not null) card.Item().Height(118).AlignCenter().AlignMiddle().Image(img).FitArea();
+                    else card.Item().Height(118).Background(Tint(accent)).CornerRadius(4).AlignCenter().AlignMiddle()
+                        .Text(string.Concat(l.Product.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])))).Bold().FontSize(26).FontColor(accent);
+                    card.Item().PaddingTop(6).Text(l.Product).Bold().FontSize(9.5f).LineHeight(1.15f);
+                    card.Item().PaddingTop(1).Text($"{l.Unit}  ·  {l.Sku}").FontSize(7.5f).FontColor(Muted);
+                    card.Item().PaddingTop(4).Row(r =>
+                    {
+                        r.RelativeItem().AlignBottom().Text(Money(l.Price)).Bold().FontSize(13).FontColor(accent);
+                        r.AutoItem().AlignBottom().Text(l.InStock > 0 ? "In stock" : "On order").FontSize(7).FontColor(l.InStock > 0 ? "#2F7D4F" : Muted);
+                    });
+                });
+        });
+    }
+
+    /// <summary>A right-aligned signature line with the company stamp over it — used on every document that doesn't already carry one.</summary>
+    private static void SignOff(ColumnDescriptor col, byte[]? stamp, string caption)
+    {
+        col.Item().PaddingTop(6).AlignRight().Width(170).Column(c =>
+        {
+            if (stamp is { Length: > 0 }) c.Item().Height(86).AlignCenter().Image(stamp).FitArea();
+            else c.Item().Height(34);
+            c.Item().LineHorizontal(0.7f).LineColor(Ink);
+            c.Item().PaddingTop(2).AlignCenter().Text(caption).FontSize(7).FontColor(Muted);
+        });
+    }
 
     // ------------------------------------------------------------------------------------------------ shelf label
     public byte[] ShelfLabel(Branding brand, string productName, string sku, string barcode, decimal price)
@@ -244,9 +326,9 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     }
 
     // ------------------------------------------------------------------------------------------------ building blocks
-    private static void Frame(PageDescriptor page, Branding brand, string footer)
+    private static void Frame(PageDescriptor page, Branding brand, string footer, bool continuous = false)
     {
-        page.Size(PageSizes.A4);
+        if (continuous) page.ContinuousSize(PageSizes.A4.Width); else page.Size(PageSizes.A4);
         page.Margin(34);
         page.DefaultTextStyle(x => x.FontFamily(Face).FontSize(9).FontColor(Ink));
         if (brand.Logo is { Length: > 0 } logo && WatermarkTile(logo) is { } tile)

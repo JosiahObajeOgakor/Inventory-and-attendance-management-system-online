@@ -43,6 +43,9 @@ public interface IBusinessDbContext
     DbSet<ChatConversation> ChatConversations { get; }
     DbSet<ChatLogMessage> ChatMessages { get; }
     DbSet<InboundMessage> InboundMessages { get; }
+    DbSet<SupplierItem> SupplierItems { get; }
+    DbSet<ExpenseCategory> ExpenseCategories { get; }
+    DbSet<ProductImage> ProductImages { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);

@@ -15,6 +15,8 @@ public class CompanyProfile
     public decimal DefaultVatRate { get; set; } = 7.5m;
     /// <summary>Default rebate percentage for new customers (AppSettings 'rebate.ratePct' in the desktop app).</summary>
     public decimal DefaultRebateRatePct { get; set; } = 1.0m;
+    /// <summary>Default rebate in naira per unit bought, for new customers.</summary>
+    public decimal DefaultRebatePerUnit { get; set; }
     public List<CompanyBank> Banks { get; set; } = [];
 }
 
@@ -43,6 +45,32 @@ public static class AssetKinds
     public const string Signature = "signature";
     public const string WaybillStamp = "waybill-stamp";
     public static readonly string[] All = [Logo, Signature, WaybillStamp];
+}
+
+/// <summary>A product we buy from a supplier, with the usual cost, so a purchase from that supplier starts from its own list.</summary>
+public class SupplierItem
+{
+    public int Id { get; set; }
+    public int SupplierId { get; set; }
+    public int ProductId { get; set; }
+    /// <summary>What this supplier usually charges per unit; prefilled on new purchases (0 = not known).</summary>
+    public decimal UnitCost { get; set; }
+}
+
+/// <summary>A product's photo, printed on the catalog / price list sent to customers. One per product.</summary>
+public class ProductImage
+{
+    public int ProductId { get; set; }
+    public string ContentType { get; set; } = "";
+    public byte[] Data { get; set; } = [];
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>An expense category the business added itself (e.g. "Fuel"), on top of the built-in ones.</summary>
+public class ExpenseCategory
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
 }
 
 public static class QuotationStatuses

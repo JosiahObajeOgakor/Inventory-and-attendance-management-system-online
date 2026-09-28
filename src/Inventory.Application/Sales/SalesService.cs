@@ -45,6 +45,13 @@ public sealed class SalesService(
 
         var lines = req.Lines;
         var saleDate = req.SaleDate ?? clock.BusinessToday;
+        if (req.SaleDate is { } asked && asked != clock.BusinessToday)
+        {
+            // Recording a past sale (back to 2020) is for a manager or the CEO; a future date is never allowed.
+            if (user.Role is not (RoleNames.Admin or RoleNames.Manager)) throw new ForbiddenActionException("Only a manager or the CEO can record a sale on an earlier date.");
+            if (asked > clock.BusinessToday) throw new BusinessRuleException("A sale can't be dated in the future.");
+            if (asked < BusinessDates.Earliest) throw new BusinessRuleException($"A sale can't be dated before {BusinessDates.Earliest:d MMM yyyy}.");
+        }
 
         // 1. Lock every batch of every product on the order; refuse the whole sale if any line is short (S4).
         var batches = await stock.LockBatchesAsync(lines.Select(l => l.ProductId), ct);
@@ -149,13 +156,14 @@ public sealed class SalesService(
         if (split.AppliedToNew > 0)
             db.Payments.Add(new Payment { InvoiceId = invoice.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew, Method = req.PaymentMethod, ReceivedByUserId = user.Id });
 
-        var rebate = RebateCalculator.Accrue(customer.CustomerType, totals.Total, totals.VatAmount, customer.RebateRatePct);
+        var units = req.Lines.Sum(l => l.Quantity);
+        var rebate = RebateCalculator.Accrue(customer.CustomerType, units, customer.RebatePerUnit);
         if (rebate > 0)
         {
             db.RebateEntries.Add(new RebateEntry
             {
                 CustomerId = customer.Id, InvoiceId = invoice.Id, EntryDate = saleDate, Amount = rebate, Status = "Accrued",
-                Note = $"{customer.RebateRatePct}% of ₦{totals.Total - totals.VatAmount:N2} — {number}",
+                Note = $"₦{customer.RebatePerUnit:N2} × {units:N0} unit(s) — {number}",
             });
         }
 

@@ -39,10 +39,11 @@ public sealed record UpdateUserRequest(string FullName, string Role, string[] Co
 public sealed record ResetPasswordRequest(string NewPassword);
 
 [ApiController, Route("api/users")]
-[Authorize(Policy = Policies.Admin)]
+[Authorize(Policy = Policies.Ceo)]
 public class UsersController(ICurrentUser cu, UserManager<AppUser> users, CompanyRegistry companies, ILogger<UsersController> log) : AppController(cu)
 {
-    private static bool ValidRole(string r) => r is RoleNames.Admin or RoleNames.Clerk;
+    private static bool ValidRole(string r) => RoleNames.All.Contains(r);
+    private const string BadRole = "Role must be ADMIN (CEO), MANAGER or CLERK.";
 
     [HttpGet]
     public async Task<List<UserRow>> List(CancellationToken ct)
@@ -57,7 +58,7 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
     [HttpPost]
     public async Task<IActionResult> Create(CreateUserRequest r)
     {
-        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = "Role must be ADMIN or CLERK." });
+        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
         var access = r.Companies.Where(c => companies.Find(c) is not null).ToArray();
         if (access.Length == 0) return BadRequest(new ProblemDetails { Status = 400, Title = "Choose at least one company." });
         if (string.IsNullOrWhiteSpace(r.FullName) || string.IsNullOrWhiteSpace(r.Username)) return BadRequest(new ProblemDetails { Status = 400, Title = "Name and username are required." });
@@ -75,7 +76,7 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
     {
         var user = await users.FindByIdAsync(id.ToString());
         if (user is null) return NotFound();
-        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = "Role must be ADMIN or CLERK." });
+        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
         if (id == Me.Id && (!r.IsActive || r.Role != RoleNames.Admin))
             return Conflict(new ProblemDetails { Status = 409, Title = "You can't disable or demote your own account." });
 
@@ -85,8 +86,8 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
         await users.UpdateAsync(user);
         var current = await users.GetRolesAsync(user);
         if (!current.Contains(r.Role)) { await users.RemoveFromRolesAsync(user, current); await users.AddToRoleAsync(user, r.Role); }
-        await users.UpdateSecurityStampAsync(user);   // signs the user out everywhere
-        log.LogInformation("User {UserId} updated by {Admin}", id, Me.FullName);
+        await users.UpdateSecurityStampAsync(user);   // signs the user out everywhere, so a new or revoked role applies at once
+        log.LogInformation("User {UserId} updated by {Admin} (role {Role})", id, Me.FullName, r.Role);
         return NoContent();
     }
 

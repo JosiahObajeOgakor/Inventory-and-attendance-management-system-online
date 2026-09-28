@@ -8,9 +8,9 @@ namespace Inventory.Application.Company;
 
 public sealed record BankDto(string BankName, string AccountName, string AccountNumber);
 public sealed record CompanyProfileDto(string LegalName, string Address, string Phone, string Email, string TaxId, decimal DefaultVatRate,
-    decimal DefaultRebateRatePct, IReadOnlyList<BankDto> Banks, IReadOnlyList<string> Assets, bool HasPriceLists, bool BuysGoods);
+    decimal DefaultRebatePerUnit, IReadOnlyList<BankDto> Banks, IReadOnlyList<string> Assets, bool HasPriceLists, bool BuysGoods);
 public sealed record CompanyProfileInput(string LegalName, string Address, string Phone, string Email, string TaxId, decimal DefaultVatRate,
-    decimal DefaultRebateRatePct, List<BankDto> Banks);
+    decimal DefaultRebatePerUnit, List<BankDto> Banks);
 public sealed record AssetFile(string ContentType, byte[] Data);
 
 public sealed class CompanyProfileValidator : AbstractValidator<CompanyProfileInput>
@@ -23,7 +23,7 @@ public sealed class CompanyProfileValidator : AbstractValidator<CompanyProfileIn
         RuleFor(x => x.Email).MaximumLength(100);
         RuleFor(x => x.TaxId).MaximumLength(60);
         RuleFor(x => x.DefaultVatRate).InclusiveBetween(0, 100);
-        RuleFor(x => x.DefaultRebateRatePct).InclusiveBetween(0, 100);
+        RuleFor(x => x.DefaultRebatePerUnit).InclusiveBetween(0, 1_000_000);
         RuleFor(x => x.Banks).Must(b => b.Count <= 3).WithMessage("At most three bank accounts are printed on documents.");
         RuleForEach(x => x.Banks).ChildRules(b =>
         {
@@ -57,7 +57,7 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
     {
         var p = await EnsureAsync(ct);
         var kinds = await db.CompanyAssets.AsNoTracking().Select(a => a.Kind).ToListAsync(ct);
-        return new CompanyProfileDto(p.LegalName, p.Address, p.Phone, p.Email, p.TaxId, p.DefaultVatRate, p.DefaultRebateRatePct,
+        return new CompanyProfileDto(p.LegalName, p.Address, p.Phone, p.Email, p.TaxId, p.DefaultVatRate, p.DefaultRebatePerUnit,
             p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankDto(b.BankName, b.AccountName, b.AccountNumber)).ToList(), kinds,
             company.HasPriceLists, company.BuysGoods);
     }
@@ -67,7 +67,7 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
         await new CompanyProfileValidator().ValidateAndThrowAsync(input, ct);
         var p = await EnsureAsync(ct);
         p.LegalName = input.LegalName.Trim(); p.Address = input.Address.Trim(); p.Phone = input.Phone.Trim(); p.Email = input.Email.Trim(); p.TaxId = input.TaxId.Trim();
-        p.DefaultVatRate = input.DefaultVatRate; p.DefaultRebateRatePct = input.DefaultRebateRatePct;
+        p.DefaultVatRate = input.DefaultVatRate; p.DefaultRebatePerUnit = input.DefaultRebatePerUnit;
         db.CompanyBanks.RemoveRange(p.Banks);
         p.Banks = input.Banks.Select((b, i) => new CompanyBank { SortOrder = i, BankName = b.BankName.Trim(), AccountName = b.AccountName.Trim(), AccountNumber = b.AccountNumber.Trim() }).ToList();
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "COMPANY_PROFILE_UPDATED", Entity = "CompanyProfile", EntityId = "1", At = clock.UtcNow });
@@ -102,7 +102,7 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
         await db.SaveChangesAsync(ct);
     }
 
-    private static string? Sniff(byte[] d)
+    public static string? Sniff(byte[] d)
     {
         if (d.Length > 8 && d[0] == 0x89 && d[1] == 0x50 && d[2] == 0x4E && d[3] == 0x47) return "image/png";
         if (d.Length > 3 && d[0] == 0xFF && d[1] == 0xD8 && d[2] == 0xFF) return "image/jpeg";

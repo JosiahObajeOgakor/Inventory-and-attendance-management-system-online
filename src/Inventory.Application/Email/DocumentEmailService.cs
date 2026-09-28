@@ -90,6 +90,19 @@ public sealed class DocumentEmailService(DocumentQueries docs, IDocumentRenderer
         return new EmailSent(address, msg.Subject, file);
     }
 
+    /// <summary>Emails an already-rendered price list / catalog (PDF or PNG) — the chosen-items version built by CatalogService.</summary>
+    public async Task<EmailSent> SendPriceListFileAsync(PriceListDoc d, byte[] file, string fileName, string contentType, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        Require();
+        var address = CleanAddress(to);
+        Throttle(user.Id);
+        var msg = new EmailMessage(address, d.CustomerName, EmailTemplates.PriceListSubject(d), EmailTemplates.PriceList(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }),
+            EmailTemplates.PriceListText(d, note, user.FullName), [new(fileName, file, contentType)], d.Brand.Name, string.IsNullOrWhiteSpace(d.Brand.Email) ? null : d.Brand.Email, d.Brand.Logo);
+        await sender.SendAsync(msg, ct);
+        await AuditAsync(user, "PRICE_LIST_EMAILED", "PriceList", null, $"{d.Tier} {(d.Catalog ? "catalog" : "list")} ({d.Lines.Count} items, {fileName}) to {address}", ct);
+        return new EmailSent(address, msg.Subject, fileName);
+    }
+
     private void Require() { if (!sender.IsConfigured) throw new BusinessRuleException("Email isn't set up yet: the server has no Zoho mailbox configured."); }
 
     private async Task AuditAsync(CurrentUser u, string action, string entity, string? id, string detail, CancellationToken ct)
