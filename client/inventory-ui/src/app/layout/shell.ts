@@ -11,6 +11,9 @@ import { Toasts } from '../shared/feedback';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
+/** Module-level so it survives the shell being destroyed and re-created (e.g. on a business switch). */
+let checkInAskedFor: string | null = null;
+
 interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; ceoOnly?: boolean; needs?: 'hasPriceLists'; }
 interface NavGroup { title: string; icon: string; items: NavItem[]; }
 
@@ -110,14 +113,23 @@ export class Shell {
     effect(() => { if (this.auth.isAdmin()) this.idle.start(); else this.idle.stop(); });
     // A clerk is asked to clock on once per day, when they first arrive. The request runs untracked: an HTTP call started inside an effect
     // would otherwise make the effect depend on the spinner's own state and re-fire on every show/hide (an endless loading loop on a slow line).
-    effect(() => { if (this.auth.me() && !this.auth.isCeo()) untracked(() => void this.askCheckIn()); });
+    // At most once per person per day: the effect re-runs whenever `me` is replaced (and the shell can be rebuilt), and each re-run
+    // used to fire another /api/attendance/today.
+    effect(() => {
+      const me = this.auth.me();
+      if (!me || this.auth.isCeo()) return;
+      const key = me.username + '|' + new Date().toDateString();
+      if (checkInAskedFor === key) return;
+      checkInAskedFor = key;
+      untracked(() => void this.askCheckIn(key));
+    });
   }
 
-  private async askCheckIn() {
+  private async askCheckIn(key: string) {
     try {
-      const key = 'declined-' + new Date().toDateString();
-      if (sessionStorage.getItem(key)) return;
+      if (sessionStorage.getItem('declined-' + new Date().toDateString()) || sessionStorage.getItem('clocked-' + key)) return;
       if ((await this.api2.attendanceToday()).checkIns === 0) this.checkinOpen.set(true);
+      else sessionStorage.setItem('clocked-' + key, '1');
     } catch { /* attendance must never block the counter */ }
   }
 
