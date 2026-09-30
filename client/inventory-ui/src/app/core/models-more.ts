@@ -55,9 +55,30 @@ export interface SupplierStatementOrder { id: number; poNumber: string; orderDat
   outstanding: number; lines: number; units: number; }
 export interface SupplierStatementPayment { reference: string; paidAt: string; method: string; amount: number; orders: string[]; }
 export interface SupplierStatement { supplier: import('./models').Supplier; totalBought: number; totalPaid: number; owed: number; orders: number; openOrders: number;
-  lastOrder: string | null; items: SupplierStatementItem[]; orderList: SupplierStatementOrder[]; payments: SupplierStatementPayment[]; }
+  lastOrder: string | null; items: SupplierStatementItem[]; orderList: SupplierStatementOrder[]; payments: SupplierStatementPayment[];
+  /** Supply records for this supplier — their own figures, never mixed with the stock-purchase totals above. */
+  suppliedTotal: number; suppliedOwed: number; supplyRecords: number; supplyMonths: SupplierSupplyMonth[] | null; }
 export interface SupplierPaymentResult { reference: string; amount: number; appliedToOrders: number; balanceNow: number; ordersPaid: number; }
 export interface ProductSupplier { supplierId: number; supplier: string; unitCost: number; }
+
+// ---- supplies: what a supplier supplied, kept entirely apart from stock and from purchase orders
+export interface SupplyRow { id: number; reference: string; supplierId: number; supplier: string; supplyDate: string; totalAmount: number;
+  amountPaid: number; outstanding: number; paymentStatus: string; lines: number; units: number; note: string | null; }
+export interface SupplyItem { productId: number; product: string; sku: string; unit: string; quantity: number; unitCost: number; lineTotal: number; }
+export interface SupplyDetail { id: number; reference: string; supplierId: number; supplier: string; supplierPhone: string | null; supplyDate: string;
+  totalAmount: number; amountPaid: number; outstanding: number; paymentStatus: string; paymentMethod: string | null; note: string | null;
+  recordedBy: string; items: SupplyItem[]; }
+export interface SupplyResult { id: number; reference: string; total: number; paid: number; outstanding: number; paymentStatus: string; }
+export interface SupplyDeleteResult { records: number; value: number; }
+export interface SupplierSupplyTotal { supplierId: number; supplier: string; amount: number; owed: number; records: number; units: number; }
+export interface SuppliedItemTotal { productId: number; product: string; unit: string; quantity: number; amount: number; }
+export interface SupplyMonth { year: number; month: number; amount: number; }
+export interface SupplierTrend { supplierId: number; supplier: string; months: SupplyMonth[]; }
+export interface SupplySummary { asOf: string; thisMonth: number; lastMonth: number; changePct: number | null; owedTotal: number; recordsThisMonth: number;
+  bySupplier: SupplierSupplyTotal[]; topItems: SuppliedItemTotal[]; months: SupplyMonth[]; trends: SupplierTrend[]; }
+export interface SupplierSupplyMonth { year: number; month: number; amount: number; owed: number; records: number; }
+export interface SupplyInput { supplierId: number; supplyDate: string | null; paidNow: number; paymentMethod: string; note: string | null;
+  lines: { productId: number; quantity: number; unitCost: number }[]; }
 export interface DocumentSent { channel: string; to: string; file: string; }
 export interface RebateEntry { id: number; entryDate: string; invoiceNumber: string | null; amount: number; status: string; redeemedDate: string | null; note: string | null; }
 

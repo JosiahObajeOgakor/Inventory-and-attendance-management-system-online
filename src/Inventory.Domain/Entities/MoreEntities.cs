@@ -75,6 +75,41 @@ public class SupplierPayment
     public int PaidByUserId { get; set; }
 }
 
+/// <summary>
+/// What a supplier actually supplied, on its own: quantities, what they charged, what we paid them and what is still owed.
+/// Deliberately kept apart from <see cref="PurchaseOrder"/> and from stock — a supply NEVER moves stock, never touches a product's cost
+/// price and never enters the ledger, so a supplier's own record stays the single source of truth for what came from them.
+/// </summary>
+public class Supply
+{
+    public int Id { get; set; }
+    public string Reference { get; set; } = "";
+    public int SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
+    public DateOnly SupplyDate { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal AmountPaid { get; set; }
+    public string PaymentStatus { get; set; } = PaymentStatuses.Unpaid;
+    /// <summary>How the last payment was made ("Cash", "Transfer"…) — for the record only; supplies keep no ledger.</summary>
+    public string? PaymentMethod { get; set; }
+    public string? Note { get; set; }
+    public int CreatedByUserId { get; set; }
+    /// <summary>UTC.</summary>
+    public DateTime CreatedAt { get; set; }
+    public List<SupplyItem> Items { get; set; } = [];
+}
+
+public class SupplyItem
+{
+    public int Id { get; set; }
+    public int SupplyId { get; set; }
+    public int ProductId { get; set; }
+    public Product? Product { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitCost { get; set; }
+    public decimal LineTotal { get; set; }
+}
+
 /// <summary>A product's photo, printed on the catalog / price list sent to customers. One per product.</summary>
 public class ProductImage
 {

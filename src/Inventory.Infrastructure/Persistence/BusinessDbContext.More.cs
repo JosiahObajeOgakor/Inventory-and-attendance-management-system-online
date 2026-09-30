@@ -236,6 +236,33 @@ public partial class BusinessDbContext
             e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        // Supplies stand alone: no ledger row, no stock movement, and deleting one leaves the rest of the system untouched.
+        b.Entity<Supply>(e =>
+        {
+            e.ToTable("supplies");
+            e.Property(x => x.Reference).HasMaxLength(60);
+            e.Property(x => x.PaymentStatus).HasMaxLength(20);
+            e.Property(x => x.PaymentMethod).HasMaxLength(30);
+            e.Property(x => x.Note).HasMaxLength(400);
+            e.Property(x => x.TotalAmount).HasPrecision(14, 2);
+            e.Property(x => x.AmountPaid).HasPrecision(14, 2);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => x.Reference).IsUnique();
+            e.HasIndex(x => new { x.SupplierId, x.SupplyDate });
+            e.HasIndex(x => x.SupplyDate);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.SupplyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<SupplyItem>(e =>
+        {
+            e.ToTable("supply_items");
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.Property(x => x.LineTotal).HasPrecision(14, 2);
+            e.HasIndex(x => x.ProductId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         b.Entity<SupplierPayment>(e =>
         {
             e.ToTable("supplier_payments");

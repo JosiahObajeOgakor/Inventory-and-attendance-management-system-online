@@ -150,6 +150,52 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     public async Task<IActionResult> SetItems(int id, List<SupplierItemInput> items, CancellationToken ct) { await svc.SetSupplierItemsAsync(id, items ?? [], Me, ct); return NoContent(); }
 }
 
+public sealed record SupplyPaymentRequest(decimal Amount, string? Method);
+public sealed record ClearMonthRequest(int Year, int Month);
+
+/// <summary>
+/// What suppliers supplied — a record in its own right. Nothing here moves stock, changes a product's cost price or writes to the ledger, so
+/// these figures answer "what did Supplier A supply this month" on their own. Managers and the CEO record and pay; only the CEO deletes.
+/// </summary>
+[ApiController, Route("api/supplies")]
+public class SuppliesController(ICurrentUser cu, SupplyService svc, SupplyQueries q) : AppController(cu)
+{
+    [HttpGet, Authorize(Policy = Policies.Admin)]
+    public Task<PagedResult<SupplyRowDto>> List([FromQuery] PageRequest page, [FromQuery] int? supplierId, [FromQuery] int? year,
+        [FromQuery] int? month, CancellationToken ct) => q.ListAsync(page, supplierId, year, month, ct);
+
+    [HttpGet("summary"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplySummary> Summary(CancellationToken ct) => q.SummaryAsync(ct);
+
+    [HttpGet("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public async Task<ActionResult<SupplyDetailDto>> Get(int id, CancellationToken ct) => await q.GetAsync(id, ct) is { } d ? d : NotFound();
+
+    [HttpPost, Authorize(Policy = Policies.Admin)]
+    public async Task<ActionResult<SupplyResult>> Create(SupplyRequest req, CancellationToken ct)
+    {
+        var r = await svc.CreateAsync(req, Me, ct);
+        return CreatedAtAction(nameof(Get), new { id = r.Id }, r);
+    }
+
+    [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplyResult> Pay(int id, SupplyPaymentRequest r, CancellationToken ct) => svc.PayAsync(id, r.Amount, r.Method ?? "Cash", Me, ct);
+
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> Delete(int id, CancellationToken ct) => svc.DeleteAsync(id, Me, ct);
+
+    /// <summary>Every supply from one supplier.</summary>
+    [HttpDelete("supplier/{supplierId:int}"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> DeleteForSupplier(int supplierId, CancellationToken ct) => svc.DeleteForSupplierAsync(supplierId, Me, ct);
+
+    /// <summary>Every supply in one month, across all suppliers.</summary>
+    [HttpPost("clear-month"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> ClearMonth(ClearMonthRequest r, CancellationToken ct) => svc.DeleteForMonthAsync(r.Year, r.Month, Me, ct);
+
+    /// <summary>Every supply record there is. Kept behind its own call so it can never be reached by a stray id.</summary>
+    [HttpPost("clear-all"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> ClearAll(CancellationToken ct) => svc.DeleteAllAsync(Me, ct);
+}
+
 [ApiController, Route("api/purchases")]
 public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseEditService edits, PurchaseQueries q) : AppController(cu)
 {

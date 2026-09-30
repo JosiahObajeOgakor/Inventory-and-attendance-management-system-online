@@ -13,14 +13,18 @@ public sealed record SupplierStatementOrder(int Id, string PoNumber, DateOnly Or
     decimal Outstanding, int Lines, int Units);
 /// <summary>One payment as the person made it (possibly spread over several orders — <see cref="Orders"/> lists them).</summary>
 public sealed record SupplierStatementPayment(string Reference, DateTime PaidAt, string Method, decimal Amount, IReadOnlyList<string> Orders);
+/// <summary>What this supplier supplied, per month — supply records only, never mixed with the stock-purchase figures above.</summary>
+public sealed record SupplierSupplyMonth(int Year, int Month, decimal Amount, decimal Owed, int Records);
+
 public sealed record SupplierStatement(SupplierDto Supplier, decimal TotalBought, decimal TotalPaid, decimal Owed, int Orders, int OpenOrders,
-    DateOnly? LastOrder, IReadOnlyList<SupplierStatementItem> Items, IReadOnlyList<SupplierStatementOrder> OrderList, IReadOnlyList<SupplierStatementPayment> Payments);
+    DateOnly? LastOrder, IReadOnlyList<SupplierStatementItem> Items, IReadOnlyList<SupplierStatementOrder> OrderList, IReadOnlyList<SupplierStatementPayment> Payments,
+    decimal SuppliedTotal = 0, decimal SuppliedOwed = 0, int SupplyRecords = 0, IReadOnlyList<SupplierSupplyMonth>? SupplyMonths = null);
 
 /// <summary>
 /// Everything tied to one supplier on a single screen: what they sell us, every order (paid / part-paid / owed), every payment we made, and the
 /// running total we owe. Read-only; the figures come straight from the orders and payment rows, the balance from the supplier's running total.
 /// </summary>
-public sealed class SupplierStatementQueries(IBusinessDbContext db)
+public sealed class SupplierStatementQueries(IBusinessDbContext db, IClock clock)
 {
     public async Task<SupplierStatement> GetAsync(int supplierId, CancellationToken ct)
     {
@@ -56,7 +60,20 @@ public sealed class SupplierStatementQueries(IBusinessDbContext db)
             .OrderByDescending(p => p.PaidAt).ToList();
 
         var dto = new SupplierDto(s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId, s.Balance);
+        // ---- supplies: this supplier's own record, by month over the last year (kept apart from the orders above on purpose)
+        var supplies = await db.Supplies.AsNoTracking().Where(x => x.SupplierId == supplierId)
+            .Select(x => new { x.SupplyDate, x.TotalAmount, x.AmountPaid }).ToListAsync(ct);
+        var today = clock.BusinessToday;
+        var firstMonth = new DateOnly(today.Year, today.Month, 1).AddMonths(-11);
+        var supplyMonths = Enumerable.Range(0, 12).Select(n => firstMonth.AddMonths(n)).Select(m =>
+        {
+            var inMonth = supplies.Where(x => x.SupplyDate >= m && x.SupplyDate < m.AddMonths(1)).ToList();
+            return new SupplierSupplyMonth(m.Year, m.Month, inMonth.Sum(x => x.TotalAmount),
+                inMonth.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid)), inMonth.Count);
+        }).ToList();
+
         return new SupplierStatement(dto, live.Sum(o => o.TotalAmount), live.Sum(o => o.AmountPaid), s.Balance, live.Count,
-            live.Count(o => o.PaymentStatus != PaymentStatuses.Paid), live.Count > 0 ? live.Max(o => o.OrderDate) : null, items, orderRows, payments);
+            live.Count(o => o.PaymentStatus != PaymentStatuses.Paid), live.Count > 0 ? live.Max(o => o.OrderDate) : null, items, orderRows, payments,
+            supplies.Sum(x => x.TotalAmount), supplies.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid)), supplies.Count, supplyMonths);
     }
 }

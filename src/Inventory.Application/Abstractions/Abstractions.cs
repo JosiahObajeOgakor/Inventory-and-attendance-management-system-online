@@ -47,6 +47,8 @@ public interface IBusinessDbContext
     DbSet<ExpenseCategory> ExpenseCategories { get; }
     DbSet<ProductImage> ProductImages { get; }
     DbSet<SupplierPayment> SupplierPayments { get; }
+    DbSet<Supply> Supplies { get; }
+    DbSet<SupplyItem> SupplyItems { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);

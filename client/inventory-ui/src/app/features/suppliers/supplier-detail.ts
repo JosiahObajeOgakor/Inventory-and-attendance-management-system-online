@@ -60,7 +60,25 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
         </section>
 
         <section class="card">
-          <div class="c-head"><h2>Orders</h2><span class="muted">Every purchase from this supplier, newest first.</span></div>
+          <div class="c-head"><h2>Supplies</h2><span class="muted">What they supplied, recorded on its own — these figures never touch stock or the orders below.</span>
+            <a class="btn btn-sm btn-primary" style="margin-left:auto" routerLink="/supplies">Record a supply</a></div>
+          <div class="sup-tiles">
+            <div class="sup-tile"><span>Supplied, all time</span><strong class="mono">{{ s.suppliedTotal | naira }}</strong><small>{{ s.supplyRecords }} record(s)</small></div>
+            <div class="sup-tile" [class.owes]="s.suppliedOwed > 0"><span>Owed on supplies</span><strong class="mono">{{ s.suppliedOwed | naira }}</strong><small>Separate from the order balance</small></div>
+          </div>
+          @if (supplyMonths().length) {
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>Month</th><th class="num">Records</th><th class="num">Supplied</th><th class="num">Owed</th></tr></thead>
+              <tbody>@for (m of supplyMonths(); track m.year * 100 + m.month) {
+                <tr><td>{{ monthName(m.month) }} {{ m.year }}</td><td class="num mono">{{ m.records }}</td>
+                  <td class="num mono">{{ m.amount | naira }}</td><td class="num mono" [class.owes]="m.owed > 0">{{ m.owed | naira }}</td></tr>
+              }</tbody>
+            </table></div>
+          } @else { <div class="empty"><strong>Nothing supplied yet</strong>Record what they bring under Supplies.</div> }
+        </section>
+
+        <section class="card">
+          <div class="c-head"><h2>Orders (stock purchases)</h2><span class="muted">Every purchase from this supplier that went through stock, newest first.</span></div>
           @if (s.orderList.length) {
             <div class="table-wrap"><table class="table">
               <thead><tr><th>Order</th><th>Date</th><th>Status</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Owed</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -112,6 +130,10 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
     .tile strong { font-size: 1.5rem; letter-spacing: -.03em; } .tile small { color: var(--muted); } .tile.owes strong, td.owes { color: var(--stamp); font-weight: 600; }
     section.card { margin-bottom: 1rem; } .c-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; padding: 1rem 1.15rem .6rem; } .c-head h2 { margin: 0; font-size: 1.05rem; } .c-head .muted { font-size: .8125rem; }
     .sm { font-size: .75rem; } .stamps { display: inline-flex; gap: .3rem; flex-wrap: wrap; } tr.off { opacity: .55; } td.actions { white-space: nowrap; }
+    .sup-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .8rem; padding: 0 1.15rem 1rem; }
+    .sup-tile { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border: 1px solid var(--line); border-radius: var(--r-2); }
+    .sup-tile span { color: var(--muted); font-size: .8125rem; } .sup-tile strong { font-size: 1.25rem; } .sup-tile small { color: var(--muted); font-size: .75rem; }
+    .sup-tile.owes strong { color: var(--stamp); }
   `,
 })
 export class SupplierDetail implements OnInit {
@@ -128,6 +150,11 @@ export class SupplierDetail implements OnInit {
   protected payAmount: number | string = 0;
   protected payMethod = 'Cash';
   protected amount() { return asNumber(String(this.payAmount)); }
+
+  private static readonly MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  protected monthName(month: number) { return SupplierDetail.MONTHS[month - 1] ?? ''; }
+  /** Only the months this supplier actually supplied in — an empty year of zero rows tells nobody anything. */
+  protected readonly supplyMonths = computed(() => (this.st()?.supplyMonths ?? []).filter(m => m.records > 0).reverse());
 
   protected readonly contact = computed(() => {
     const s = this.st()?.supplier; if (!s) return '';

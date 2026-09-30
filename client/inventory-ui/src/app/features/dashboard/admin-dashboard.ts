@@ -5,6 +5,7 @@ import { messageOf } from '../../core/api.service';
 import { Loading } from '../../core/loading.service';
 import { Auth } from '../../core/auth.service';
 import { CalendarData, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
+import { SupplySummary } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { DueCalendar } from './due-calendar';
 import { Bubbles, Dots, LineChart, Series, compact, naira } from './widgets';
@@ -102,6 +103,47 @@ const POLL_MS = 30_000;
           } @else { <div class="empty"><strong>No customer sales yet</strong>Named customers appear here once they buy.</div> }
         </section>
 
+        <!-- supplies: what suppliers supplied, on its own (no stock, no purchase orders mixed in) -->
+        @if (sup(); as sp) {
+          <section class="card supplies">
+            <div class="c-head"><app-icon name="supplier" [size]="18" /><h2>Supplies from suppliers</h2>
+              <span class="sub">Recorded separately from stock · <a routerLink="/supplies">open supplies</a></span></div>
+
+            <div class="s-tiles">
+              <div class="s-tile"><span>Supplied this month</span><strong class="mono">{{ full(sp.thisMonth) }}</strong>
+                <small>vs last month {{ full(sp.lastMonth) }}@if (sp.changePct !== null) { <span class="chip">{{ sp.changePct >= 0 ? '+' : '' }}{{ sp.changePct }}%</span> }</small></div>
+              <div class="s-tile" [class.owes]="sp.owedTotal > 0"><span>Owed on supplies</span><strong class="mono">{{ full(sp.owedTotal) }}</strong>
+                <small>{{ sp.recordsThisMonth }} record(s) this month</small></div>
+            </div>
+
+            <div class="s-cols">
+              <div>
+                <span class="eyebrow">Per supplier, this month</span>
+                @if (sp.bySupplier.length) {
+                  <table class="mini"><tbody>@for (b of sp.bySupplier; track b.supplierId) {
+                    <tr><td><a [routerLink]="['/suppliers', b.supplierId]">{{ b.supplier }}</a><div class="muted xs">{{ b.records }} record(s) · {{ b.units }} unit(s)</div></td>
+                      <td class="num mono">{{ full(b.amount) }}<div class="xs" [class.owes]="b.owed > 0">{{ b.owed > 0 ? full(b.owed) + ' owed' : 'settled' }}</div></td></tr>
+                  }</tbody></table>
+                } @else { <p class="muted xs">Nothing supplied this month yet.</p> }
+              </div>
+              <div>
+                <span class="eyebrow">Top items supplied, this month</span>
+                @if (sp.topItems.length) {
+                  <table class="mini"><tbody>@for (t of sp.topItems; track t.productId) {
+                    <tr><td>{{ t.product }}<div class="muted xs">{{ t.quantity }} {{ t.unit }}</div></td><td class="num mono">{{ full(t.amount) }}</td></tr>
+                  }</tbody></table>
+                } @else { <p class="muted xs">No items supplied this month yet.</p> }
+              </div>
+            </div>
+
+            @if (supplySeries().length) {
+              <span class="eyebrow">Each supplier, month by month</span>
+              <app-line-chart [series]="supplySeries()" [labels]="supplyLabels()" />
+              <div class="legend">@for (s of supplySeries(); track s.key) { <span><i [style.background]="s.color"></i>{{ s.label }}</span> }</div>
+            }
+          </section>
+        }
+
         <!-- revenue chart + advice -->
         <div class="row two-one">
           <section class="card">
@@ -183,6 +225,15 @@ const POLL_MS = 30_000;
     .add { display: inline-flex; align-items: center; gap: .4rem; background: var(--blue); color: #fff; padding: .6rem 1rem; border-radius: 10px; font-weight: 600; text-decoration: none; } .add:hover { filter: brightness(.95); }
     .card { background: #fff; border-radius: 16px; padding: 1.1rem 1.25rem; box-shadow: none; border: 0; min-width: 0; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+    .supplies { padding-bottom: 1rem; } .supplies .sub { margin-left: auto; font-size: .8125rem; color: #6b7280; }
+    .s-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; padding: 0 1.15rem .4rem; }
+    .s-tile { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border: 1px solid #eef1f6; border-radius: 12px; }
+    .s-tile span { color: #6b7280; font-size: .8125rem; } .s-tile strong { font: 500 1.35rem/1 var(--font-mono); letter-spacing: -.03em; }
+    .s-tile small { color: #6b7280; font-size: .75rem; } .s-tile.owes strong { color: var(--stamp); }
+    .s-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.2rem; padding: .8rem 1.15rem; }
+    .mini { width: 100%; border-collapse: collapse; margin-top: .4rem; } .mini td { padding: .4rem 0; border-bottom: 1px solid #f1f3f7; vertical-align: top; font-size: .875rem; }
+    .mini td.num { text-align: right; white-space: nowrap; } .xs { font-size: .7rem; } .xs.owes, .mini .owes { color: var(--stamp); }
+    .supplies .eyebrow { display: block; padding: 0 1.15rem; }
     .k-head { display: flex; justify-content: space-between; align-items: center; color: #4a5468; font-size: .9375rem; padding-bottom: .7rem; border-bottom: 1px solid #eef1f6; } .k-head app-icon { color: #9aa6bd; }
     .k-val { font: 500 1.7rem/1 var(--font-mono); letter-spacing: -.04em; color: var(--dark); margin: .9rem 0 .7rem; white-space: nowrap; }
     .k-foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; } .prev { font-size: .75rem; color: #8b95a7; }
@@ -263,11 +314,30 @@ export class AdminDashboard implements OnInit {
   protected readonly maxProfit = computed(() => Math.max(1, ...(this.o()?.topCustomers ?? []).flatMap(c => c.months.map(m => m.grossProfit))));
   protected readonly maxBalance = computed(() => Math.max(1, ...(this.o()?.topCustomers ?? []).map(c => c.openBalance)));
 
+  // ---- supplies: its own endpoint, so the overview payload stays lean and a supply problem never blanks the dashboard
+  protected readonly sup = signal<SupplySummary | null>(null);
+  private static readonly SUPPLY_COLORS = ['#6a2c5b', '#1f6b4f', '#b8762a', '#2f6fb0', '#8a3b3b', '#4a4a6a'];
+  protected readonly supplyLabels = computed(() => (this.sup()?.months ?? []).map(m => `${MONTHS[m.month - 1]} ${String(m.year).slice(2)}`));
+  protected readonly supplySeries = computed(() => {
+    const sp = this.sup(); if (!sp) return [];
+    // Only suppliers that actually supplied something in the year — a flat line at zero teaches nobody anything.
+    return sp.trends.filter(t => t.months.some(m => m.amount > 0)).map((t, i) => ({
+      key: String(t.supplierId), label: t.supplier, color: AdminDashboard.SUPPLY_COLORS[i % AdminDashboard.SUPPLY_COLORS.length],
+      values: t.months.map(m => m.amount),
+    }));
+  });
+
+  private async loadSupplies(first: boolean) {
+    try { this.sup.set(await (first ? this.api.supplySummary() : this.loading.quiet(() => this.api.supplySummary()))); }
+    catch { /* the rest of the dashboard still works */ }
+  }
+
   ngOnInit() {
     void this.loadOverview(true);
+    void this.loadSupplies(true);
     void this.reloadInsights(false);
     // "Real time": the figures refresh on their own while this tab is open and visible.
-    this.timers.push(setInterval(() => { if (!document.hidden) void this.loadOverview(false); }, POLL_MS));
+    this.timers.push(setInterval(() => { if (!document.hidden) { void this.loadOverview(false); void this.loadSupplies(false); } }, POLL_MS));
     document.addEventListener('visibilitychange', this.onVisible);
     this.destroy.onDestroy(() => { this.timers.forEach(clearInterval); document.removeEventListener('visibilitychange', this.onVisible); });
   }

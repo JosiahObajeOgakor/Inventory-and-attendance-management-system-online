@@ -88,6 +88,17 @@ export class Api2 {
   paySupplier(supplierId: number, amount: number, method: string) { return this.post<N.SupplierPaymentResult>(`/api/suppliers/${supplierId}/payments`, { amount, method }); }
   productSuppliers(productId: number) { return this.get<N.ProductSupplier[]>(`/api/products/${productId}/suppliers`); }
 
+  // supplies — what suppliers supplied; separate from stock and from purchase orders
+  supplies(q: PageQuery & { supplierId?: number; year?: number; month?: number }) { return this.get<Paged<N.SupplyRow>>('/api/supplies', q); }
+  supply(id: number) { return this.get<N.SupplyDetail>(`/api/supplies/${id}`); }
+  supplySummary() { return this.get<N.SupplySummary>('/api/supplies/summary'); }
+  createSupply(input: N.SupplyInput) { return this.post<N.SupplyResult>('/api/supplies', input); }
+  paySupply(id: number, amount: number, method: string) { return this.post<N.SupplyResult>(`/api/supplies/${id}/payments`, { amount, method }); }
+  deleteSupply(id: number) { return this.del<N.SupplyDeleteResult>(`/api/supplies/${id}`); }
+  deleteSuppliesOfSupplier(supplierId: number) { return this.del<N.SupplyDeleteResult>(`/api/supplies/supplier/${supplierId}`); }
+  clearSuppliesForMonth(year: number, month: number) { return this.post<N.SupplyDeleteResult>('/api/supplies/clear-month', { year, month }); }
+  clearAllSupplies() { return this.post<N.SupplyDeleteResult>('/api/supplies/clear-all', {}); }
+
   // clearing history (CEO)
   clearPreview(what: string[]) { return firstValueFrom(this.http.get<{ table: string; rows: number }[]>('/api/admin/archive/clear-preview', { params: new HttpParams({ fromObject: { what } }) })); }
   clearHistory(what: string[], confirm: string) { return this.post<{ records: number; file: string; bytes: number }>('/api/admin/archive/clear', { what, confirm }); }
