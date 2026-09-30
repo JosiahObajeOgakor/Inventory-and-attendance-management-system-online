@@ -120,8 +120,16 @@ public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerServi
 }
 
 [ApiController, Route("api/suppliers")]
-public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerService svc) : AppController(cu)
+public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerService svc, SupplierStatementQueries statements, PurchaseService purchases) : AppController(cu)
 {
+    /// <summary>Everything tied to this supplier: their goods, every order, every payment, and what we owe.</summary>
+    [HttpGet("{id:int}/statement"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplierStatement> Statement(int id, CancellationToken ct) => statements.GetAsync(id, ct);
+
+    /// <summary>Pay the supplier any amount up to what we owe; it settles their unpaid orders oldest first.</summary>
+    [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplierPaymentResult> Pay(int id, PaymentRequest r, CancellationToken ct) => purchases.RecordPaymentAsync(id, r.Amount, r.Method ?? "Cash", Me, ct);
+
     [HttpGet, Authorize(Policy = Policies.Admin)]
     public Task<PagedResult<SupplierDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.SuppliersAsync(page, ct);
 

@@ -4,7 +4,7 @@ import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { CatalogDialog, ChosenItem } from './catalog-dialog';
 import { Auth } from '../../core/auth.service';
-import { Category, Product, ProductInput, Warehouse } from '../../core/models';
+import { Category, Product, ProductInput, Supplier, Warehouse } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Confirm, Toasts } from '../../shared/feedback';
@@ -85,6 +85,14 @@ const UNITS = [
         <div class="field"><label for="f-ro">Reorder when stock reaches</label><input id="f-ro" class="input num" type="number" min="0" formControlName="reorderLevel" /></div>
         <div class="field"><label for="f-bc">Barcode</label><input id="f-bc" class="input mono" formControlName="barcode" /><span class="hint">Leave blank and one is made for you.</span></div>
 
+        @if (auth.isAdmin() && suppliers().length) {
+          <div class="field span-2"><span class="label">Supplied by</span>
+            <div class="sup">
+              @for (s of suppliers(); track s.id) {
+                <label class="chip-pick" [class.on]="supplierIds().includes(s.id)"><input type="checkbox" [checked]="supplierIds().includes(s.id)" (change)="toggleSupplier(s.id, $any($event.target).checked)" /> {{ s.name }}</label>
+              }
+            </div><span class="hint">Tick who supplies this. It appears on their item list, ready to pick when you record a purchase from them.</span></div>
+        }
         @if (editing(); as e) {
           <div class="field span-2 photo"><span class="label">Photo (shown on the catalog)</span>
             <div class="photo-row">
@@ -112,6 +120,9 @@ const UNITS = [
 
     <app-catalog-dialog [open]="catalogOpen()" [preselected]="picked()" (closed)="catalogOpen.set(false)" />`,
   styles: `.sm { font-size: .75rem; } th.tick, td.tick { width: 2rem; padding-right: 0; }
+    .sup { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; max-height: 8.5rem; overflow: auto; }
+    .chip-pick { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .6rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .8125rem; cursor: pointer; }
+    .chip-pick.on { background: var(--brand-tint); border-color: var(--brand); }
     .photo-row { display: flex; align-items: center; gap: .7rem; margin-top: .3rem; } .photo-row img { width: 72px; height: 72px; object-fit: contain; border: 1px solid var(--line); border-radius: var(--r-2); background: #fff; }
     .no-photo { width: 72px; height: 72px; display: grid; place-items: center; text-align: center; font-size: .7rem; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: var(--r-2); } .low { color: var(--stamp); font-weight: 600; } tr.inactive { opacity: .6; } .inline { display: flex; gap: .4rem; } fieldset.open { border: 1px dashed var(--line-strong); border-radius: var(--r-2); padding: .8rem; margin: 0; }`,
 })
@@ -167,9 +178,18 @@ export class ProductsPage implements OnInit {
     void this.list.load();
     void this.api.categories().then(c => this.categories.set(c));
     void this.api.warehouses().then(w => this.warehouses.set(w));
+    if (this.auth.isAdmin()) void this.api.suppliers({ pageSize: 200 }).then(s => this.suppliers.set(s.items), () => { /* the picker just isn't shown */ });
   }
 
+  // ---- who supplies the product (puts it on those suppliers' item lists)
+  protected readonly suppliers = signal<Supplier[]>([]);
+  protected readonly supplierIds = signal<number[]>([]);
+  /** False while an edited product's current suppliers couldn't be read: saving then leaves its links untouched. */
+  private suppliersKnown = true;
+  protected toggleSupplier(id: number, on: boolean) { this.supplierIds.update(xs => (on ? [...new Set([...xs, id])] : xs.filter(x => x !== id))); }
+
   protected openNew() {
+    this.supplierIds.set([]); this.suppliersKnown = true;
     this.editing.set(null);
     this.form.reset({ sku: '', name: '', categoryId: this.categories()[0]?.id ?? 0, unit: 'Bag', reorderLevel: 0, costPrice: 0, priceRetail: 0, priceWholesaler: 0, priceDistributor: 0,
       barcode: '', openingQuantity: 0, warehouseId: this.warehouses()[0]?.id ?? 0, batchNumber: '', expiryDate: '' });
@@ -178,6 +198,10 @@ export class ProductsPage implements OnInit {
 
   protected openEdit(p: Product) {
     this.editing.set(p); this.photoMissing.set(false); this.photoStamp.set(Date.now());
+    this.supplierIds.set([]); this.suppliersKnown = false;
+    if (this.auth.isAdmin()) void this.api2.productSuppliers(p.id).then(xs => {
+      if (this.editing()?.id === p.id) { this.supplierIds.set(xs.map(x => x.supplierId)); this.suppliersKnown = true; }
+    }, () => { /* links stay as they are */ });
     this.form.patchValue({ sku: p.sku, name: p.name, categoryId: p.categoryId, unit: p.unit, reorderLevel: p.reorderLevel, costPrice: p.costPrice ?? 0,
       priceRetail: p.priceRetail, priceWholesaler: p.priceWholesaler, priceDistributor: p.priceDistributor, barcode: p.barcode ?? '' });
     this.dialogOpen.set(true);
@@ -200,6 +224,7 @@ export class ProductsPage implements OnInit {
       sku: v.sku.trim(), name: v.name.trim(), categoryId: v.categoryId, unit: v.unit, reorderLevel: v.reorderLevel, costPrice: v.costPrice,
       priceDistributor: v.priceDistributor, priceWholesaler: v.priceWholesaler, priceRetail: v.priceRetail, barcode: v.barcode.trim() || null,
       tracksSerial: this.editing()?.tracksSerial ?? false,
+      supplierIds: this.auth.isAdmin() && this.suppliersKnown && this.suppliers().length ? this.supplierIds() : null,
     };
     this.busy.set(true);
     try {

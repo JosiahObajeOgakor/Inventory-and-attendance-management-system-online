@@ -48,6 +48,22 @@ const POLL_MS = 30_000;
           }
         </section>
 
+        <!-- cost of goods: what sold goods cost us, what we bought, what's on the shelves, what we owe suppliers -->
+        <section class="kpis" aria-label="Cost of goods">
+          @for (k of costKpis(); track k.label) {
+            <article class="card cost">
+              <div class="k-head"><span>{{ k.label }}</span><app-icon [name]="k.icon" [size]="16" /></div>
+              <div class="k-val">{{ full(k.value) }}</div>
+              <div class="k-foot">
+                @if (k.kpi; as kp) {
+                  <span class="prev">vs last month {{ full(kp.previous) }}</span>
+                  @if (kp.changePct !== null) { <span class="chip"><span aria-hidden="true">{{ kp.changePct >= 0 ? '↑' : '↓' }}</span> {{ kp.changePct >= 0 ? '+' : '' }}{{ kp.changePct }}%</span> }
+                } @else if (k.link) { <a class="prev" [routerLink]="k.link">{{ k.note }}</a> } @else { <span class="prev">{{ k.note }}</span> }
+              </div>
+            </article>
+          }
+        </section>
+
         <!-- customers by month -->
         <section class="card hero">
           <div class="c-head"><app-icon name="customer" [size]="18" /><h2>Top customers</h2>
@@ -281,6 +297,18 @@ export class AdminDashboard implements OnInit {
     this.insightsBusy.set(true);
     try { this.insights.set(await this.api.insights(refresh)); } catch { /* the panel keeps its last advice */ } finally { this.insightsBusy.set(false); }
   }
+
+  /** Cost side of the business. Costs going up isn't "good" or "bad" on its own (more sales cost more), so these chips stay neutral. */
+  protected readonly costKpis = computed(() => {
+    const o = this.o(); if (!o) return [];
+    const owed = o.suppliersOwed === 1 ? '1 supplier' : `${o.suppliersOwed} suppliers`;
+    return [
+      { label: 'Cost of goods sold', icon: 'stock', value: o.cogs?.current ?? 0, kpi: o.cogs, note: '', link: null },
+      { label: 'Goods bought', icon: 'purchase', value: o.purchases?.current ?? 0, kpi: o.purchases, note: '', link: null },
+      { label: 'Stock at cost', icon: 'product', value: o.inventoryValue, kpi: null, note: 'What is on the shelves now', link: null },
+      { label: 'Owed to suppliers', icon: 'supplier', value: o.payablesTotal, kpi: null, note: o.suppliersOwed ? `Across ${owed} · view` : 'Nothing owed', link: o.suppliersOwed ? '/suppliers' : null },
+    ] as { label: string; icon: string; value: number; kpi: Kpi | null; note: string; link: string | null }[];
+  });
 
   protected good(k: { kpi: Kpi; invert: boolean }) { return (k.kpi.changePct ?? 0) >= 0 !== k.invert; }
   protected monthOf(c: CustomerHero) { return c.months[Math.min(this.mi(), c.months.length - 1)]; }

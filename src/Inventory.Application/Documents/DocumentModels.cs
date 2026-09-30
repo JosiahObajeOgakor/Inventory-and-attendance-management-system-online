@@ -36,10 +36,22 @@ public sealed record PriceListLine(string Category, string Product, string Sku, 
 public sealed record PriceListDoc(Branding Brand, string Tier, string? CustomerName, string Reference, DateOnly Date, IReadOnlyList<PriceListLine> Lines, DateTime GeneratedAt,
     bool Catalog = false);
 
+/// <summary>
+/// What we bought from a supplier, sent to them: the goods, what the order comes to, what we've paid on it, and what we still owe them in total.
+/// <see cref="VatAmount"/> is whatever the order total carries above its lines (the rate isn't stored on the order).
+/// </summary>
+public sealed record PurchaseOrderDoc(
+    Branding Brand, string Number, DateOnly Date, string Status, string PaymentStatus, PartyInfo Supplier, string PreparedBy,
+    IReadOnlyList<DocLine> Lines, decimal Subtotal, decimal VatAmount, decimal Total, decimal Paid, decimal OwedElsewhere, DateTime GeneratedAt)
+{
+    public decimal BalanceDue => Math.Max(0, Total - Paid);
+}
+
 /// <summary>Turns a document model into a PDF. Implemented in Infrastructure so the Application layer has no PDF dependency.</summary>
 public interface IDocumentRenderer
 {
     byte[] Receipt(ReceiptDoc d);
+    byte[] PurchaseOrder(PurchaseOrderDoc d);
     byte[] Quotation(QuotationDoc d);
     byte[] Waybill(WaybillDoc d);
     byte[] PriceList(PriceListDoc d);

@@ -69,7 +69,8 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
             ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "document",
             ["document"] = new JsonObject { ["id"] = mediaId, ["filename"] = filename, ["caption"] = caption },
         };
-        await SendAsync(cfg, body, ct);
+        // A person pressed "Send" and is waiting to be told it went: a refused send must not look like a delivered one.
+        if (!await SendAsync(cfg, body, ct)) throw new BusinessRuleException("WhatsApp didn't accept the message. Check the number, or use Share instead.");
     }
 
     public async Task SendImageAsync(string companyKey, string toE164, byte[] png, string caption, CancellationToken ct)

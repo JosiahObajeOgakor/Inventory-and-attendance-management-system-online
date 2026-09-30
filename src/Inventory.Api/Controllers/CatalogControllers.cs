@@ -51,6 +51,10 @@ public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductServic
     public async Task<IActionResult> Delete(int id, CancellationToken ct) =>
         await DeleteAsync(id, ct);
 
+    /// <summary>The suppliers this product is bought from (for the product form's "Supplied by" picker).</summary>
+    [HttpGet("{id:int}/suppliers"), Authorize(Policy = Policies.Admin)]
+    public Task<List<ProductSupplierDto>> Suppliers(int id, CancellationToken ct) => svc.SuppliersAsync(id, ct);
+
     /// <summary>The product's photo for the customer catalog. PNG or JPEG, up to 2 MB.</summary>
     [HttpPut("{id:int}/image"), Authorize(Policy = Policies.Admin)]
     [RequestSizeLimit(Inventory.Application.Company.CompanyProfileService.MaxImageBytes + 4096)]

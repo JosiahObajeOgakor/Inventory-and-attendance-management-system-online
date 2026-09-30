@@ -57,6 +57,24 @@ public class SupplierItem
     public decimal UnitCost { get; set; }
 }
 
+/// <summary>
+/// Money we paid a supplier. One row per purchase order it went to (a payment that spans several orders is several rows with the same
+/// <see cref="Reference"/>), so the supplier's page can show every payment and which bills it settled.
+/// </summary>
+public class SupplierPayment
+{
+    public int Id { get; set; }
+    public int SupplierId { get; set; }
+    public int PurchaseOrderId { get; set; }
+    /// <summary>UTC.</summary>
+    public DateTime PaidAt { get; set; }
+    public decimal Amount { get; set; }
+    public string Method { get; set; } = "Cash";
+    /// <summary>Groups the rows of one payment (e.g. "PAY-20260928-0412") so it reads as a single payment on the statement.</summary>
+    public string Reference { get; set; } = "";
+    public int PaidByUserId { get; set; }
+}
+
 /// <summary>A product's photo, printed on the catalog / price list sent to customers. One per product.</summary>
 public class ProductImage
 {

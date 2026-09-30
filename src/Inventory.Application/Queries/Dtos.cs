@@ -42,12 +42,14 @@ public sealed record PaymentDto(DateTime At, decimal Amount, string Method);
 public sealed record InvoiceDetailDto(int Id, string InvoiceNumber, int CustomerId, string Customer, string CustomerType, DateOnly InvoiceDate,
     DateOnly? DueDate, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount, decimal VatRate, decimal VatAmount, decimal TotalAmount,
     decimal AmountPaid, string Status, string PaymentMethod, string PriceTier, int? WarehouseId, string CreatedBy, string? VoidReason,
-    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments, decimal DeliveryFee = 0, decimal OwedElsewhere = 0);
+    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments, decimal DeliveryFee = 0, decimal OwedElsewhere = 0,
+    string? CustomerPhone = null, string? CustomerEmail = null);
 
 public sealed record PurchaseRowDto(int Id, string PoNumber, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus, decimal TotalAmount, decimal AmountPaid);
 public sealed record PurchaseItemDto(int ProductId, string Product, string Sku, int Quantity, decimal UnitCost, decimal LineTotal);
 public sealed record PurchaseDetailDto(int Id, string PoNumber, int SupplierId, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus,
-    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items, decimal OwedElsewhere = 0);
+    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items, decimal OwedElsewhere = 0,
+    string? SupplierPhone = null, string? SupplierEmail = null);
 
 public sealed record LedgerRowDto(int Id, DateOnly EntryDate, string AccountName, string AccountType, string EntryType, decimal Amount, string? Reference);
 

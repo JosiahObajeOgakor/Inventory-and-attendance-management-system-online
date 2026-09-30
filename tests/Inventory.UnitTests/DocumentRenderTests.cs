@@ -50,6 +50,28 @@ public class DocumentRenderTests
     private static int Pages(byte[] pdf) { using var d = PdfDocument.Open(pdf); return d.NumberOfPages; }
 
     [Fact]
+    public void Purchase_order_is_one_page_showing_the_supplier_the_goods_what_was_paid_and_everything_owed()
+    {
+        var doc = new PurchaseOrderDoc(Brand(), "ChewyStock-28092026-101500", new DateOnly(2026, 9, 28), "Received", "Partial",
+            new PartyInfo("AgroFeed Mills Ltd", "Musa Bello", "Km 4 Kaduna Rd, Zaria", "0805 111 2233", "sales@agrofeed.example", "", ""), "Ada Eze",
+            [new DocLine(1, "SKU-1", "Adult Dog Food 20kg", "Bag", 10, 9000m, 90000m), new DocLine(2, "SKU-2", "Puppy Food 10kg", "Bag", 4, 5000m, 20000m)],
+            Subtotal: 110000m, VatAmount: 0, Total: 110000m, Paid: 60000m, OwedElsewhere: 25000m, GeneratedAt: new DateTime(2026, 9, 28, 10, 15, 0));
+
+        var pdf = new QuestDocumentRenderer().PurchaseOrder(doc);
+
+        Assert.Equal(1, Pages(pdf));
+        var t = Text(pdf);
+        Has(t, "PURCHASE ORDER");
+        Has(t, "AgroFeed Mills Ltd");
+        Has(t, "Adult Dog Food 20kg");
+        Has(t, "110,000.00");          // order total
+        Has(t, "60,000.00");           // paid on this order
+        Has(t, "50,000.00");           // still owed on it
+        Has(t, "75,000.00");           // everything we owe them, earlier orders included
+        Lacks(t, "8676752988");        // OUR bank details don't belong on a document that says what WE owe
+    }
+
+    [Fact]
     public void Receipt_is_a_pdf_with_the_company_details_lines_totals_banks_and_the_pay_only_here_note()
     {
         var pdf = new QuestDocumentRenderer().Receipt(Receipt(owedElsewhere: 5000m, discount: 1050m, vat: 1421.25m));

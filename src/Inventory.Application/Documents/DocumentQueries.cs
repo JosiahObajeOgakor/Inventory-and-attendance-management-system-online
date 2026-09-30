@@ -90,6 +90,25 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
             q.Status == QuotationStatuses.Open ? ScanUrl(PaymentDocTypes.Quotation, q.Id, q.TotalAmount) : null);
     }
 
+    public async Task<PurchaseOrderDoc> PurchaseOrderAsync(int id, CancellationToken ct)
+    {
+        var po = await db.PurchaseOrders.AsNoTracking().Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Purchase order");
+        var s = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == po.SupplierId, ct);
+        var brand = await BrandAsync(ct);
+        var ids = po.Items.Select(x => x.ProductId).ToList();
+        var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var lines = po.Items.OrderBy(x => products[x.ProductId].Name).Select((x, n) =>
+            new DocLine(n + 1, products[x.ProductId].Sku, products[x.ProductId].Name, products[x.ProductId].Unit, x.Quantity, x.UnitCost, x.Quantity * x.UnitCost)).ToList();
+        var subtotal = lines.Sum(l => l.Amount);
+        var briefs = await users.BriefsAsync([po.CreatedByUserId], ct);
+        var cancelled = po.Status == PurchaseStatuses.Cancelled;
+        // What we owe them on OTHER orders: the running balance minus this order's unpaid share.
+        var elsewhere = cancelled ? Math.Max(0m, s.Balance) : Math.Max(0m, s.Balance - Math.Max(0m, po.TotalAmount - po.AmountPaid));
+        var party = new PartyInfo(s.Name, s.ContactName ?? "", s.Address ?? "", s.Phone ?? "", s.Email ?? "", s.TaxId ?? "", "");
+        return new PurchaseOrderDoc(brand, po.PoNumber, po.OrderDate, po.Status, po.PaymentStatus, party, PersonOn(briefs.GetValueOrDefault(po.CreatedByUserId), brand.Name),
+            lines, subtotal, Math.Max(0m, po.TotalAmount - subtotal), po.TotalAmount, po.AmountPaid, elsewhere, clock.BusinessNow);
+    }
+
     public async Task<WaybillDoc> WaybillAsync(int id, CancellationToken ct)
     {
         var w = await db.Waybills.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Waybill");

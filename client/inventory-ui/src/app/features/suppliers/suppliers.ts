@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { Auth } from '../../core/auth.service';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
@@ -13,7 +14,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
 
 @Component({
   selector: 'app-suppliers',
-  imports: [ReactiveFormsModule, Icon, Modal, NairaPipe, Pager],
+  imports: [ReactiveFormsModule, RouterLink, Icon, Modal, NairaPipe, Pager],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -30,9 +31,9 @@ import { NairaPipe, Pager } from '../../shared/ui';
           <thead><tr><th>Supplier</th><th>Supplies</th><th>Contact</th><th class="num">We owe</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             @for (s of list.items(); track s.id) {
-              <tr><td class="strong">{{ s.name }}</td><td>{{ s.category ?? '—' }}</td><td>{{ s.contactName ?? '' }}<div class="muted sm">{{ s.phone }}</div></td>
+              <tr><td><a class="strong" [routerLink]="['/suppliers', s.id]">{{ s.name }}</a></td><td>{{ s.category ?? '—' }}</td><td>{{ s.contactName ?? '' }}<div class="muted sm">{{ s.phone }}</div></td>
                 <td class="num mono" [class.owes]="s.balance > 0">{{ s.balance | naira }}</td>
-                <td class="actions"><button type="button" class="btn btn-sm" (click)="openItems(s)">Items</button> <button type="button" class="btn btn-sm" (click)="openEdit(s)">Edit</button> @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }</td></tr>
+                <td class="actions"><a class="btn btn-sm btn-primary" [routerLink]="['/suppliers', s.id]">Open</a> <button type="button" class="btn btn-sm" (click)="openItems(s)">Items</button> <button type="button" class="btn btn-sm" (click)="openEdit(s)">Edit</button> @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }</td></tr>
             }
           </tbody>
         </table></div>

@@ -6,10 +6,11 @@ import { InvoiceDetail, SaleDeleteResult } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
+import { SendDocument } from '../../shared/send-document';
 
 @Component({
   selector: 'app-sale-detail',
-  imports: [RouterLink, Icon, NairaPipe, DayPipe, StampTimePipe, Stamp],
+  imports: [RouterLink, Icon, NairaPipe, DayPipe, StampTimePipe, Stamp, SendDocument],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -18,6 +19,7 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
         <div class="actions">
           <a class="btn" routerLink="/sales">All sales</a>
           <a class="btn btn-primary" [href]="'/api/sales/' + id() + '/receipt.pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> Receipt (PDF)</a>
+          @if (s() && s()!.status !== 'Voided') { <button type="button" class="btn" (click)="sendOpen.set(true)"><app-icon name="send" [size]="18" /> Send receipt</button> }
           <button type="button" class="btn" (click)="print()">Print this page</button>
           @if (auth.isAdmin() && s() && s()!.status !== 'Voided') {
             <a class="btn" [routerLink]="['/sales', id(), 'edit']"><app-icon name="edit" [size]="18" /> Edit sale</a>
@@ -77,7 +79,9 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
           </div>
         </article>
       } @else if (!error()) { <div class="card skeleton" style="height:18rem"></div> }
-    </div>`,
+    </div>
+    <app-send-document [open]="sendOpen()" kind="receipts" [docId]="s()?.id ?? null" [number]="s()?.invoiceNumber ?? ''"
+      [defaultPhone]="s()?.customerPhone ?? ''" [defaultEmail]="s()?.customerEmail ?? ''" (closed)="sendOpen.set(false)" />`,
   styles: `
     .receipt { max-width: 52rem; padding: 1.5rem 1.75rem 1.75rem; position: relative; overflow: hidden; }
     header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--ink); }
@@ -96,6 +100,9 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
 })
 export class SaleDetail implements OnInit {
   readonly id = input.required<string>();   // bound from the route (withComponentInputBinding)
+  /** "?send=1": the sale was just made — offer to send the receipt straight away. */
+  readonly send = input<string>();
+  protected readonly sendOpen = signal(false);
   private readonly api = inject(Api);
   private readonly confirm = inject(Confirm);
   private readonly router = inject(Router);
@@ -108,7 +115,10 @@ export class SaleDetail implements OnInit {
   ngOnInit() { void this.load(); }
 
   private async load() {
-    try { this.s.set(await this.api.sale(Number(this.id()))); } catch (e) { this.error.set(messageOf(e)); }
+    try {
+      this.s.set(await this.api.sale(Number(this.id())));
+      if (this.send() && this.s()!.status !== 'Voided') this.sendOpen.set(true);
+    } catch (e) { this.error.set(messageOf(e)); }
   }
 
   protected print() { window.print(); }

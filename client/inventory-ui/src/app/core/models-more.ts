@@ -47,6 +47,18 @@ export interface ExpenseInput { category: string; expenseDate: string | null; am
 export interface RebateCustomer { customerId: number; customer: string; ranking: string; available: number; redeemed: number; lifetime: number; }
 export interface RebateSummary { customers: RebateCustomer[]; outstandingTotal: number; redeemedTotal: number; defaultPerUnit: number; }
 export interface SupplierItem { id: number; productId: number; product: string; sku: string; unit: string; unitCost: number; isActive: boolean; }
+
+// ---- one supplier's page: their goods, every order, every payment, what we owe
+export interface SupplierStatementItem { productId: number; product: string; sku: string; unit: string; usualCost: number; onList: boolean; isActive: boolean;
+  quantityBought: number; amountBought: number; lastCost: number | null; lastBought: string | null; }
+export interface SupplierStatementOrder { id: number; poNumber: string; orderDate: string; status: string; paymentStatus: string; total: number; paid: number;
+  outstanding: number; lines: number; units: number; }
+export interface SupplierStatementPayment { reference: string; paidAt: string; method: string; amount: number; orders: string[]; }
+export interface SupplierStatement { supplier: import('./models').Supplier; totalBought: number; totalPaid: number; owed: number; orders: number; openOrders: number;
+  lastOrder: string | null; items: SupplierStatementItem[]; orderList: SupplierStatementOrder[]; payments: SupplierStatementPayment[]; }
+export interface SupplierPaymentResult { reference: string; amount: number; appliedToOrders: number; balanceNow: number; ordersPaid: number; }
+export interface ProductSupplier { supplierId: number; supplier: string; unitCost: number; }
+export interface DocumentSent { channel: string; to: string; file: string; }
 export interface RebateEntry { id: number; entryDate: string; invoiceNumber: string | null; amount: number; status: string; redeemedDate: string | null; note: string | null; }
 
 // ---- price book ----

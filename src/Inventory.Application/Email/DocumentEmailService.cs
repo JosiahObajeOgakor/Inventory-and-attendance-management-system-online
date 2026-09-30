@@ -61,6 +61,48 @@ public sealed class DocumentEmailService(DocumentQueries docs, IDocumentRenderer
         return new EmailSent(address, msg.Subject, file);
     }
 
+    public async Task<EmailPreview> PreviewReceiptAsync(int invoiceId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        var d = await docs.ReceiptAsync(invoiceId, ct);
+        return new EmailPreview(EmailTemplates.ReceiptSubject(d), EmailTemplates.Receipt(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }), to ?? d.Customer.Email);
+    }
+
+    /// <summary>The sale's receipt to the customer (blank address = the one on their record), PDF attached.</summary>
+    public async Task<EmailSent> SendReceiptAsync(int invoiceId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        Require();
+        var d = await docs.ReceiptAsync(invoiceId, ct);
+        var address = CleanAddress(string.IsNullOrWhiteSpace(to) ? d.Customer.Email : to);
+        Throttle(user.Id);
+        var file = $"Receipt-{d.Number}.pdf";
+        var msg = new EmailMessage(address, d.Customer.Name, EmailTemplates.ReceiptSubject(d), EmailTemplates.Receipt(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }),
+            EmailTemplates.ReceiptText(d, note, user.FullName), [new(file, renderer.Receipt(d), "application/pdf")], d.Brand.Name, string.IsNullOrWhiteSpace(d.Brand.Email) ? null : d.Brand.Email, d.Brand.Logo);
+        await sender.SendAsync(msg, ct);
+        await AuditAsync(user, "RECEIPT_EMAILED", "Invoice", invoiceId.ToString(), $"{d.Number} to {address}", ct);
+        return new EmailSent(address, msg.Subject, file);
+    }
+
+    public async Task<EmailPreview> PreviewPurchaseAsync(int purchaseOrderId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        var d = await docs.PurchaseOrderAsync(purchaseOrderId, ct);
+        return new EmailPreview(EmailTemplates.PurchaseSubject(d), EmailTemplates.Purchase(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }), to ?? d.Supplier.Email);
+    }
+
+    /// <summary>The purchase order to the supplier (blank address = the one on their record), PDF attached.</summary>
+    public async Task<EmailSent> SendPurchaseAsync(int purchaseOrderId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        Require();
+        var d = await docs.PurchaseOrderAsync(purchaseOrderId, ct);
+        var address = CleanAddress(string.IsNullOrWhiteSpace(to) ? d.Supplier.Email : to);
+        Throttle(user.Id);
+        var file = $"Purchase-order-{d.Number}.pdf";
+        var msg = new EmailMessage(address, d.Supplier.Name, EmailTemplates.PurchaseSubject(d), EmailTemplates.Purchase(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }),
+            EmailTemplates.PurchaseText(d, note, user.FullName), [new(file, renderer.PurchaseOrder(d), "application/pdf")], d.Brand.Name, string.IsNullOrWhiteSpace(d.Brand.Email) ? null : d.Brand.Email, d.Brand.Logo);
+        await sender.SendAsync(msg, ct);
+        await AuditAsync(user, "PURCHASE_EMAILED", "PurchaseOrder", purchaseOrderId.ToString(), $"{d.Number} to {address}", ct);
+        return new EmailSent(address, msg.Subject, file);
+    }
+
     private async Task<(PriceListDoc Doc, string? CustomerEmail)> PriceListAsync(int? customerId, string? tier, CancellationToken ct)
     {
         if (!company.HasPriceLists) throw new NotFoundException("Price list");

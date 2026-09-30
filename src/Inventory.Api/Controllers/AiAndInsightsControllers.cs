@@ -3,6 +3,7 @@ using Inventory.Application.Abstractions;
 using Inventory.Application.Ai;
 using Inventory.Application.Analytics;
 using Inventory.Application.Dashboard;
+using Inventory.Application.Documents;
 using Inventory.Application.Email;
 using Inventory.Infrastructure.Localization;
 using Inventory.Infrastructure.Persistence;
@@ -42,10 +43,31 @@ public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q) : A
 
 /// <summary>Email a quotation or the price list with the PDF attached. Staff can send; the template preview shows exactly what the customer will get.</summary>
 [ApiController, Route("api/email")]
-public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSender sender) : AppController(cu)
+public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSender sender, DocumentSendService whatsapp) : AppController(cu)
 {
+    /// <summary><c>configured</c> = email can be sent; <c>whatsApp</c> = this business's WhatsApp number can send documents.</summary>
     [HttpGet("status"), Authorize(Policy = Policies.Staff)]
-    public object Status() => new { configured = sender.IsConfigured };
+    public object Status() => new { configured = sender.IsConfigured, whatsApp = whatsapp.WhatsAppReady };
+
+    // ---- a sale's receipt, to the customer (anyone who can sell can send it)
+    [HttpPost("receipts/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
+    public Task<EmailPreview> PreviewReceipt(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewReceiptAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("receipts/{id:int}/send"), Authorize(Policy = Policies.Staff)]
+    public async Task<EmailSent> SendReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendReceiptAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("receipts/{id:int}/whatsapp"), Authorize(Policy = Policies.Staff)]
+    public async Task<DocumentSent> WhatsAppReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.ReceiptToWhatsAppAsync(id, r.To, Me, ct);
+
+    // ---- a purchase order, to the supplier (purchasing is for managers and the CEO)
+    [HttpPost("purchases/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    public Task<EmailPreview> PreviewPurchase(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewPurchaseAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("purchases/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    public async Task<EmailSent> SendPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendPurchaseAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("purchases/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    public async Task<DocumentSent> WhatsAppPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.PurchaseToWhatsAppAsync(id, r.To, Me, ct);
 
     [HttpPost("quotations/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
     public Task<EmailPreview> PreviewQuotation(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewQuotationAsync(id, r.To, r.Note, Me, ct);

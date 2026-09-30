@@ -542,7 +542,7 @@ export class SaleNew implements OnInit {
       }
       const res = await this.api.createSale(r, this.idem.id);
       this.toasts.ok(`Sale ${res.invoiceNumber} saved.`);
-      await this.router.navigate(['/sales', res.invoiceId]);
+      await this.router.navigate(['/sales', res.invoiceId], { queryParams: { send: 1 } });   // opens "Send receipt" (WhatsApp / email)
     } catch (e) {
       const p = problemOf(e);
       if (p?.shortfalls?.length) this.shortfalls.set(p.shortfalls); else this.error.set(messageOf(e));

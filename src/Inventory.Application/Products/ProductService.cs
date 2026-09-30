@@ -29,7 +29,12 @@ public sealed class ProductInput
     public decimal? FiberPct { get; set; }
     public decimal? MoisturePct { get; set; }
     public string? NutritionSummary { get; set; }
+
+    /// <summary>The suppliers who supply this product (it goes on each one's item list). Null = leave the links as they are.</summary>
+    public List<int>? SupplierIds { get; set; }
 }
+
+public sealed record ProductSupplierDto(int SupplierId, string Supplier, decimal UnitCost);
 
 public sealed class NewProductRequest
 {
@@ -85,6 +90,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
             await db.SaveChangesAsync(inner);
             // A scanned supplier code is kept; an unlabelled product gets an in-store one, which needs the new id.
             product.Barcode ??= Barcodes.MintInternalBarcode(product.Id);
+            await LinkSuppliersAsync(product, p.SupplierIds, inner);
 
             if (req.OpeningQuantity > 0)
             {
@@ -118,8 +124,31 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         p.Barcode = barcode; p.TracksSerial = input.TracksSerial;
         p.Species = input.Species; p.LifeStage = input.LifeStage; p.ProteinPct = input.ProteinPct; p.FatPct = input.FatPct;
         p.FiberPct = input.FiberPct; p.MoisturePct = input.MoisturePct; p.NutritionSummary = input.NutritionSummary;
+        await LinkSuppliersAsync(p, input.SupplierIds, ct);
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_UPDATED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Who supplies this product, with what they usually charge for it.</summary>
+    public async Task<List<ProductSupplierDto>> SuppliersAsync(int id, CancellationToken ct = default) =>
+        await (from si in db.SupplierItems.AsNoTracking().Where(x => x.ProductId == id)
+               join s in db.Suppliers.AsNoTracking() on si.SupplierId equals s.Id
+               orderby s.Name
+               select new ProductSupplierDto(s.Id, s.Name, si.UnitCost)).ToListAsync(ct);
+
+    /// <summary>
+    /// Puts the product on exactly these suppliers' item lists. A new link starts at the product's cost price; an existing link keeps the cost the
+    /// supplier's list already has.
+    /// </summary>
+    private async Task LinkSuppliersAsync(Product product, List<int>? supplierIds, CancellationToken ct)
+    {
+        if (supplierIds is null) return;
+        var wanted = supplierIds.Where(x => x > 0).Distinct().ToList();
+        if (await db.Suppliers.CountAsync(s => wanted.Contains(s.Id), ct) != wanted.Count) throw new NotFoundException("Supplier");
+        var existing = product.Id == 0 ? [] : await db.SupplierItems.Where(x => x.ProductId == product.Id).ToListAsync(ct);
+        db.SupplierItems.RemoveRange(existing.Where(e => !wanted.Contains(e.SupplierId)));
+        foreach (var sid in wanted.Where(sid => existing.All(e => e.SupplierId != sid)))
+            db.SupplierItems.Add(new SupplierItem { SupplierId = sid, ProductId = product.Id, UnitCost = product.CostPrice });
     }
 
     // ---- product photo (printed on the catalog sent to customers)

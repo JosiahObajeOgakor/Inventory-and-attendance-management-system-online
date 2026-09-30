@@ -84,6 +84,9 @@ export class Api2 {
   // supplier item lists
   supplierItems(supplierId: number) { return this.get<N.SupplierItem[]>(`/api/suppliers/${supplierId}/items`); }
   setSupplierItems(supplierId: number, items: { productId: number; unitCost: number }[]) { return this.put<void>(`/api/suppliers/${supplierId}/items`, items); }
+  supplierStatement(supplierId: number) { return this.get<N.SupplierStatement>(`/api/suppliers/${supplierId}/statement`); }
+  paySupplier(supplierId: number, amount: number, method: string) { return this.post<N.SupplierPaymentResult>(`/api/suppliers/${supplierId}/payments`, { amount, method }); }
+  productSuppliers(productId: number) { return this.get<N.ProductSupplier[]>(`/api/products/${productId}/suppliers`); }
 
   // clearing history (CEO)
   clearPreview(what: string[]) { return firstValueFrom(this.http.get<{ table: string; rows: number }[]>('/api/admin/archive/clear-preview', { params: new HttpParams({ fromObject: { what } }) })); }
@@ -122,7 +125,11 @@ export class Api2 {
   suggestedOrder(supplierId: number) { return this.get<D.SuggestedLine[]>(`/api/analytics/suggested-order/${supplierId}`); }
   saleAdvice(customerId: number | null, lines: { productId: number; quantity: number }[]) { return this.post<D.AdviceLine[]>('/api/analytics/sale-advice', { customerId, lines }); }
   purchaseAdvice(supplierId: number, lines: { productId: number; unitCost: number }[]) { return this.post<D.AdviceLine[]>('/api/analytics/purchase-advice', { supplierId, lines }); }
-  emailStatus() { return this.get<{ configured: boolean }>('/api/email/status'); }
+  emailStatus() { return this.get<{ configured: boolean; whatsApp: boolean }>('/api/email/status'); }
+  /** A sale receipt ('receipts') or a purchase order ('purchases'): preview / send by email, or send over the business's WhatsApp. */
+  previewDocEmail(kind: 'receipts' | 'purchases', id: number, to: string | null, note: string | null) { return this.post<D.EmailPreview>(`/api/email/${kind}/${id}/preview`, { to, note }); }
+  sendDocEmail(kind: 'receipts' | 'purchases', id: number, to: string | null, note: string | null) { return this.post<D.EmailSent>(`/api/email/${kind}/${id}/send`, { to, note }); }
+  sendDocWhatsApp(kind: 'receipts' | 'purchases', id: number, to: string | null) { return this.post<N.DocumentSent>(`/api/email/${kind}/${id}/whatsapp`, { to, note: null }); }
   previewQuotationEmail(id: number, to: string | null, note: string | null) { return this.post<D.EmailPreview>(`/api/email/quotations/${id}/preview`, { to, note }); }
   sendQuotationEmail(id: number, to: string | null, note: string | null) { return this.post<D.EmailSent>(`/api/email/quotations/${id}/send`, { to, note }); }
   previewPriceListEmail(customerId: number | null, tier: string | null, to: string | null, note: string | null) { return this.post<D.EmailPreview>('/api/email/price-list/preview', { customerId, tier, to, note }); }

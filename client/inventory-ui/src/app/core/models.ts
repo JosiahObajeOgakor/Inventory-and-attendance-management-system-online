@@ -21,6 +21,8 @@ export interface Product {
 export interface ProductInput {
   sku: string; name: string; categoryId: number; unit: string; reorderLevel: number; costPrice: number;
   priceDistributor: number; priceWholesaler: number; priceRetail: number; barcode: string | null; tracksSerial: boolean;
+  /** The suppliers who supply it (it goes on each one's item list). Leave out / null to keep the links as they are. */
+  supplierIds?: number[] | null;
 }
 export interface NewProductRequest {
   product: ProductInput; openingQuantity: number; warehouseId: number; batchNumber: string | null; expiryDate: string | null;
@@ -67,6 +69,7 @@ export interface InvoiceDetail {
   items: InvoiceItem[]; payments: { at: string; amount: number; method: string }[]; deliveryFee: number;
   /** What the customer owes on their other invoices (their balance minus this one's unpaid part). */
   owedElsewhere: number;
+  customerPhone: string | null; customerEmail: string | null;
 }
 export interface InvoiceEditRequest { discountPct: number; discountAmount?: number | null; vatRate: number; deliveryFee: number; dueDate?: string | null; lines: SaleLine[]; }
 export interface StockChange { productId: number; product: string; quantity: number; }
@@ -105,6 +108,7 @@ export interface PurchaseDetail {
   totalAmount: number; amountPaid: number; items: { productId: number; product: string; sku: string; quantity: number; unitCost: number; lineTotal: number }[];
   /** What we owe this supplier on other orders. */
   owedElsewhere: number;
+  supplierPhone: string | null; supplierEmail: string | null;
 }
 export interface PurchaseRequest {
   supplierId: number; orderDate?: string | null; vatRate: number; receiveNow: boolean; warehouseId: number; paidNow: number; paymentMethod: string;

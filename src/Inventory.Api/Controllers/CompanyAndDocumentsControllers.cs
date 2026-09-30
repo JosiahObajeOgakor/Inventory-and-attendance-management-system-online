@@ -101,6 +101,13 @@ public class DocumentsController(ICurrentUser cu, DocumentQueries docs, IDocumen
         return Pdf(renderer.Receipt(d), "Receipt-" + d.Number);
     }
 
+    [HttpGet("purchases/{id:int}/pdf"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> PurchaseOrder(int id, CancellationToken ct)
+    {
+        var d = await docs.PurchaseOrderAsync(id, ct);
+        return Pdf(renderer.PurchaseOrder(d), "Purchase-order-" + d.Number);
+    }
+
     [HttpGet("quotations/{id:int}/pdf"), Authorize(Policy = Policies.Staff)]
     public async Task<IActionResult> Quotation(int id, CancellationToken ct)
     {

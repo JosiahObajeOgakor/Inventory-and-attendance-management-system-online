@@ -175,7 +175,8 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
             names.GetValueOrDefault(i.CreatedByUserId, ""), i.VoidReason, items,
             i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList(), i.DeliveryFee,
             // What the customer owes on their OTHER invoices (their running balance minus this invoice's share) — same figure the receipt prints.
-            i.Status == Domain.PaymentStatuses.Voided ? Math.Max(0m, c.Balance) : Math.Max(0m, c.Balance - (i.TotalAmount - i.AmountPaid)));
+            i.Status == Domain.PaymentStatuses.Voided ? Math.Max(0m, c.Balance) : Math.Max(0m, c.Balance - (i.TotalAmount - i.AmountPaid)),
+            c.Phone, c.Email);
     }
 }
 
@@ -201,7 +202,8 @@ public sealed class PurchaseQueries(IBusinessDbContext db)
         return new PurchaseDetailDto(p.Id, p.PoNumber, s.Id, s.Name, p.OrderDate, p.Status, p.PaymentStatus, p.TotalAmount, p.AmountPaid,
             p.Items.Select(i => new PurchaseItemDto(i.ProductId, products[i.ProductId].Name, products[i.ProductId].Sku, i.Quantity, i.UnitCost, i.Quantity * i.UnitCost)).ToList(),
             // What we owe this supplier on OTHER orders (running balance minus this order's unpaid share).
-            p.Status == Domain.PurchaseStatuses.Cancelled ? Math.Max(0m, s.Balance) : Math.Max(0m, s.Balance - (p.TotalAmount - p.AmountPaid)));
+            p.Status == Domain.PurchaseStatuses.Cancelled ? Math.Max(0m, s.Balance) : Math.Max(0m, s.Balance - (p.TotalAmount - p.AmountPaid)),
+            s.Phone, s.Email);
     }
 }
 

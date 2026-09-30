@@ -93,6 +93,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     }
 
     public byte[] Receipt(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    public byte[] PurchaseOrder(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Quotation(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Waybill(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] PriceList(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
@@ -103,6 +104,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     // Page images (PNG) for design review and tests: the same documents, rasterised.
     private static readonly ImageGenerationSettings Preview = new() { RasterDpi = 110 };
     public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> PurchaseOrderImages(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
@@ -151,6 +153,40 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             BankAndStamp(col, accent, r.Brand.Banks, r.Brand.Signature);
             ConnectBand(col, r.Brand, accent);
             col.Item().PaddingTop(5).AlignCenter().Text("Thanks for your patronage.").FontSize(8.5f).FontColor(Muted).Italic();
+        });
+    }));
+
+    // ------------------------------------------------------------------------------------------------ purchase order (sent to the supplier)
+    private static IDocument PurchaseOrderDocument(PurchaseOrderDoc p) => Compose(doc => doc.Page(page =>
+    {
+        var accent = Accent(p.Brand.CompanyKey);
+        Frame(page, p.Brand, $"{p.Brand.Name}   ·   Purchase {p.Number}   ·   computer-generated {p.GeneratedAt:dd MMM yyyy HH:mm}");
+        page.Content().ScaleToFit().Column(col =>
+        {
+            Letterhead(col, p.Brand, accent, "PURCHASE ORDER", [("Order no.", p.Number), ("Date", D(p.Date)), ("Payment", p.PaymentStatus.ToUpperInvariant())]);
+            Panels(col, accent,
+                ("Supplier", [("Name", p.Supplier.Name, true), ("Contact", p.Supplier.Contact, false), ("Phone", p.Supplier.Phone, false), ("Address", p.Supplier.Address, false)]),
+                ("Order details", [("Status", p.Status, false), ("Prepared by", p.PreparedBy, false), ("Lines", p.Lines.Count.ToString(), false),
+                                   ("Total units", p.Lines.Sum(l => l.Qty).ToString("N0"), false)]));
+            ItemTable(col, accent, p.Lines, Compact(p.Brand));
+
+            var totals = new List<(string, string, int)> { ("Subtotal", Money(p.Subtotal), 0) };
+            if (p.VatAmount > 0) totals.Add(("VAT", Money(p.VatAmount), 0));
+            totals.Add(("ORDER TOTAL", Money(p.Total), 1));
+            totals.Add(("Paid on this order", Money(p.Paid), 0));
+            totals.Add(("Still owed (this order)", Money(p.BalanceDue), p.BalanceDue > 0 ? 2 : 0));
+            if (p.OwedElsewhere > 0)
+            {
+                totals.Add(("Owed on earlier orders", Money(p.OwedElsewhere), 2));
+                totals.Add(("TOTAL WE OWE YOU (all orders)", Money(p.BalanceDue + p.OwedElsewhere), 2));
+            }
+            var notes = new List<(string, bool)> { ($"{p.Lines.Count} product line(s) · {p.Lines.Sum(l => l.Qty):N0} unit(s)", false) };
+            notes.Add(p.BalanceDue > 0 ? ($"We have paid {Money(p.Paid)} of this order; {Money(p.BalanceDue)} is still to be paid.", true) : ("This order is fully paid. Thank you.", false));
+            notes.Add(("Please check the quantities and prices against your invoice and let us know of any difference.", false));
+            Totals(col, accent, totals, notes);
+            SignOff(col, p.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, p.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thank you for your supply.").FontSize(8.5f).FontColor(Muted).Italic();
         });
     }));
 

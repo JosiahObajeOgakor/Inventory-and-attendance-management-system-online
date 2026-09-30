@@ -6,10 +6,12 @@ import { PurchaseDetail as Detail, Warehouse } from '../../core/models';
 import { Modal } from '../../shared/modal';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
+import { Icon } from '../../shared/icon';
+import { SendDocument } from '../../shared/send-document';
 
 @Component({
   selector: 'app-purchase-detail',
-  imports: [RouterLink, FormsModule, Modal, NairaPipe, DayPipe, Stamp],
+  imports: [RouterLink, FormsModule, Modal, NairaPipe, DayPipe, Stamp, Icon, SendDocument],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -20,14 +22,18 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
           @if (p(); as p) {
             @if (p.status === 'Pending') { <button type="button" class="btn btn-primary" (click)="receiveOpen.set(true)">Receive goods</button> }
             @if (p.paymentStatus !== 'Paid') { <button type="button" class="btn" (click)="markPaid()">Mark as paid</button> }
-            @if (p.status !== 'Cancelled') { <a class="btn" [routerLink]="['/purchases', p.id, 'edit']">Edit purchase</a> }
+            @if (p.status !== 'Cancelled') {
+              <button type="button" class="btn" (click)="sendOpen.set(true)"><app-icon name="send" [size]="18" /> Send to supplier</button>
+              <a class="btn" [href]="'/api/purchases/' + p.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> PDF</a>
+              <a class="btn" [routerLink]="['/purchases', p.id, 'edit']">Edit purchase</a>
+            }
           }
         </div>
       </div>
       @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
       @if (p(); as p) {
         <article class="card doc">
-          <header><div><span class="eyebrow">{{ p.supplier }}</span><h2 class="docno">{{ p.poNumber }}</h2></div>
+          <header><div><a class="eyebrow" [routerLink]="['/suppliers', p.supplierId]">{{ p.supplier }} ›</a><h2 class="docno">{{ p.poNumber }}</h2></div>
             <div class="right"><div class="stamps"><app-stamp [label]="p.status" /><app-stamp [label]="p.paymentStatus" /></div><div class="muted">{{ p.orderDate | day }}</div></div></header>
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit cost</th><th class="num">Line total</th></tr></thead>
@@ -51,8 +57,12 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
       <div class="field" style="margin-top:.9rem"><label for="rw">Put the goods in</label>
         <select id="rw" class="input" [(ngModel)]="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div>
       <ng-container modal-actions><button type="button" class="btn" (click)="receiveOpen.set(false)">Cancel</button><button type="button" class="btn btn-primary" [disabled]="busy()" (click)="receive()">Add to stock</button></ng-container>
-    </app-modal>`,
+    </app-modal>
+
+    <app-send-document [open]="sendOpen()" kind="purchases" [docId]="p()?.id ?? null" [number]="p()?.poNumber ?? ''"
+      [defaultPhone]="p()?.supplierPhone ?? ''" [defaultEmail]="p()?.supplierEmail ?? ''" (closed)="sendOpen.set(false)" />`,
   styles: `
+    a.eyebrow { text-decoration: none; } a.eyebrow:hover { text-decoration: underline; }
     .doc { max-width: 52rem; padding: 1.5rem 1.75rem; } header { display: flex; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--ink); margin-bottom: .5rem; }
      .right { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; } .stamps { display: flex; gap: .4rem; } .sm { font-size: .75rem; }
     .totals { margin: 1.1rem 0 0 auto; width: min(20rem, 100%); display: grid; gap: .35rem; } .totals div { display: flex; justify-content: space-between; align-items: baseline; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
@@ -68,12 +78,16 @@ export class PurchaseDetail implements OnInit {
   protected readonly error = signal('');
   protected readonly warehouses = signal<Warehouse[]>([]);
   protected readonly receiveOpen = signal(false);
+  /** "?send=1": the order was just saved — offer to send it to the supplier straight away. */
+  readonly send = input<string>();
+  protected readonly sendOpen = signal(false);
   protected readonly busy = signal(false);
   protected warehouseId = 0;
   protected readonly owed = computed(() => (this.p() ? this.p()!.totalAmount - this.p()!.amountPaid : 0));
 
   async ngOnInit() {
     await this.load();
+    if (this.send() && this.p() && this.p()!.status !== 'Cancelled') this.sendOpen.set(true);
     try { const w = await this.api.warehouses(); this.warehouses.set(w); this.warehouseId = w[0]?.id ?? 0; } catch { /* the receive dialog will show an empty list */ }
   }
 

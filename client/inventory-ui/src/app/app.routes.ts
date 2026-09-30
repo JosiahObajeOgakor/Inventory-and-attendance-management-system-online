@@ -22,6 +22,7 @@ export const routes: Routes = [
       { path: 'products', loadComponent: () => import('./features/products/products').then(m => m.ProductsPage), title: 'Products' },
       { path: 'customers', canActivate: [adminGuard], loadComponent: () => import('./features/customers/customers').then(m => m.CustomersPage), title: 'Customers' },
       { path: 'suppliers', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/suppliers').then(m => m.SuppliersPage), title: 'Suppliers' },
+      { path: 'suppliers/:id', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/supplier-detail').then(m => m.SupplierDetail), title: 'Supplier' },
       { path: 'purchases', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchases-list').then(m => m.PurchasesList), title: 'Purchases' },
       { path: 'purchases/new', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-new').then(m => m.PurchaseNew), title: 'New purchase' },
       { path: 'purchases/:id', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-detail').then(m => m.PurchaseDetail), title: 'Purchase' },

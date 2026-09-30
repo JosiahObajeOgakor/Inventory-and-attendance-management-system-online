@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -193,6 +193,7 @@ export class PurchaseNew implements OnInit {
   protected readonly original = signal<PurchaseDetail | null>(null);
   protected readonly vatRate = VAT;
 
+  readonly preSupplier = input<string | undefined>(undefined, { alias: 'supplier' });
   protected readonly suppliers = signal<Supplier[]>([]);
   protected readonly warehouses = signal<Warehouse[]>([]);
   protected readonly lines = signal<Line[]>([]);
@@ -268,6 +269,8 @@ export class PurchaseNew implements OnInit {
       const [s, w] = await Promise.all([this.api.suppliers({ pageSize: 200 }), this.api.warehouses()]);
       this.suppliers.set(s.items); this.warehouses.set(w);
       if (w[0]) this.form.controls.warehouseId.setValue(w[0].id);
+      // Opened from a supplier's page ("?supplier=12"): start the order with them chosen.
+      const pre = Number(this.preSupplier()); if (!this.edit && pre > 0 && s.items.some(x => x.id === pre)) this.form.controls.supplierId.setValue(pre);
       if (this.edit) {
         const o = await this.api.purchase(this.editId);
         if (o.status === 'Cancelled') { this.error.set('This order was cancelled and can no longer be edited.'); return; }
@@ -346,7 +349,7 @@ export class PurchaseNew implements OnInit {
       if (!this.idem || this.idem.body !== body) this.idem = { body, id: crypto.randomUUID() };
       const res = await this.api.createPurchase(r, this.idem.id);
       this.toasts.ok(`Purchase ${res.poNumber} saved.`);
-      await this.router.navigate(['/purchases', res.purchaseOrderId]);
+      await this.router.navigate(['/purchases', res.purchaseOrderId], { queryParams: { send: 1 } });   // opens "Send to supplier"
     } catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
   }
 }

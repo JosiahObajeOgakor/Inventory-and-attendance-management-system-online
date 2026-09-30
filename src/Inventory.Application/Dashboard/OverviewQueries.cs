@@ -7,7 +7,7 @@ namespace Inventory.Application.Dashboard;
 
 public sealed record Kpi(decimal Current, decimal Previous, decimal? ChangePct);
 public sealed record DayPoint(DateOnly Date, decimal Revenue, decimal Collected, decimal GrossProfit, decimal Expenses);
-public sealed record MonthPoint(int Year, int Month, decimal Revenue, decimal GrossProfit, decimal Expenses);
+public sealed record MonthPoint(int Year, int Month, decimal Revenue, decimal GrossProfit, decimal Expenses, decimal Cogs = 0, decimal Purchases = 0);
 public sealed record WarehouseStock(int Id, string Name, int Units, decimal CostValue, decimal RetailValue, int Products, int LowBatches, int ExpiredUnits, int ExpiringSoonUnits);
 public sealed record CustomerMonth(int Year, int Month, decimal Sales, decimal GrossProfit, decimal Profitability);
 public sealed record CustomerHero(int Id, string Name, string Ranking, decimal OpenBalance, IReadOnlyList<CustomerMonth> Months);
@@ -17,7 +17,10 @@ public sealed record Signal(string Kind, string Severity, string Title, string D
 public sealed record Overview(
     DateOnly AsOf, Kpi Revenue, Kpi GrossProfit, Kpi NetProfit, Kpi Losses, Kpi Collected, decimal InventoryValue, int Customers, int NewCustomersThisMonth,
     decimal ReceivablesTotal, decimal OverdueTotal, IReadOnlyList<DayPoint> Days, IReadOnlyList<MonthPoint> Months, IReadOnlyList<WarehouseStock> Warehouses,
-    IReadOnlyList<CustomerHero> TopCustomers, IReadOnlyList<ProductMover> TopProducts, IReadOnlyList<ProductMover> SlowMovers, IReadOnlyList<Signal> Signals);
+    IReadOnlyList<CustomerHero> TopCustomers, IReadOnlyList<ProductMover> TopProducts, IReadOnlyList<ProductMover> SlowMovers, IReadOnlyList<Signal> Signals,
+    // Cost of goods: what the goods SOLD this month cost us (each sale line keeps its cost at the time of sale), what we BOUGHT from suppliers
+    // this month (purchase orders), and what we still owe suppliers in total.
+    Kpi? Cogs = null, Kpi? Purchases = null, decimal PayablesTotal = 0, int SuppliersOwed = 0);
 public sealed record Calendar(int Year, int Month, IReadOnlyList<DueItem> Due, IReadOnlyList<DueItem> Overdue);
 
 /// <summary>
@@ -54,6 +57,10 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
         decimal Rev(DateOnly a, DateOnly b) => lines.Where(l => l.InvoiceDate >= a && l.InvoiceDate < b).Sum(l => l.Line);
         decimal Gp(DateOnly a, DateOnly b) => lines.Where(l => l.InvoiceDate >= a && l.InvoiceDate < b).Sum(l => l.Line - l.Cost);
         decimal Exp(DateOnly a, DateOnly b) => expenses.Where(e => e.ExpenseDate >= a && e.ExpenseDate < b).Sum(e => e.Amount);
+        decimal Cogs(DateOnly a, DateOnly b) => lines.Where(l => l.InvoiceDate >= a && l.InvoiceDate < b).Sum(l => l.Cost);
+        var bought = await db.PurchaseOrders.AsNoTracking().Where(p => p.OrderDate >= histStart && p.Status != PurchaseStatuses.Cancelled && !p.IsSample)
+            .Select(p => new { p.OrderDate, p.TotalAmount }).ToListAsync(ct);
+        decimal Bought(DateOnly a, DateOnly b) => bought.Where(p => p.OrderDate >= a && p.OrderDate < b).Sum(p => p.TotalAmount);
         decimal Col(DateOnly a, DateOnly b) => payments.Where(p => DateOnly.FromDateTime(p.PaymentDate.AddHours(1)) >= a && DateOnly.FromDateTime(p.PaymentDate.AddHours(1)) < b).Sum(p => p.Amount);
         var nextStart = monthStart.AddMonths(1);
 
@@ -77,7 +84,7 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
         var dayPoints = Enumerable.Range(0, days).Select(n => dayStart.AddDays(n)).Select(d =>
             new DayPoint(d, Rev(d, d.AddDays(1)), Col(d, d.AddDays(1)), Gp(d, d.AddDays(1)), Exp(d, d.AddDays(1)))).ToList();
         var monthPoints = Enumerable.Range(0, 12).Select(n => histStart.AddMonths(n)).Select(m =>
-            new MonthPoint(m.Year, m.Month, Rev(m, m.AddMonths(1)), Gp(m, m.AddMonths(1)), Exp(m, m.AddMonths(1)))).ToList();
+            new MonthPoint(m.Year, m.Month, Rev(m, m.AddMonths(1)), Gp(m, m.AddMonths(1)), Exp(m, m.AddMonths(1)), Cogs(m, m.AddMonths(1)), Bought(m, m.AddMonths(1)))).ToList();
 
         // ---- stock by warehouse
         var batches = await (from b in db.StockBatches.AsNoTracking() join p in db.Products.AsNoTracking() on b.ProductId equals p.Id
@@ -125,8 +132,11 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
         var overdue = open.Where(o => o.DueDate < today).Sum(o => o.Outstanding);
 
         var signals = Signals(today, revenue, gross, warehouses, slow, open, topProducts, customers, trailing, inventoryValue);
+        var owedSuppliers = await db.Suppliers.AsNoTracking().Where(s => s.Balance > 0).Select(s => s.Balance).ToListAsync(ct);
         return new Overview(today, revenue, gross, net, losses, collected, inventoryValue, customers.Count(c => c.CustomerType != CustomerTypes.WalkIn),
-            0, receivables, overdue, dayPoints, monthPoints, warehouses, top, topProducts, slow, signals);
+            0, receivables, overdue, dayPoints, monthPoints, warehouses, top, topProducts, slow, signals,
+            K(Cogs(monthStart, nextStart), Cogs(prevStart, monthStart)), K(Bought(monthStart, nextStart), Bought(prevStart, monthStart)),
+            owedSuppliers.Sum(), owedSuppliers.Count);
     }
 
     /// <summary>Open (unpaid or part-paid) invoices that have a due date. Payments are applied oldest-first, so each invoice's balance is its own.</summary>

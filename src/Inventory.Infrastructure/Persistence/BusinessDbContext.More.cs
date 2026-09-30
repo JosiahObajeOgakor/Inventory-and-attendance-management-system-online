@@ -236,6 +236,19 @@ public partial class BusinessDbContext
             e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        b.Entity<SupplierPayment>(e =>
+        {
+            e.ToTable("supplier_payments");
+            e.Property(x => x.Amount).HasPrecision(12, 2);
+            e.Property(x => x.Method).HasMaxLength(30);
+            e.Property(x => x.Reference).HasMaxLength(40);
+            e.Property(x => x.PaidAt).HasPrecision(6);
+            e.HasIndex(x => new { x.SupplierId, x.PaidAt });
+            e.HasIndex(x => x.PurchaseOrderId);
+            e.HasOne<Supplier>().WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         b.Entity<ProductImage>(e =>
         {
             e.ToTable("product_images");

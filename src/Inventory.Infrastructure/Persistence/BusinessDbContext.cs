@@ -46,6 +46,7 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<SupplierItem> SupplierItems => Set<SupplierItem>();
     public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
