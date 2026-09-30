@@ -132,11 +132,26 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
             { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", cfg.AccessToken);
             using var res = await http.SendAsync(req, ct);
-            if (res.IsSuccessStatusCode) return true;
-            log.LogWarning("WhatsApp send failed: {Status} {Body}", (int)res.StatusCode, await res.Content.ReadAsStringAsync(ct));
+            var text = await res.Content.ReadAsStringAsync(ct);
+            if (res.IsSuccessStatusCode)
+            {
+                // Meta accepting a message is not Meta delivering it: outside the 24-hour window, or while the app is unpublished, it
+                // answers 200 "accepted" and drops it silently. Log the id so the delivery status webhook can be matched to this send.
+                var node = SafeParse(text);
+                log.LogInformation("WhatsApp accepted message {MessageId} to {To} (status {DeliveryStatus})",
+                    node?["messages"]?[0]?["id"]?.GetValue<string>() ?? "?", body["to"]?.GetValue<string>() ?? "?",
+                    node?["messages"]?[0]?["message_status"]?.GetValue<string>() ?? "accepted");
+                return true;
+            }
+            log.LogWarning("WhatsApp send failed: {Status} {Body}", (int)res.StatusCode, text);
             return false;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { log.LogWarning(ex, "WhatsApp send failed"); return false; }
+    }
+
+    private static JsonNode? SafeParse(string json)
+    {
+        try { return JsonNode.Parse(json); } catch (System.Text.Json.JsonException) { return null; }
     }
 
     private async Task<string> UploadMediaAsync(WhatsAppNumberConfig cfg, byte[] bytes, string filename, string mime, CancellationToken ct)

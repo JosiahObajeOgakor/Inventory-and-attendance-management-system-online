@@ -42,8 +42,24 @@ public class WhatsAppController(MetaWhatsAppClient wa, CompanyRegistry registry,
         if (cfg is null || registry.Find(cfg.CompanyKey) is null) { log.LogWarning("WhatsApp webhook for an unmapped phone number id"); return Ok(); }
         HttpContext.Items[RequestCompany.OverrideItem] = cfg.CompanyKey;
 
+        // Delivery reports. A message Meta accepted can still fail (most often: the person hasn't written to us in 24 hours, or the app
+        // isn't published yet), and the only place that is ever said is here — so a failure is logged with Meta's own reason.
+        if (value?["statuses"] is JsonArray statuses)
+        {
+            foreach (var s in statuses)
+            {
+                var state = s?["status"]?.GetValue<string>();
+                if (state is not "failed") continue;
+                var err = s?["errors"]?[0];
+                log.LogWarning("WhatsApp did NOT deliver message {MessageId} to {To}: {Code} {Title}. {Detail}",
+                    s?["id"]?.GetValue<string>() ?? "?", s?["recipient_id"]?.GetValue<string>() ?? "?",
+                    err?["code"]?.ToJsonString() ?? "?", err?["title"]?.GetValue<string>() ?? "",
+                    err?["error_data"]?["details"]?.GetValue<string>() ?? err?["message"]?.GetValue<string>() ?? "");
+            }
+        }
+
         var msg = value?["messages"]?[0];
-        if (msg is null) return Ok();   // delivery/read receipts etc. — ack and ignore
+        if (msg is null) return Ok();   // read receipts and the statuses handled above — ack and ignore
         var wamid = msg["id"]?.GetValue<string>() ?? "";
         var from = msg["from"]?.GetValue<string>() ?? "";
         var text = msg["text"]?["body"]?.GetValue<string>();

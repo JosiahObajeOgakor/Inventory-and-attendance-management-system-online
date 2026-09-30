@@ -72,7 +72,7 @@ const UNITS = [
         <div class="field"><label for="f-name">Name</label><input id="f-name" class="input" formControlName="name" /></div>
         <div class="field"><label for="f-cat">Category</label>
           <div class="inline"><select id="f-cat" class="input" formControlName="categoryId">@for (c of categories(); track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }</select>
-            @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="addCategory()">Add</button> }</div>
+            @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="openCategory()">Add</button> }</div>
           @if (!categories().length) { <span class="hint">No categories yet. Click <strong>Add</strong> to create one, e.g. “Dog food” or “Cat food”.</span> }</div>
         <div class="field"><label for="f-unit">Sold in</label>
           <select id="f-unit" class="input" formControlName="unit">
@@ -115,6 +115,18 @@ const UNITS = [
       <ng-container modal-actions>
         <button type="button" class="btn" (click)="dialogOpen.set(false)">Cancel</button>
         <button type="submit" form="pf" class="btn btn-primary" [disabled]="form.invalid || busy()">{{ editing() ? 'Save changes' : 'Add product' }}</button>
+      </ng-container>
+    </app-modal>
+
+    <app-modal [open]="catOpen()" heading="New category" (closed)="catOpen.set(false)">
+      <div class="field"><label for="nc">Name</label>
+        <input #nc id="nc" class="input" maxlength="40" placeholder="e.g. Dog food" [value]="catName()"
+          (input)="catName.set($any($event.target).value)" (keydown.enter)="saveCategory()" />
+        <span class="hint">Categories group the products you sell, so stock and reports read clearly.</span></div>
+      @if (catError()) { <p class="notice bad" role="alert" style="margin-top:.8rem">{{ catError() }}</p> }
+      <ng-container modal-actions>
+        <button type="button" class="btn" (click)="catOpen.set(false)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="catBusy() || !catName().trim()" (click)="saveCategory()">{{ catBusy() ? 'Saving…' : 'Add category' }}</button>
       </ng-container>
     </app-modal>
 
@@ -207,14 +219,25 @@ export class ProductsPage implements OnInit {
     this.dialogOpen.set(true);
   }
 
-  protected async addCategory() {
-    const name = window.prompt('Name for the new category');
-    if (!name?.trim()) return;
+  // ---- new category, asked for in the app's own dialog (a browser prompt can't be styled and is blocked in some browsers)
+  protected readonly catOpen = signal(false);
+  protected readonly catName = signal('');
+  protected readonly catBusy = signal(false);
+  protected readonly catError = signal('');
+
+  protected openCategory() { this.catName.set(''); this.catError.set(''); this.catOpen.set(true); }
+
+  protected async saveCategory() {
+    const name = this.catName().trim();
+    if (!name || this.catBusy()) return;
+    this.catBusy.set(true); this.catError.set('');
     try {
-      const { id } = await this.api.addCategory(name.trim());
+      const { id } = await this.api.addCategory(name);
       this.categories.set(await this.api.categories());
-      this.form.controls.categoryId.setValue(id);
-    } catch (e) { this.toasts.error(messageOf(e)); }
+      this.form.controls.categoryId.setValue(id);   // the new category is the one now chosen on the form
+      this.catOpen.set(false);
+      this.toasts.ok(`Category “${name}” added.`);
+    } catch (e) { this.catError.set(messageOf(e)); } finally { this.catBusy.set(false); }
   }
 
   protected async save() {
