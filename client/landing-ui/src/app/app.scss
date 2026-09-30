@@ -537,3 +537,9 @@ main {
   transition: background 0.15s ease, transform 0.15s ease;
 }
 .footer__top:hover { background: var(--orange-bright); transform: translateY(-2px); }
+
+// The Candid Purrfect panel carries a full sentence, not a short headline.
+.duo__intro {
+  font-size: clamp(1rem, 1.6vw, 1.25rem);
+  line-height: 1.35;
+}

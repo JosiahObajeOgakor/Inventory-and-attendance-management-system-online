@@ -28,7 +28,7 @@ export class Nutrition {
     },
   ];
 
-  protected readonly certs = ['32% Protein', 'All Life Stages', 'Milled & Packed Locally', 'Real Person, Not a Bot'];
+  protected readonly certs = ['32% Protein', 'All Life Stages', 'Locally Produced', 'Real Person, Not a Bot'];
 
   protected whatsappLink(title: string): string {
     return whatsappHref(`Hi! Tell me more about "${title}".`);

@@ -17,7 +17,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 })
 export class App {
   protected readonly whatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order some dog food.");
-  protected readonly crateWhatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order a wire crate.");
+  protected readonly crateWhatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order a collapsible cage.");
   protected readonly whatsappDisplay = whatsappDisplay;
   protected readonly year = new Date().getFullYear();
 

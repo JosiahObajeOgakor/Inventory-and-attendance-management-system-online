@@ -12,7 +12,7 @@ interface Product {
 // to the hero pack shot rather than a fabricated per-SKU photo.
 const PRODUCT_IMAGES: Record<string, string> = {
   '01': '/chewy-bag-puppy.jpg',
-  '03': '/chewy-bag-all-life-stages.jpg',
+  '02': '/chewy-bag-all-life-stages.jpg',
 };
 
 @Component({
@@ -24,19 +24,16 @@ const PRODUCT_IMAGES: Record<string, string> = {
 export class ProductList {
   // Cats have their own line — see the Candid Purrfect cross-promo further down the page.
   protected readonly products: Product[] = [
-    { num: '01', title: 'Puppy Formula', desc: 'Small kibble, nutrient-dense, built for growing bodies and first teeth.' },
-    { num: '02', title: 'Adult Dog Food', desc: 'High-protein daily nutrition for active adult dogs of every breed.' },
-    { num: '03', title: 'All Life Stages', desc: 'One bag that keeps working as your dog grows — 32% protein, 20% fat.' },
-    { num: '04', title: 'Senior', desc: 'Gentler on ageing joints and appetites, same full bowl.' },
-    { num: '05', title: 'Treats & Chews', desc: 'Reward-time snacks made to the same real-meat standard as every bag.' },
+    { num: '01', title: 'Puppy Food', desc: 'Small kibble, nutrient-dense, built for growing bodies and first teeth — 36% protein, 20% fat.' },
+    { num: '02', title: 'All Life Stage', desc: 'One bag that keeps working as your dog grows — 32% protein, 20% fat.' },
   ];
 
   protected orderHref(product: Product): string {
     return whatsappHref(`Hi! I'd like to order Chewy Pet ${product.title}.`);
   }
 
-  // Defaults open on the flagship "All Life Stages" bag.
-  protected readonly activeNum = signal('03');
+  // Defaults open on the flagship "All Life Stage" bag.
+  protected readonly activeNum = signal('02');
 
   protected setActive(num: string): void {
     this.activeNum.set(num);
