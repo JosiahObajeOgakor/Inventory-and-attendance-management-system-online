@@ -9,7 +9,8 @@ namespace Inventory.Application.Purchasing;
 
 public sealed class SupplyLineDto
 {
-    public int ProductId { get; set; }
+    /// <summary>One of this supplier's own items (see <see cref="SupplierProduct"/>) — never a stock product.</summary>
+    public int SupplierProductId { get; set; }
     public int Quantity { get; set; }
     public decimal UnitCost { get; set; }
 }
@@ -38,7 +39,7 @@ public sealed class SupplyRequestValidator : AbstractValidator<SupplyRequest>
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one item the supplier supplied.");
         RuleForEach(x => x.Lines).ChildRules(l =>
         {
-            l.RuleFor(x => x.ProductId).GreaterThan(0);
+            l.RuleFor(x => x.SupplierProductId).GreaterThan(0);
             l.RuleFor(x => x.Quantity).GreaterThan(0);
             l.RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0);
         });
@@ -58,8 +59,10 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
         return await tx.RunAsync(async inner =>
         {
             if (!await db.Suppliers.AnyAsync(s => s.Id == req.SupplierId, inner)) throw new NotFoundException("Supplier");
-            var ids = req.Lines.Select(l => l.ProductId).Distinct().ToList();
-            if (await db.Products.CountAsync(p => ids.Contains(p.Id), inner) != ids.Count) throw new NotFoundException("Product");
+            // The items must be this supplier's own: one supplier's list can never be billed against another.
+            var ids = req.Lines.Select(l => l.SupplierProductId).Distinct().ToList();
+            var own = await db.SupplierProducts.Where(p => ids.Contains(p.Id) && p.SupplierId == req.SupplierId).ToDictionaryAsync(p => p.Id, inner);
+            if (own.Count != ids.Count) throw new BusinessRuleException("One of those items isn't on this supplier's list.");
 
             var total = req.Lines.Sum(l => Money.Round(l.Quantity * l.UnitCost));
             var paid = Math.Min(Math.Max(0m, req.PaidNow), total);   // never record paying more than the supply is worth
@@ -75,9 +78,11 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
                 Note = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim(),
                 CreatedByUserId = user.Id,
                 CreatedAt = clock.UtcNow,
+                // Name, size and unit are copied onto the line so the record still reads correctly if the item is renamed or removed later.
                 Items = req.Lines.Select(l => new SupplyItem
                 {
-                    ProductId = l.ProductId, Quantity = l.Quantity, UnitCost = l.UnitCost, LineTotal = Money.Round(l.Quantity * l.UnitCost),
+                    SupplierProductId = l.SupplierProductId, Name = own[l.SupplierProductId].Name, Size = own[l.SupplierProductId].Size,
+                    Unit = own[l.SupplierProductId].Unit, Quantity = l.Quantity, UnitCost = l.UnitCost, LineTotal = Money.Round(l.Quantity * l.UnitCost),
                 }).ToList(),
             };
             db.Supplies.Add(supply);

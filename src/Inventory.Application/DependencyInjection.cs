@@ -59,6 +59,7 @@ public static class DependencyInjection
         s.AddScoped<SupplierStatementQueries>();
         s.AddScoped<SupplyService>();
         s.AddScoped<SupplyQueries>();   // its validator comes from AddValidatorsFromAssemblyContaining above
+        s.AddScoped<SupplierCatalogService>();
         s.AddScoped<Company.DeliveryZoneService>();
         s.AddScoped<Payments.PaymentGateways>();
         s.AddScoped<Payments.PaymentLinkService>();

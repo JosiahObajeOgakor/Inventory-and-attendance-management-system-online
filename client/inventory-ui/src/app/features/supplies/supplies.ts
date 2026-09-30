@@ -5,14 +5,15 @@ import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Auth } from '../../core/auth.service';
 import { Supplier } from '../../core/models';
-import { SupplierItem, SupplyDetail, SupplyRow } from '../../core/models-more';
+import { SupplierProduct, SupplyDetail, SupplyRow } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { PagedList, asNumber } from '../../shared/paged-list';
 import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
+import { SupplierCatalog } from '../suppliers/supplier-catalog';
 
-interface Picked { productId: number; product: string; sku: string; unit: string; qty: number; cost: number; }
+interface Picked { supplierProductId: number; name: string; unit: string; qty: number; cost: number; }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -22,7 +23,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
  */
 @Component({
   selector: 'app-supplies',
-  imports: [FormsModule, RouterLink, Icon, Modal, NairaPipe, DayPipe, Pager, Stamp],
+  imports: [FormsModule, RouterLink, Icon, Modal, SupplierCatalog, NairaPipe, DayPipe, Pager, Stamp],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -100,28 +101,32 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
       </div>
 
       @if (supplierId() > 0) {
-        <h3 class="sec">Items {{ supplierName() }} supplies</h3>
+        <div class="sec-head">
+          <h3 class="sec">Items {{ supplierName() }} supplies</h3>
+          <button type="button" class="btn btn-sm" (click)="itemsOpen.set(true)"><app-icon name="plus" [size]="15" /> Manage items</button>
+        </div>
         @if (loadingItems()) { <div class="skeleton" style="height:6rem"></div> }
         @else if (items().length) {
-          <p class="muted sm">Type a quantity against what they brought. The price starts from their usual cost — change it if this delivery cost something else.</p>
+          <p class="muted sm">Type a quantity against what they brought. The price starts from their usual price — change it if this delivery cost something else.</p>
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Item</th><th>Unit</th><th class="num">Quantity</th><th class="num">Price each (₦)</th><th class="num">Line total</th></tr></thead>
+            <thead><tr><th>Item</th><th>Counted in</th><th class="num">Quantity</th><th class="num">Price each (₦)</th><th class="num">Line total</th></tr></thead>
             <tbody>
-              @for (it of items(); track it.productId) {
-                <tr [class.on]="(qty()[it.productId] ?? 0) > 0">
-                  <td><span class="strong">{{ it.product }}</span><div class="muted mono sm">{{ it.sku }}</div></td>
+              @for (it of items(); track it.id) {
+                <tr [class.on]="(qty()[it.id] ?? 0) > 0">
+                  <td><span class="strong">{{ it.name }}</span>@if (it.size) { <div class="muted sm">{{ it.size }}</div> }</td>
                   <td>{{ it.unit }}</td>
-                  <td class="num"><input class="input num w-qty" type="number" min="0" step="1" [attr.aria-label]="'Quantity of ' + it.product"
-                    [value]="qty()[it.productId] ?? ''" (input)="setQty(it.productId, $any($event.target).value)" /></td>
-                  <td class="num"><input class="input num w-cost" type="number" min="0" step="0.01" [attr.aria-label]="'Price of ' + it.product"
-                    [value]="cost()[it.productId] ?? it.unitCost" (input)="setCost(it.productId, $any($event.target).value)" /></td>
+                  <td class="num"><input class="input num w-qty" type="number" min="0" step="1" [attr.aria-label]="'Quantity of ' + it.name"
+                    [value]="qty()[it.id] ?? ''" (input)="setQty(it.id, $any($event.target).value)" /></td>
+                  <td class="num"><input class="input num w-cost" type="number" min="0" step="0.01" [attr.aria-label]="'Price of ' + it.name"
+                    [value]="cost()[it.id] ?? it.unitCost" (input)="setCost(it.id, $any($event.target).value)" /></td>
                   <td class="num mono">{{ lineTotal(it) | naira }}</td>
                 </tr>
               }
             </tbody>
           </table></div>
         } @else {
-          <div class="empty"><strong>{{ supplierName() }} has no items listed</strong>Add what you buy from them under Suppliers › Items, or tick them as a supplier on a product.</div>
+          <div class="empty"><strong>{{ supplierName() }} has no items listed</strong>
+            <button type="button" class="btn btn-primary" (click)="itemsOpen.set(true)"><app-icon name="plus" [size]="17" /> Add items for {{ supplierName() }}</button></div>
         }
 
         <div class="form-grid" style="margin-top:1rem">
@@ -159,8 +164,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
         @if (v.note) { <p class="muted">{{ v.note }}</p> }
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th></tr></thead>
-          <tbody>@for (i of v.items; track i.productId) {
-            <tr><td><span class="strong">{{ i.product }}</span><div class="muted mono sm">{{ i.sku }}</div></td>
+          <tbody>@for (i of v.items; track i.name + $index) {
+            <tr><td><span class="strong">{{ i.name }}</span>@if (i.size) { <div class="muted sm">{{ i.size }}</div> }</td>
               <td class="num mono">{{ i.quantity }} {{ i.unit }}</td><td class="num mono">{{ i.unitCost | naira }}</td><td class="num mono">{{ i.lineTotal | naira }}</td></tr>
           }</tbody>
         </table></div>
@@ -186,6 +191,9 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
       <ng-container modal-actions><button type="button" class="btn" (click)="paying.set(null)">Cancel</button>
         <button type="button" class="btn btn-primary" [disabled]="busy() || !(asNum(payAmount) > 0)" (click)="pay()">Record payment</button></ng-container>
     </app-modal>
+
+    <app-supplier-catalog [open]="itemsOpen()" [supplierId]="supplierId()" [supplierName]="supplierName()"
+      (closed)="itemsOpen.set(false)" (saved)="refreshItems()" />
 
     <!-- clear records (CEO) -->
     <app-modal [open]="clearOpen()" heading="Clear supply records" (closed)="clearOpen.set(false)">
@@ -222,7 +230,9 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
     .sm { font-size: .75rem; } td.actions { white-space: nowrap; } .owes { color: var(--stamp); font-weight: 600; }
     tr.on { background: var(--brand-tint); }
     .link { background: none; border: 0; padding: 0; color: var(--brand); cursor: pointer; text-align: left; }
-    h3.sec { margin: 1.2rem 0 .4rem; font-size: 1rem; }
+    h3.sec { margin: 0; font-size: 1rem; }
+    .sec-head { display: flex; align-items: center; gap: .8rem; margin: 1.2rem 0 .4rem; } .sec-head .btn { margin-left: auto; }
+    .empty .btn { margin-top: .6rem; }
     .sum { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding-top: .8rem; border-top: 2px solid var(--ink); }
     .sum strong { font-size: 1.5rem; margin-left: auto; }
     .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .8rem 1.5rem; margin: 0 0 1rem; }
@@ -287,22 +297,32 @@ export class SuppliesPage implements OnInit {
   protected readonly paidNow = signal<number | string>(0);
   protected readonly method = signal('Cash');
   protected readonly note = signal('');
-  protected readonly items = signal<SupplierItem[]>([]);
+  protected readonly items = signal<SupplierProduct[]>([]);
   protected readonly loadingItems = signal(false);
-  protected readonly qty = signal<Record<number, number>>({});
-  protected readonly cost = signal<Record<number, number>>({});
+  // An untouched row has no entry at all, so the value really can be undefined — typed that way so the template's `??` guards stay honest.
+  protected readonly qty = signal<Record<number, number | undefined>>({});
+  protected readonly cost = signal<Record<number, number | undefined>>({});
   protected readonly formError = signal('');
+  protected readonly itemsOpen = signal(false);
+
+  /** After the item list is edited, pull it in again without losing the quantities already typed. */
+  protected refreshItems() {
+    const id = this.supplierId(); if (!id) return;
+    void this.api2.supplierCatalog(id).then(xs => { if (this.supplierId() === id) this.items.set(xs); }, () => { /* keep what is on screen */ });
+  }
 
   protected readonly supplierName = computed(() => this.suppliers().find(s => s.id === this.supplierId())?.name ?? 'This supplier');
   protected readonly chosen = computed<Picked[]>(() => {
     const q = this.qty(); const c = this.cost();
-    return this.items().filter(i => (q[i.productId] ?? 0) > 0)
-      .map(i => ({ productId: i.productId, product: i.product, sku: i.sku, unit: i.unit, qty: q[i.productId], cost: c[i.productId] ?? i.unitCost }));
+    return this.items().flatMap(i => {
+      const qty = q[i.id] ?? 0;
+      return qty > 0 ? [{ supplierProductId: i.id, name: i.name, unit: i.unit, qty, cost: c[i.id] ?? i.unitCost }] : [];
+    });
   });
   protected readonly total = computed(() => this.chosen().reduce((t, l) => t + l.qty * l.cost, 0));
   protected readonly totalUnits = computed(() => this.chosen().reduce((t, l) => t + l.qty, 0));
   protected readonly owedAfter = computed(() => Math.max(0, this.total() - this.asNum(this.paidNow())));
-  protected lineTotal(it: SupplierItem) { const q = this.qty()[it.productId] ?? 0; return q * (this.cost()[it.productId] ?? it.unitCost); }
+  protected lineTotal(it: SupplierProduct) { const q = this.qty()[it.id] ?? 0; return q * (this.cost()[it.id] ?? it.unitCost); }
 
   constructor() {
     // Choosing a supplier loads the items they supply. Keyed on the id alone so typing elsewhere never reloads (or clears) the list.
@@ -312,8 +332,8 @@ export class SuppliesPage implements OnInit {
         this.items.set([]); this.qty.set({}); this.cost.set({});
         if (!id) return;
         this.loadingItems.set(true);
-        void this.api2.supplierItems(id).then(
-          xs => { if (this.supplierId() === id) this.items.set(xs.filter(x => x.isActive)); },
+        void this.api2.supplierCatalog(id).then(
+          xs => { if (this.supplierId() === id) this.items.set(xs); },
           () => { /* the empty state explains how to add items */ },
         ).finally(() => this.loadingItems.set(false));
       });
@@ -344,7 +364,7 @@ export class SuppliesPage implements OnInit {
       const r = await this.api2.createSupply({
         supplierId: this.supplierId(), supplyDate: this.supplyDate() || null, paidNow: this.asNum(this.paidNow()),
         paymentMethod: this.method(), note: this.note().trim() || null,
-        lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitCost: l.cost })),
+        lines: lines.map(l => ({ supplierProductId: l.supplierProductId, quantity: l.qty, unitCost: l.cost })),
       });
       const naira = new NairaPipe();
       this.toasts.ok(`Supply ${r.reference} recorded — ${naira.transform(r.total)}${r.outstanding > 0 ? `, ${naira.transform(r.outstanding)} still owed` : ''}.`);

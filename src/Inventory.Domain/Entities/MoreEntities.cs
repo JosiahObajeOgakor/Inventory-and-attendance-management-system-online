@@ -99,12 +99,38 @@ public class Supply
     public List<SupplyItem> Items { get; set; } = [];
 }
 
+/// <summary>
+/// One of a supplier's OWN goods, typed in by whoever set the supplier up: their name for it, their pack size, their usual price. Deliberately
+/// NOT a <see cref="Product"/> — a supplier's list is their own and has nothing to do with what we hold in stock or sell.
+/// </summary>
+public class SupplierProduct
+{
+    public int Id { get; set; }
+    public int SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
+    public string Name { get; set; } = "";
+    /// <summary>Their pack size as they quote it: "20kg", "50kg", "carton of 12". Free text on purpose.</summary>
+    public string? Size { get; set; }
+    /// <summary>What one of them is counted as: Bag, Carton, Litre…</summary>
+    public string Unit { get; set; } = "Bag";
+    /// <summary>What they usually charge for one. Prefills the price when recording a supply; 0 = not known.</summary>
+    public decimal UnitCost { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// A line on a supply record. It points at the supplier's own item, and also keeps that item's name, size and unit as they were at the time,
+/// so renaming or removing an item later never rewrites what history says was supplied.
+/// </summary>
 public class SupplyItem
 {
     public int Id { get; set; }
     public int SupplyId { get; set; }
-    public int ProductId { get; set; }
-    public Product? Product { get; set; }
+    public int? SupplierProductId { get; set; }
+    public string Name { get; set; } = "";
+    public string? Size { get; set; }
+    public string Unit { get; set; } = "";
     public int Quantity { get; set; }
     public decimal UnitCost { get; set; }
     public decimal LineTotal { get; set; }

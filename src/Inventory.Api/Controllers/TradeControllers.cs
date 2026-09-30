@@ -142,7 +142,16 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteSupplierAsync(id, Me, ct); return NoContent(); }
 
-    /// <summary>The goods we buy from this supplier (with usual costs) — the new-purchase form picks from this list.</summary>
+    /// <summary>This supplier's OWN items — their names, pack sizes and prices. Nothing to do with products or stock; the Supplies form picks from here.</summary>
+    [HttpGet("{id:int}/catalog"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierProductDto>> Catalog(int id, [FromQuery] bool includeInactive, [FromServices] SupplierCatalogService catalog, CancellationToken ct) =>
+        catalog.ListAsync(id, includeInactive, ct);
+
+    [HttpPut("{id:int}/catalog"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierProductDto>> SaveCatalog(int id, List<SupplierProductInput> items, [FromServices] SupplierCatalogService catalog, CancellationToken ct) =>
+        catalog.SaveAsync(id, items ?? [], Me, ct);
+
+    /// <summary>The stock products we buy from this supplier (with usual costs) — the new-purchase form picks from this list.</summary>
     [HttpGet("{id:int}/items"), Authorize(Policy = Policies.Admin)]
     public Task<List<SupplierItemDto>> Items(int id, CancellationToken ct) => svc.SupplierItemsAsync(id, ct);
 

@@ -9,6 +9,7 @@ import { Modal } from '../../shared/modal';
 import { Toasts } from '../../shared/feedback';
 import { asNumber } from '../../shared/paged-list';
 import { SendDocument } from '../../shared/send-document';
+import { SupplierCatalog } from './supplier-catalog';
 import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
 
 /**
@@ -17,7 +18,7 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
  */
 @Component({
   selector: 'app-supplier-detail',
-  imports: [RouterLink, FormsModule, Icon, Modal, SendDocument, NairaPipe, DayPipe, StampTimePipe, Stamp],
+  imports: [RouterLink, FormsModule, Icon, Modal, SendDocument, SupplierCatalog, NairaPipe, DayPipe, StampTimePipe, Stamp],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -45,18 +46,19 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
         </section>
 
         <section class="card">
-          <div class="c-head"><h2>Items they supply</h2><span class="muted">Usual cost is what a new purchase starts from. Edit the list from All suppliers › Items.</span></div>
-          @if (s.items.length) {
+          <div class="c-head"><h2>Items they supply</h2><span class="muted">Their own items, as they quote them — their price prefills a new supply.</span>
+            <button type="button" class="btn btn-sm" style="margin-left:auto" (click)="itemsOpen.set(true)"><app-icon name="plus" [size]="15" /> Manage items</button></div>
+          @if (ownItems().length) {
             <div class="table-wrap"><table class="table">
-              <thead><tr><th>Product</th><th>Unit</th><th class="num">Usual cost</th><th class="num">Last paid</th><th class="num">Qty bought</th><th class="num">Spent</th></tr></thead>
-              <tbody>@for (it of s.items; track it.productId) {
-                <tr [class.off]="!it.isActive"><td><span class="strong">{{ it.product }}</span><div class="muted mono sm">{{ it.sku }}{{ it.onList ? '' : ' · not on their list' }}</div></td>
-                  <td>{{ it.unit }}</td><td class="num mono">{{ it.usualCost | naira }}</td>
-                  <td class="num mono">{{ it.lastCost === null ? '—' : (it.lastCost | naira) }}<div class="muted sm">{{ it.lastBought ? (it.lastBought | day) : '' }}</div></td>
-                  <td class="num mono">{{ it.quantityBought }}</td><td class="num mono">{{ it.amountBought | naira }}</td></tr>
+              <thead><tr><th>Item</th><th>Counted in</th><th class="num">Their price</th><th class="num">Times supplied</th><th class="num">Qty supplied</th><th class="num">Value</th></tr></thead>
+              <tbody>@for (it of ownItems(); track it.id) {
+                <tr><td><span class="strong">{{ it.name }}</span>@if (it.size) { <div class="muted sm">{{ it.size }}</div> }</td>
+                  <td>{{ it.unit }}</td><td class="num mono">{{ it.unitCost | naira }}</td>
+                  <td class="num mono">{{ it.timesSupplied || '—' }}</td>
+                  <td class="num mono">{{ it.quantitySupplied }}</td><td class="num mono">{{ it.amountSupplied | naira }}</td></tr>
               }</tbody>
             </table></div>
-          } @else { <div class="empty"><strong>No items yet</strong>Add what you buy from them under All suppliers › Items, or choose them as the supplier on a product.</div> }
+          } @else { <div class="empty"><strong>No items yet</strong>Use “Manage items” above to add what this supplier brings you.</div> }
         </section>
 
         <section class="card">
@@ -121,6 +123,9 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
         <button type="button" class="btn btn-primary" [disabled]="busy() || !(amount() > 0)" (click)="pay()">{{ busy() ? 'Saving…' : 'Record payment' }}</button></ng-container>
     </app-modal>
 
+    <app-supplier-catalog [open]="itemsOpen()" [supplierId]="st()?.supplier?.id ?? 0" [supplierName]="st()?.supplier?.name ?? ''"
+      (closed)="itemsOpen.set(false)" (saved)="reload()" />
+
     <app-send-document [open]="!!sending()" kind="purchases" [docId]="sending()?.id ?? null" [number]="sending()?.poNumber ?? ''"
       [defaultPhone]="st()?.supplier?.phone ?? ''" [defaultEmail]="st()?.supplier?.email ?? ''" (closed)="sending.set(null)" />`,
   styles: `
@@ -147,6 +152,7 @@ export class SupplierDetail implements OnInit {
   protected readonly payOpen = signal(false);
   protected readonly payError = signal('');
   protected readonly sending = signal<SupplierStatementOrder | null>(null);
+  protected readonly itemsOpen = signal(false);
   protected payAmount: number | string = 0;
   protected payMethod = 'Cash';
   protected amount() { return asNumber(String(this.payAmount)); }
@@ -155,6 +161,8 @@ export class SupplierDetail implements OnInit {
   protected monthName(month: number) { return SupplierDetail.MONTHS[month - 1] ?? ''; }
   /** Only the months this supplier actually supplied in — an empty year of zero rows tells nobody anything. */
   protected readonly supplyMonths = computed(() => (this.st()?.supplyMonths ?? []).filter(m => m.records > 0).reverse());
+  /** This supplier's own item list — not products, not stock. */
+  protected readonly ownItems = computed(() => this.st()?.ownItems ?? []);
 
   protected readonly contact = computed(() => {
     const s = this.st()?.supplier; if (!s) return '';
@@ -162,6 +170,9 @@ export class SupplierDetail implements OnInit {
   });
 
   ngOnInit() { void this.load(); }
+
+  /** Re-reads the whole statement — used after the item list is saved. */
+  protected reload() { void this.load(); }
 
   private async load() {
     try { this.st.set(await this.api2.supplierStatement(Number(this.id()))); } catch (e) { this.error.set(messageOf(e)); }

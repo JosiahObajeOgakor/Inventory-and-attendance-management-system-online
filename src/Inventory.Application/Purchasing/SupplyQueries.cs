@@ -7,13 +7,13 @@ namespace Inventory.Application.Purchasing;
 
 public sealed record SupplyRowDto(int Id, string Reference, int SupplierId, string Supplier, DateOnly SupplyDate, decimal TotalAmount,
     decimal AmountPaid, decimal Outstanding, string PaymentStatus, int Lines, int Units, string? Note);
-public sealed record SupplyItemDto(int ProductId, string Product, string Sku, string Unit, int Quantity, decimal UnitCost, decimal LineTotal);
+public sealed record SupplyItemDto(int? SupplierProductId, string Name, string? Size, string Unit, int Quantity, decimal UnitCost, decimal LineTotal);
 public sealed record SupplyDetailDto(int Id, string Reference, int SupplierId, string Supplier, string? SupplierPhone, DateOnly SupplyDate,
     decimal TotalAmount, decimal AmountPaid, decimal Outstanding, string PaymentStatus, string? PaymentMethod, string? Note, string RecordedBy,
     IReadOnlyList<SupplyItemDto> Items);
 
 public sealed record SupplierSupplyTotal(int SupplierId, string Supplier, decimal Amount, decimal Owed, int Records, int Units);
-public sealed record SuppliedItemTotal(int ProductId, string Product, string Unit, int Quantity, decimal Amount);
+public sealed record SuppliedItemTotal(string Name, string? Size, string Unit, int Quantity, decimal Amount);
 public sealed record SupplyMonth(int Year, int Month, decimal Amount);
 public sealed record SupplierTrend(int SupplierId, string Supplier, IReadOnlyList<SupplyMonth> Months);
 /// <summary>
@@ -57,14 +57,11 @@ public sealed class SupplyQueries(IBusinessDbContext db, IClock clock, IUserDire
         var s = await db.Supplies.AsNoTracking().Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct);
         if (s is null) return null;
         var sup = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == s.SupplierId, ct);
-        var ids = s.Items.Select(i => i.ProductId).ToList();
-        var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         var names = await users.NamesAsync([s.CreatedByUserId], ct);
         return new SupplyDetailDto(s.Id, s.Reference, sup.Id, sup.Name, sup.Phone, s.SupplyDate, s.TotalAmount, s.AmountPaid,
             Math.Max(0, s.TotalAmount - s.AmountPaid), s.PaymentStatus, s.PaymentMethod, s.Note, names.GetValueOrDefault(s.CreatedByUserId, ""),
-            s.Items.Select(i => new SupplyItemDto(i.ProductId, products.GetValueOrDefault(i.ProductId)?.Name ?? "",
-                products.GetValueOrDefault(i.ProductId)?.Sku ?? "", products.GetValueOrDefault(i.ProductId)?.Unit ?? "",
-                i.Quantity, i.UnitCost, i.LineTotal)).OrderBy(i => i.Product).ToList());
+            s.Items.Select(i => new SupplyItemDto(i.SupplierProductId, i.Name, i.Size, i.Unit, i.Quantity, i.UnitCost, i.LineTotal))
+                .OrderBy(i => i.Name).ToList());
     }
 
     /// <summary>Everything the dashboard's supply panel shows: this month against last, who supplied what, and a 12-month trend.</summary>
@@ -89,10 +86,7 @@ public sealed class SupplyQueries(IBusinessDbContext db, IClock clock, IUserDire
         var inMonth = rows.Where(r => r.SupplyDate >= monthStart && r.SupplyDate < nextStart).ToList();
         var monthIds = inMonth.Select(r => r.Id).ToList();
         var monthItems = await db.SupplyItems.AsNoTracking().Where(i => monthIds.Contains(i.SupplyId))
-            .Select(i => new { i.SupplyId, i.ProductId, i.Quantity, i.LineTotal }).ToListAsync(ct);
-        var productIds = monthItems.Select(i => i.ProductId).Distinct().ToList();
-        var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.Unit }).ToDictionaryAsync(p => p.Id, ct);
+            .Select(i => new { i.SupplyId, i.Name, i.Size, i.Unit, i.Quantity, i.LineTotal }).ToListAsync(ct);
 
         var unitsBySupply = monthItems.GroupBy(i => i.SupplyId).ToDictionary(g => g.Key, g => g.Sum(i => i.Quantity));
         var bySupplier = inMonth.GroupBy(r => new { r.SupplierId, r.Supplier })
@@ -100,9 +94,9 @@ public sealed class SupplyQueries(IBusinessDbContext db, IClock clock, IUserDire
                 g.Sum(r => Math.Max(0, r.TotalAmount - r.AmountPaid)), g.Count(), g.Sum(r => unitsBySupply.GetValueOrDefault(r.Id))))
             .OrderByDescending(x => x.Amount).ToList();
 
-        var topItems = monthItems.GroupBy(i => i.ProductId)
-            .Select(g => new SuppliedItemTotal(g.Key, products.GetValueOrDefault(g.Key)?.Name ?? "—", products.GetValueOrDefault(g.Key)?.Unit ?? "",
-                g.Sum(i => i.Quantity), g.Sum(i => i.LineTotal)))
+        // Grouped by the name on the line, so two suppliers' own names for a similar thing stay separate — which is the point.
+        var topItems = monthItems.GroupBy(i => new { i.Name, i.Size, i.Unit })
+            .Select(g => new SuppliedItemTotal(g.Key.Name, g.Key.Size, g.Key.Unit, g.Sum(i => i.Quantity), g.Sum(i => i.LineTotal)))
             .OrderByDescending(x => x.Amount).Take(6).ToList();
 
         var months = Enumerable.Range(0, 12).Select(n => histStart.AddMonths(n))

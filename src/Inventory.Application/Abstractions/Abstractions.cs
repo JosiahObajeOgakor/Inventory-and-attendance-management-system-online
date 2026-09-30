@@ -47,6 +47,7 @@ public interface IBusinessDbContext
     DbSet<ExpenseCategory> ExpenseCategories { get; }
     DbSet<ProductImage> ProductImages { get; }
     DbSet<SupplierPayment> SupplierPayments { get; }
+    DbSet<SupplierProduct> SupplierProducts { get; }
     DbSet<Supply> Supplies { get; }
     DbSet<SupplyItem> SupplyItems { get; }
 

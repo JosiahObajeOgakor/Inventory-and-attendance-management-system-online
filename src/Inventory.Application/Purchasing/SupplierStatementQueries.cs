@@ -18,13 +18,14 @@ public sealed record SupplierSupplyMonth(int Year, int Month, decimal Amount, de
 
 public sealed record SupplierStatement(SupplierDto Supplier, decimal TotalBought, decimal TotalPaid, decimal Owed, int Orders, int OpenOrders,
     DateOnly? LastOrder, IReadOnlyList<SupplierStatementItem> Items, IReadOnlyList<SupplierStatementOrder> OrderList, IReadOnlyList<SupplierStatementPayment> Payments,
-    decimal SuppliedTotal = 0, decimal SuppliedOwed = 0, int SupplyRecords = 0, IReadOnlyList<SupplierSupplyMonth>? SupplyMonths = null);
+    decimal SuppliedTotal = 0, decimal SuppliedOwed = 0, int SupplyRecords = 0, IReadOnlyList<SupplierSupplyMonth>? SupplyMonths = null,
+    IReadOnlyList<SupplierProductDto>? OwnItems = null);
 
 /// <summary>
 /// Everything tied to one supplier on a single screen: what they sell us, every order (paid / part-paid / owed), every payment we made, and the
 /// running total we owe. Read-only; the figures come straight from the orders and payment rows, the balance from the supplier's running total.
 /// </summary>
-public sealed class SupplierStatementQueries(IBusinessDbContext db, IClock clock)
+public sealed class SupplierStatementQueries(IBusinessDbContext db, IClock clock, SupplierCatalogService catalog)
 {
     public async Task<SupplierStatement> GetAsync(int supplierId, CancellationToken ct)
     {
@@ -74,6 +75,7 @@ public sealed class SupplierStatementQueries(IBusinessDbContext db, IClock clock
 
         return new SupplierStatement(dto, live.Sum(o => o.TotalAmount), live.Sum(o => o.AmountPaid), s.Balance, live.Count,
             live.Count(o => o.PaymentStatus != PaymentStatuses.Paid), live.Count > 0 ? live.Max(o => o.OrderDate) : null, items, orderRows, payments,
-            supplies.Sum(x => x.TotalAmount), supplies.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid)), supplies.Count, supplyMonths);
+            supplies.Sum(x => x.TotalAmount), supplies.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid)), supplies.Count, supplyMonths,
+            await catalog.ListAsync(supplierId, includeInactive: false, ct));
     }
 }

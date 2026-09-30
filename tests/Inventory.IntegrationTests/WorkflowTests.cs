@@ -29,6 +29,7 @@ internal sealed class Services(BusinessDbContext db)
     public CustomerPaymentService Payments => new(db, Tx, _clock);
     public InvoiceVoidService Voids => new(db, Tx, Stock, _clock);
     public SupplyService Supplies => new(db, Tx, _clock, Company, new SupplyRequestValidator());
+    public SupplierCatalogService Catalog => new(db, Tx, _clock);
     public SalesService Sales => SalesFor(db);
 }
 
@@ -74,21 +75,88 @@ public class PurchaseTests(MySqlFixture mysql)
         Assert.Equal("Received", (await check.PurchaseOrders.SingleAsync()).Status);
     }
 
-    private static SupplyRequest Sup(int supplierId, int productId, int qty, decimal cost, decimal paid = 0, DateOnly? on = null) => new()
+    /// <summary>One of the supplier's OWN items — typed in, not a stock product.</summary>
+    private static async Task<int> AddOwnItem(string cs, int supplierId, string name, decimal cost, string unit = "Bag")
+    {
+        await using var db = NewContext(cs);
+        var p = new SupplierProduct { SupplierId = supplierId, Name = name, Unit = unit, UnitCost = cost, IsActive = true, CreatedAt = DateTime.UtcNow };
+        db.SupplierProducts.Add(p);
+        await db.SaveChangesAsync();
+        return p.Id;
+    }
+
+    private static SupplyRequest Sup(int supplierId, int ownItemId, int qty, decimal cost, decimal paid = 0, DateOnly? on = null) => new()
     {
         SupplierId = supplierId, PaidNow = paid, SupplyDate = on,
-        Lines = [new SupplyLineDto { ProductId = productId, Quantity = qty, UnitCost = cost }],
+        Lines = [new SupplyLineDto { SupplierProductId = ownItemId, Quantity = qty, UnitCost = cost }],
     };
+
+    [Fact]
+    public async Task A_suppliers_own_items_are_their_own_and_are_never_products()
+    {
+        var cs = await mysql.NewSchemaAsync();
+        await SeedAsync(cs, stock: 5);                                    // there is a product catalogue; supplier items ignore it
+        var a = await AddSupplier(cs);
+        int b;
+        await using (var db0 = NewContext(cs))
+        {
+            var s = new Supplier { Name = "Second Supplier" };
+            db0.Suppliers.Add(s); await db0.SaveChangesAsync(); b = s.Id;
+        }
+
+        await using var db = NewContext(cs);
+        var catalog = new Services(db).Catalog;
+        var saved = await catalog.SaveAsync(a, [
+            new SupplierProductInput(0, "Layer Mash", "25kg", "Bag", 9000),
+            new SupplierProductInput(0, "Maize", "100kg", "Sack", 42000),
+        ], Clerk);
+        Assert.Equal(2, saved.Count);
+        Assert.Equal(("Layer Mash", "25kg", "Bag", 9000m), (saved[0].Name, saved[0].Size, saved[0].Unit, saved[0].UnitCost));
+
+        // One supplier's list is invisible to another, and can never be billed against them.
+        Assert.Empty(await catalog.ListAsync(b, false));
+        var strayId = saved[0].Id;
+        await Assert.ThrowsAsync<BusinessRuleException>(() => new Services(db).Supplies.CreateAsync(Sup(b, strayId, 1, 9000), Clerk));
+
+        // Editing the list renames in place and drops what is gone; products are untouched throughout.
+        var again = await catalog.SaveAsync(a, [new SupplierProductInput(saved[0].Id, "Layer Mash Premium", "25kg", "Bag", 9500)], Clerk);
+        Assert.Equal("Layer Mash Premium", Assert.Single(again).Name);
+        await using var check = NewContext(cs);
+        Assert.Equal("Adult Dog Food 20kg", (await check.Products.SingleAsync()).Name);
+        Assert.Equal(5, await check.StockBatches.SumAsync(x => x.QuantityOnHand));
+    }
+
+    [Fact]
+    public async Task An_item_already_supplied_is_retired_not_deleted_so_history_still_reads()
+    {
+        var cs = await mysql.NewSchemaAsync();
+        var supplier = await AddSupplier(cs);
+        await using var db = NewContext(cs);
+        var catalog = new Services(db).Catalog;
+        var items = await catalog.SaveAsync(supplier, [new SupplierProductInput(0, "Bran", "50kg", "Sack", 4000)], Clerk);
+        var id = items[0].Id;
+        await new Services(db).Supplies.CreateAsync(Sup(supplier, id, 3, 4000), Clerk);
+
+        await catalog.SaveAsync(supplier, [], Clerk);                     // taken off the list
+
+        Assert.Empty(await catalog.ListAsync(supplier, includeInactive: false));
+        var kept = Assert.Single(await catalog.ListAsync(supplier, includeInactive: true));
+        Assert.False(kept.IsActive);
+        await using var check = NewContext(cs);
+        var line = Assert.Single(await check.SupplyItems.ToListAsync());
+        Assert.Equal(("Bran", "50kg", 3), (line.Name, line.Size, line.Quantity));   // the record still says what was supplied
+    }
 
     [Fact]
     public async Task A_recorded_supply_leaves_stock_cost_price_and_the_ledger_completely_alone()
     {
         var cs = await mysql.NewSchemaAsync();
-        var seed = await SeedAsync(cs, stock: 12);                       // 12 on the shelf, cost price 8,500
+        await SeedAsync(cs, stock: 12);                                  // 12 on the shelf, product cost price 8,500
         var supplier = await AddSupplier(cs);
+        var ownItem = await AddOwnItem(cs, supplier, "Layer Mash 25kg", 9500);   // the supplier's own item, not a product
 
         await using var db = NewContext(cs);
-        var r = await new Services(db).Supplies.CreateAsync(Sup(supplier, seed.ProductId, 40, 9500, paid: 100000), Clerk);
+        var r = await new Services(db).Supplies.CreateAsync(Sup(supplier, ownItem, 40, 9500, paid: 100000), Clerk);
 
         Assert.Equal((380000m, 100000m, 280000m, "Partial"), (r.Total, r.Paid, r.Outstanding, r.PaymentStatus));
         await using var check = NewContext(cs);
@@ -115,10 +183,12 @@ public class PurchaseTests(MySqlFixture mysql)
         }
         var today = new SystemClock().BusinessToday;
         var lastMonth = new DateOnly(today.Year, today.Month, 1).AddDays(-1);
-        await using (var a = NewContext(cs)) await new Services(a).Supplies.CreateAsync(Sup(mastafeed, seed.ProductId, 10, 9000, paid: 40000), Clerk);
-        await using (var b = NewContext(cs)) await new Services(b).Supplies.CreateAsync(Sup(mastafeed, seed.ProductId, 5, 9000), Clerk);
-        await using (var c = NewContext(cs)) await new Services(c).Supplies.CreateAsync(Sup(other, seed.ProductId, 2, 8000), Clerk);
-        await using (var d = NewContext(cs)) await new Services(d).Supplies.CreateAsync(Sup(mastafeed, seed.ProductId, 3, 9000, on: lastMonth), Clerk);
+        var mastaItem = await AddOwnItem(cs, mastafeed, "Layer Mash 25kg", 9000);
+        var otherItem = await AddOwnItem(cs, other, "Maize (sack)", 8000, "Sack");
+        await using (var a = NewContext(cs)) await new Services(a).Supplies.CreateAsync(Sup(mastafeed, mastaItem, 10, 9000, paid: 40000), Clerk);
+        await using (var b = NewContext(cs)) await new Services(b).Supplies.CreateAsync(Sup(mastafeed, mastaItem, 5, 9000), Clerk);
+        await using (var c = NewContext(cs)) await new Services(c).Supplies.CreateAsync(Sup(other, otherItem, 2, 8000), Clerk);
+        await using (var d = NewContext(cs)) await new Services(d).Supplies.CreateAsync(Sup(mastafeed, mastaItem, 3, 9000, on: lastMonth), Clerk);
 
         await using var check = NewContext(cs);
         var sum = await new SupplyQueries(check, new SystemClock(), new NoUsers()).SummaryAsync(default);
@@ -147,11 +217,13 @@ public class PurchaseTests(MySqlFixture mysql)
             db0.Suppliers.Add(s); await db0.SaveChangesAsync(); a2 = s.Id;
         }
         var march = new DateOnly(2026, 3, 14);
+        var i1 = await AddOwnItem(cs, a1, "Bran", 1000);
+        var i2 = await AddOwnItem(cs, a2, "Salt lick", 1000);
         int one;
-        await using (var a = NewContext(cs)) one = (await new Services(a).Supplies.CreateAsync(Sup(a1, seed.ProductId, 1, 1000), Clerk)).Id;
-        await using (var b = NewContext(cs)) await new Services(b).Supplies.CreateAsync(Sup(a1, seed.ProductId, 2, 1000), Clerk);
-        await using (var c = NewContext(cs)) await new Services(c).Supplies.CreateAsync(Sup(a2, seed.ProductId, 3, 1000, on: march), Clerk);
-        await using (var d = NewContext(cs)) await new Services(d).Supplies.CreateAsync(Sup(a2, seed.ProductId, 4, 1000), Clerk);
+        await using (var a = NewContext(cs)) one = (await new Services(a).Supplies.CreateAsync(Sup(a1, i1, 1, 1000), Clerk)).Id;
+        await using (var b = NewContext(cs)) await new Services(b).Supplies.CreateAsync(Sup(a1, i1, 2, 1000), Clerk);
+        await using (var c = NewContext(cs)) await new Services(c).Supplies.CreateAsync(Sup(a2, i2, 3, 1000, on: march), Clerk);
+        await using (var d = NewContext(cs)) await new Services(d).Supplies.CreateAsync(Sup(a2, i2, 4, 1000), Clerk);
 
         await using (var db = NewContext(cs))
         {
@@ -187,10 +259,10 @@ public class PurchaseTests(MySqlFixture mysql)
     public async Task Paying_a_supply_is_capped_at_what_that_supply_still_owes()
     {
         var cs = await mysql.NewSchemaAsync();
-        var seed = await SeedAsync(cs, stock: 0);
         var supplier = await AddSupplier(cs);
+        var ownItem = await AddOwnItem(cs, supplier, "Bran", 1000);
         int id;
-        await using (var a = NewContext(cs)) id = (await new Services(a).Supplies.CreateAsync(Sup(supplier, seed.ProductId, 10, 1000, paid: 4000), Clerk)).Id;
+        await using (var a = NewContext(cs)) id = (await new Services(a).Supplies.CreateAsync(Sup(supplier, ownItem, 10, 1000, paid: 4000), Clerk)).Id;
 
         await using (var b = NewContext(cs))
             await Assert.ThrowsAsync<BusinessRuleException>(() => new Services(b).Supplies.PayAsync(id, 7000, "Cash", Clerk));
@@ -222,7 +294,7 @@ public class PurchaseTests(MySqlFixture mysql)
         Assert.Equal(("Partial", 2000m), (orders[1].PaymentStatus, orders[1].AmountPaid));   // the rest goes to the next one
         Assert.Equal(4000m, (await check.Suppliers.SingleAsync()).Balance);
 
-        var st = await new SupplierStatementQueries(check, new SystemClock()).GetAsync(supplier, default);
+        var st = await new SupplierStatementQueries(check, new SystemClock(), new Services(check).Catalog).GetAsync(supplier, default);
         Assert.Equal((16000m, 12000m, 4000m, 2, 1), (st.TotalBought, st.TotalPaid, st.Owed, st.Orders, st.OpenOrders));
         Assert.Equal(st.TotalBought - st.TotalPaid, st.Owed);
         Assert.Equal(12000m, st.Payments.Sum(p => p.Amount));                                 // every naira paid is on the statement

@@ -85,6 +85,9 @@ export class Api2 {
   supplierItems(supplierId: number) { return this.get<N.SupplierItem[]>(`/api/suppliers/${supplierId}/items`); }
   setSupplierItems(supplierId: number, items: { productId: number; unitCost: number }[]) { return this.put<void>(`/api/suppliers/${supplierId}/items`, items); }
   supplierStatement(supplierId: number) { return this.get<N.SupplierStatement>(`/api/suppliers/${supplierId}/statement`); }
+  /** The supplier's OWN items (their names, sizes, prices) — what the Supplies form picks from. */
+  supplierCatalog(supplierId: number) { return this.get<N.SupplierProduct[]>(`/api/suppliers/${supplierId}/catalog`); }
+  saveSupplierCatalog(supplierId: number, items: N.SupplierProductInput[]) { return this.put<N.SupplierProduct[]>(`/api/suppliers/${supplierId}/catalog`, items); }
   paySupplier(supplierId: number, amount: number, method: string) { return this.post<N.SupplierPaymentResult>(`/api/suppliers/${supplierId}/payments`, { amount, method }); }
   productSuppliers(productId: number) { return this.get<N.ProductSupplier[]>(`/api/products/${productId}/suppliers`); }
 

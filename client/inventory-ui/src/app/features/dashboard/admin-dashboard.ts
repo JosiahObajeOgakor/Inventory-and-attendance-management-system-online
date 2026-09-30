@@ -129,8 +129,8 @@ const POLL_MS = 30_000;
               <div>
                 <span class="eyebrow">Top items supplied, this month</span>
                 @if (sp.topItems.length) {
-                  <table class="mini"><tbody>@for (t of sp.topItems; track t.productId) {
-                    <tr><td>{{ t.product }}<div class="muted xs">{{ t.quantity }} {{ t.unit }}</div></td><td class="num mono">{{ full(t.amount) }}</td></tr>
+                  <table class="mini"><tbody>@for (t of sp.topItems; track t.name + (t.size ?? '')) {
+                    <tr><td>{{ t.name }}<div class="muted xs">{{ t.quantity }} {{ t.unit }}{{ t.size ? ' · ' + t.size : '' }}</div></td><td class="num mono">{{ full(t.amount) }}</td></tr>
                   }</tbody></table>
                 } @else { <p class="muted xs">No items supplied this month yet.</p> }
               </div>

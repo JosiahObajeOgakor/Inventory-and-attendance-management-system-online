@@ -254,13 +254,30 @@ public partial class BusinessDbContext
             e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.SupplyId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        // A supplier's own goods: their names, their pack sizes, their prices. No link to products or stock.
+        b.Entity<SupplierProduct>(e =>
+        {
+            e.ToTable("supplier_products");
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Size).HasMaxLength(40);
+            e.Property(x => x.Unit).HasMaxLength(20);
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.SupplierId, x.Name });
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         b.Entity<SupplyItem>(e =>
         {
             e.ToTable("supply_items");
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Size).HasMaxLength(40);
+            e.Property(x => x.Unit).HasMaxLength(20);
             e.Property(x => x.UnitCost).HasPrecision(12, 2);
             e.Property(x => x.LineTotal).HasPrecision(14, 2);
-            e.HasIndex(x => x.ProductId);
-            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.SupplierProductId);
+            // The item may be removed from the supplier's list later; the line keeps its own name, size and unit, so history still reads right.
+            e.HasOne<SupplierProduct>().WithMany().HasForeignKey(x => x.SupplierProductId).OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<SupplierPayment>(e =>

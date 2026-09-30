@@ -47,6 +47,7 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public DbSet<SupplierProduct> SupplierProducts => Set<SupplierProduct>();
     public DbSet<Supply> Supplies => Set<Supply>();
     public DbSet<SupplyItem> SupplyItems => Set<SupplyItem>();
 
