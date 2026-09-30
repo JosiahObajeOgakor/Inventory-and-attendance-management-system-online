@@ -50,6 +50,8 @@ builder.Services.Configure<Inventory.Api.Controllers.SiteOptions>(builder.Config
 builder.Services.AddScoped<Inventory.Application.Payments.IPayPageLinks, Inventory.Api.Controllers.PayPageLinks>();
 // WhatsApp messages are stored by the webhook and answered here, with retries, in the background.
 builder.Services.Configure<Inventory.Application.SalesAssistant.InboxOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.InboxOptions.Section));
+builder.Services.AddSingleton<Inventory.Api.Infrastructure.DailyAlertsWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Inventory.Api.Infrastructure.DailyAlertsWorker>());
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.WhatsAppInboxWorker>();
 builder.Services.AddHttpClient("sms", c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddScoped<Inventory.Application.Payments.IAdminNotifier, Inventory.Infrastructure.Payments.AdminNotifier>();

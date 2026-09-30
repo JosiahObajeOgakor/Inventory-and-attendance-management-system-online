@@ -13,6 +13,8 @@ public sealed class SupplyLineDto
     public int SupplierProductId { get; set; }
     public int Quantity { get; set; }
     public decimal UnitCost { get; set; }
+    /// <summary>Only when adding to stock: which of OUR products this item counts as. Remembered on the item for next time.</summary>
+    public int? ProductId { get; set; }
 }
 
 public sealed class SupplyRequest
@@ -22,6 +24,10 @@ public sealed class SupplyRequest
     public decimal PaidNow { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
     public string? Note { get; set; }
+    /// <summary>"The goods are already here": book them into stock as well as recording them against the supplier.</summary>
+    public bool AddToStock { get; set; }
+    /// <summary>Where they go when added to stock; 0 = the first warehouse.</summary>
+    public int WarehouseId { get; set; }
     public List<SupplyLineDto> Lines { get; set; } = [];
 }
 
@@ -51,7 +57,8 @@ public sealed class SupplyRequestValidator : AbstractValidator<SupplyRequest>
 /// to a product's cost price and no ledger entry. A supply's own total, what was paid on it and what is still owed are its whole truth, which
 /// is why an admin can delete supplies — singly, per supplier, per month or all of them — without unwinding anything else in the business.
 /// </summary>
-public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, IValidator<SupplyRequest> validator)
+public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, StockService stock, IClock clock, ICompanyContext company,
+    IValidator<SupplyRequest> validator)
 {
     public async Task<SupplyResult> CreateAsync(SupplyRequest req, CurrentUser user, CancellationToken ct = default)
     {
@@ -63,6 +70,25 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
             var ids = req.Lines.Select(l => l.SupplierProductId).Distinct().ToList();
             var own = await db.SupplierProducts.Where(p => ids.Contains(p.Id) && p.SupplierId == req.SupplierId).ToDictionaryAsync(p => p.Id, inner);
             if (own.Count != ids.Count) throw new BusinessRuleException("One of those items isn't on this supplier's list.");
+
+            // Adding to stock needs to know what each item counts as: this time's choice, else what the item remembers.
+            var productFor = new Dictionary<int, int>();
+            var warehouseId = 0;
+            if (req.AddToStock)
+            {
+                foreach (var l in req.Lines)
+                {
+                    var productId = l.ProductId ?? own[l.SupplierProductId].ProductId;
+                    if (productId is null or <= 0)
+                        throw new BusinessRuleException($"Choose which product \"{own[l.SupplierProductId].Name}\" counts as before adding it to stock.");
+                    productFor[l.SupplierProductId] = productId.Value;
+                }
+                var wanted = productFor.Values.Distinct().ToList();
+                if (await db.Products.CountAsync(p => wanted.Contains(p.Id) && p.IsActive, inner) != wanted.Count)
+                    throw new BusinessRuleException("One of those products no longer exists or is inactive.");
+                warehouseId = req.WarehouseId > 0 ? req.WarehouseId : await db.Warehouses.MinAsync(w => w.Id, inner);
+                if (!await db.Warehouses.AnyAsync(w => w.Id == warehouseId, inner)) throw new NotFoundException("Warehouse");
+            }
 
             var total = req.Lines.Sum(l => Money.Round(l.Quantity * l.UnitCost));
             var paid = Math.Min(Math.Max(0m, req.PaidNow), total);   // never record paying more than the supply is worth
@@ -76,17 +102,35 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
                 PaymentStatus = PaymentStatuses.For(paid, total),
                 PaymentMethod = string.IsNullOrWhiteSpace(req.PaymentMethod) ? "Cash" : req.PaymentMethod.Trim(),
                 Note = string.IsNullOrWhiteSpace(req.Note) ? null : req.Note.Trim(),
+                AddedToStock = req.AddToStock,
+                WarehouseId = req.AddToStock ? warehouseId : null,
                 CreatedByUserId = user.Id,
                 CreatedAt = clock.UtcNow,
                 // Name, size and unit are copied onto the line so the record still reads correctly if the item is renamed or removed later.
                 Items = req.Lines.Select(l => new SupplyItem
                 {
-                    SupplierProductId = l.SupplierProductId, Name = own[l.SupplierProductId].Name, Size = own[l.SupplierProductId].Size,
+                    SupplierProductId = l.SupplierProductId, ProductId = req.AddToStock ? productFor[l.SupplierProductId] : null,
+                    Name = own[l.SupplierProductId].Name, Size = own[l.SupplierProductId].Size,
                     Unit = own[l.SupplierProductId].Unit, Quantity = l.Quantity, UnitCost = l.UnitCost, LineTotal = Money.Round(l.Quantity * l.UnitCost),
                 }).ToList(),
             };
             db.Supplies.Add(supply);
-            await Audit(user, "SUPPLY_RECORDED", supply.Id.ToString(), $"{supply.Reference} ₦{total:N2} ({supply.Items.Count} item(s))", inner);
+            if (req.AddToStock)
+            {
+                await db.SaveChangesAsync(inner);   // the reference is the batch name, so the record must exist first
+                foreach (var line in supply.Items.OrderBy(i => i.Name))
+                {
+                    await stock.ReceiveAsync(line.ProductId!.Value, warehouseId, supply.Reference, line.Quantity, null,
+                        MovementReferences.PurchaseOrder, supply.Id, user.Id, inner);
+                    // Remember what this item counts as, so next time the choice is already made. A product's cost price is NOT touched:
+                    // supplier prices vary per delivery and must not silently rewrite what we cost our own goods at.
+                    var item = own[line.SupplierProductId!.Value];
+                    if (item.ProductId != line.ProductId) item.ProductId = line.ProductId;
+                }
+            }
+
+            await Audit(user, "SUPPLY_RECORDED", supply.Id.ToString(),
+                $"{supply.Reference} ₦{total:N2} ({supply.Items.Count} item(s)){(req.AddToStock ? " · added to stock" : "")}", inner);
             return new SupplyResult(supply.Id, supply.Reference, total, paid, total - paid, supply.PaymentStatus);
         }, ct);
     }
@@ -114,8 +158,9 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
         {
             var s = await db.Supplies.Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, inner) ?? throw new NotFoundException("Supply");
             var name = await db.Suppliers.Where(x => x.Id == s.SupplierId).Select(x => x.Name).SingleOrDefaultAsync(inner) ?? "";
-            db.Supplies.Remove(s);   // the items go with it (cascade); nothing else in the business refers to a supply
-            await Audit(user, "SUPPLY_DELETED", s.Id.ToString(), $"{s.Reference} ₦{s.TotalAmount:N2} from {name}", inner);
+            var stockNote = s.AddedToStock ? await ReverseStockAsync(s, user, inner) : "";
+            db.Supplies.Remove(s);   // the items go with it (cascade); nothing else in the business refers to a purchase record
+            await Audit(user, "SUPPLY_DELETED", s.Id.ToString(), $"{s.Reference} ₦{s.TotalAmount:N2} from {name}{stockNote}", inner);
             return new SupplyDeleteResult(1, s.TotalAmount);
         }, ct);
 
@@ -150,6 +195,30 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, I
             await Audit(user, "SUPPLIES_CLEARED", null, await detail(inner, result), inner);
             return result;
         }, ct);
+
+    /// <summary>
+    /// Takes back out of stock what this record put in, so deleting it cannot leave phantom stock behind. Refused when the units are no longer
+    /// on the shelf — they have been sold or moved on, and silently driving stock negative would be worse than refusing.
+    /// </summary>
+    private async Task<string> ReverseStockAsync(Supply s, CurrentUser user, CancellationToken ct)
+    {
+        var batches = await db.StockBatches.Where(b => b.BatchNumber == s.Reference).ToListAsync(ct);
+        foreach (var line in s.Items.Where(i => i.ProductId is not null))
+        {
+            var batch = batches.FirstOrDefault(b => b.ProductId == line.ProductId);
+            if (batch is null || batch.QuantityOnHand < line.Quantity)
+                throw new BusinessRuleException($"{line.Name} from this purchase is no longer on the shelf, so it can't be deleted. " +
+                    "Adjust the stock first if the goods really went back.");
+            batch.QuantityOnHand -= line.Quantity;
+            db.StockMovements.Add(new StockMovement
+            {
+                ProductId = line.ProductId!.Value, WarehouseId = batch.WarehouseId, MovementType = MovementTypes.Out, Quantity = line.Quantity,
+                ReferenceType = MovementReferences.PurchaseOrder, ReferenceId = s.Id, MovementDate = clock.UtcNow, UserId = user.Id,
+                BatchId = batch.Id, Note = $"Purchase {s.Reference} deleted",
+            });
+        }
+        return " · stock taken back out";
+    }
 
     private async Task Audit(CurrentUser user, string action, string? entityId, string detail, CancellationToken ct)
     {

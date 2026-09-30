@@ -32,7 +32,6 @@ const NAV: NavGroup[] = [
     { label: 'Customers', path: '/customers', icon: 'customer', adminOnly: true },
     { label: 'Suppliers', path: '/suppliers', icon: 'supplier', adminOnly: true },
     { label: 'Purchases', path: '/purchases', icon: 'purchase', adminOnly: true },
-    { label: 'Supplies', path: '/supplies', icon: 'supplier', adminOnly: true },
   ] },
   { title: 'Money', icon: 'finance', items: [
     { label: 'Finance', path: '/finance', icon: 'finance', adminOnly: true },

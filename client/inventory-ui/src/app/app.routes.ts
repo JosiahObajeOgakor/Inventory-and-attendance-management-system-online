@@ -23,11 +23,13 @@ export const routes: Routes = [
       { path: 'customers', canActivate: [adminGuard], loadComponent: () => import('./features/customers/customers').then(m => m.CustomersPage), title: 'Customers' },
       { path: 'suppliers', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/suppliers').then(m => m.SuppliersPage), title: 'Suppliers' },
       { path: 'suppliers/:id', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/supplier-detail').then(m => m.SupplierDetail), title: 'Supplier' },
-      { path: 'supplies', canActivate: [adminGuard], loadComponent: () => import('./features/supplies/supplies').then(m => m.SuppliesPage), title: 'Supplies' },
-      { path: 'purchases', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchases-list').then(m => m.PurchasesList), title: 'Purchases' },
-      { path: 'purchases/new', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-new').then(m => m.PurchaseNew), title: 'New purchase' },
-      { path: 'purchases/:id', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-detail').then(m => m.PurchaseDetail), title: 'Purchase' },
-      { path: 'purchases/:id/edit', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-new').then(m => m.PurchaseNew), data: { mode: 'edit' }, title: 'Edit purchase' },
+      // Buying from a supplier means picking from THEIR OWN item list; it records what was bought and owed and never moves stock.
+      { path: 'purchases', canActivate: [adminGuard], loadComponent: () => import('./features/supplies/supplies').then(m => m.SuppliesPage), title: 'Purchases' },
+      { path: 'supplies', redirectTo: 'purchases' },
+      // History only: purchase orders raised the old way stay readable (and printable) so nothing is stranded. There is no longer any way to
+      // create or edit one — buying from a supplier happens on /purchases, from that supplier's own item list.
+      { path: 'stock-purchases', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchases-list').then(m => m.PurchasesList), title: 'Older stock purchases' },
+      { path: 'stock-purchases/:id', canActivate: [adminGuard], loadComponent: () => import('./features/purchases/purchase-detail').then(m => m.PurchaseDetail), title: 'Stock purchase' },
       { path: 'finance', canActivate: [adminGuard], loadComponent: () => import('./features/finance/finance').then(m => m.FinancePage), title: 'Finance' },
       { path: 'users', canActivate: [ceoGuard], loadComponent: () => import('./features/users/users').then(m => m.UsersPage), title: 'People & access' },
       { path: 'quotations', loadComponent: () => import('./features/quotations/quotations').then(m => m.QuotationsPage), title: 'Quotations' },

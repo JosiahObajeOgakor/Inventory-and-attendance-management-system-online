@@ -109,6 +109,22 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
             lines, subtotal, Math.Max(0m, po.TotalAmount - subtotal), po.TotalAmount, po.AmountPaid, elsewhere, clock.BusinessNow);
     }
 
+    /// <summary>A supplier's copy of what we bought from them, built from their own items — no product or stock data is involved.</summary>
+    public async Task<SupplyDoc> SupplyAsync(int id, CancellationToken ct)
+    {
+        var s = await db.Supplies.AsNoTracking().Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Purchase");
+        var sup = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == s.SupplierId, ct);
+        var brand = await BrandAsync(ct);
+        var briefs = await users.BriefsAsync([s.CreatedByUserId], ct);
+        var lines = s.Items.OrderBy(i => i.Name).Select((i, n) => new SupplyDocLine(n + 1, i.Name, i.Size, i.Unit, i.Quantity, i.UnitCost, i.LineTotal)).ToList();
+        // What we still owe them on their OTHER purchases — supply records only, never mixed with the stock-order balance.
+        var elsewhere = await db.Supplies.AsNoTracking().Where(x => x.SupplierId == s.SupplierId && x.Id != s.Id)
+            .SumAsync(x => (decimal?)(x.TotalAmount - x.AmountPaid), ct) ?? 0m;
+        var party = new PartyInfo(sup.Name, sup.ContactName ?? "", sup.Address ?? "", sup.Phone ?? "", sup.Email ?? "", sup.TaxId ?? "", "");
+        return new SupplyDoc(brand, s.Reference, s.SupplyDate, s.PaymentStatus, party, PersonOn(briefs.GetValueOrDefault(s.CreatedByUserId), brand.Name),
+            s.Note, lines, s.TotalAmount, s.AmountPaid, Math.Max(0, elsewhere), clock.BusinessNow);
+    }
+
     public async Task<WaybillDoc> WaybillAsync(int id, CancellationToken ct)
     {
         var w = await db.Waybills.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Waybill");

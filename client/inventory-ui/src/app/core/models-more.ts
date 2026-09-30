@@ -64,7 +64,7 @@ export interface SupplierPaymentResult { reference: string; amount: number; appl
 export interface ProductSupplier { supplierId: number; supplier: string; unitCost: number; }
 
 // ---- each supplier's OWN items: their names, pack sizes and prices. Nothing to do with stock products.
-export interface SupplierProduct { id: number; name: string; size: string | null; unit: string; unitCost: number; isActive: boolean;
+export interface SupplierProduct { id: number; name: string; size: string | null; unit: string; unitCost: number; productId: number | null; isActive: boolean;
   timesSupplied: number; quantitySupplied: number; amountSupplied: number; }
 export interface SupplierProductInput { id: number; name: string; size: string | null; unit: string; unitCost: number; isActive: boolean; }
 
@@ -85,7 +85,8 @@ export interface SupplySummary { asOf: string; thisMonth: number; lastMonth: num
   bySupplier: SupplierSupplyTotal[]; topItems: SuppliedItemTotal[]; months: SupplyMonth[]; trends: SupplierTrend[]; }
 export interface SupplierSupplyMonth { year: number; month: number; amount: number; owed: number; records: number; }
 export interface SupplyInput { supplierId: number; supplyDate: string | null; paidNow: number; paymentMethod: string; note: string | null;
-  lines: { supplierProductId: number; quantity: number; unitCost: number }[]; }
+  addToStock: boolean; warehouseId: number;
+  lines: { supplierProductId: number; quantity: number; unitCost: number; productId: number | null }[]; }
 export interface DocumentSent { channel: string; to: string; file: string; }
 export interface RebateEntry { id: number; entryDate: string; invoiceNumber: string | null; amount: number; status: string; redeemedDate: string | null; note: string | null; }
 
@@ -103,3 +104,7 @@ export interface CustomerMetrics {
   lastPurchase: string | null; balance: number; monthly: { year: number; month: number; total: number; invoices: number }[];
   topProducts: { productId: number; product: string; quantity: number; revenue: number }[];
 }
+
+// ---- who is overdue to buy again, judged against their own rhythm
+export interface ReorderDue { customerId: number; customer: string; phone: string | null; email: string | null; orders: number;
+  typicalDays: number; daysSince: number; daysOverdue: number; averageOrder: number; lastOrderValue: number; lastOrder: string; usualItems: string; }

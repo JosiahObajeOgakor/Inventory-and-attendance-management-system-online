@@ -93,6 +93,10 @@ public class Supply
     /// <summary>How the last payment was made ("Cash", "Transfer"…) — for the record only; supplies keep no ledger.</summary>
     public string? PaymentMethod { get; set; }
     public string? Note { get; set; }
+    /// <summary>True when the goods were booked into stock as well as recorded against the supplier.</summary>
+    public bool AddedToStock { get; set; }
+    /// <summary>Where they went, when they were added to stock.</summary>
+    public int? WarehouseId { get; set; }
     public int CreatedByUserId { get; set; }
     /// <summary>UTC.</summary>
     public DateTime CreatedAt { get; set; }
@@ -115,6 +119,11 @@ public class SupplierProduct
     public string Unit { get; set; } = "Bag";
     /// <summary>What they usually charge for one. Prefills the price when recording a supply; 0 = not known.</summary>
     public decimal UnitCost { get; set; }
+    /// <summary>
+    /// Which of OUR products one of these counts as, remembered from the last time this item was added to stock. Null until then — a supplier's
+    /// item is not a product, and most purchases never touch stock at all.
+    /// </summary>
+    public int? ProductId { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 }
@@ -128,6 +137,8 @@ public class SupplyItem
     public int Id { get; set; }
     public int SupplyId { get; set; }
     public int? SupplierProductId { get; set; }
+    /// <summary>Set only when this line was added to stock, naming the product it went in as.</summary>
+    public int? ProductId { get; set; }
     public string Name { get; set; } = "";
     public string? Size { get; set; }
     public string Unit { get; set; } = "";

@@ -101,7 +101,15 @@ public class DocumentsController(ICurrentUser cu, DocumentQueries docs, IDocumen
         return Pdf(renderer.Receipt(d), "Receipt-" + d.Number);
     }
 
-    [HttpGet("purchases/{id:int}/pdf"), Authorize(Policy = Policies.Admin)]
+    /// <summary>A purchase from a supplier's own items — their copy, with no stock or product data on it.</summary>
+    [HttpGet("supplies/{id:int}/pdf"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> Supply(int id, CancellationToken ct)
+    {
+        var d = await docs.SupplyAsync(id, ct);
+        return Pdf(renderer.Supply(d), "Purchase-" + d.Number);
+    }
+
+    [HttpGet("stock-purchases/{id:int}/pdf"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> PurchaseOrder(int id, CancellationToken ct)
     {
         var d = await docs.PurchaseOrderAsync(id, ct);

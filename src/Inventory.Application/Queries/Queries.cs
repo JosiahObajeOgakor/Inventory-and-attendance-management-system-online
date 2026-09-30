@@ -102,8 +102,15 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
         var q = db.Suppliers.AsNoTracking().AsQueryable();
         if (page.Term is { } t) q = q.Where(s => s.Name.Contains(t) || (s.Phone != null && s.Phone.Contains(t)));
         var total = await q.CountAsync(ct);
-        var items = await q.OrderBy(s => s.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
-            .Select(s => new SupplierDto(s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId, s.Balance)).ToListAsync(ct);
+        var rows = await q.OrderBy(s => s.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
+            .Select(s => new { s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId, s.Balance }).ToListAsync(ct);
+        // The list's "we owe" is everything owed: old purchase-order balances plus what is unpaid on their purchase records.
+        var ids = rows.Select(r => r.Id).ToList();
+        var owed = await db.Supplies.AsNoTracking().Where(s => ids.Contains(s.SupplierId) && s.TotalAmount > s.AmountPaid)
+            .GroupBy(s => s.SupplierId).Select(g => new { g.Key, Owed = g.Sum(x => x.TotalAmount - x.AmountPaid) })
+            .ToDictionaryAsync(x => x.Key, x => x.Owed, ct);
+        var items = rows.Select(s => new SupplierDto(s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId,
+            s.Balance + owed.GetValueOrDefault(s.Id))).ToList();
         return new PagedResult<SupplierDto>(items, total, page.SafePage, page.SafeSize);
     }
 
@@ -220,10 +227,34 @@ public sealed class FinanceQueries(IBusinessDbContext db, IClock clock)
         var cogs = await db.InvoiceItems.AsNoTracking().Where(x => live.Any(i => i.Id == x.InvoiceId)).SumAsync(x => (decimal?)(x.Quantity * x.UnitCost), ct) ?? 0;
         var discounts = await live.SumAsync(i => (decimal?)i.DiscountAmount, ct) ?? 0;
         var expenses = await db.Expenses.AsNoTracking().Where(e => e.ExpenseDate >= from && e.ExpenseDate < to).SumAsync(e => (decimal?)e.Amount, ct) ?? 0;
-        var ap = await db.Suppliers.AsNoTracking().Where(s => s.Balance > 0).SumAsync(s => (decimal?)s.Balance, ct) ?? 0;
+        // What we owe suppliers is BOTH halves: the old purchase-order balances, and what is still unpaid on the purchase records that are kept
+        // per supplier. The two are stored separately on purpose, so the total has to add them up rather than read one of them.
+        var apOrders = await db.Suppliers.AsNoTracking().Where(s => s.Balance > 0).SumAsync(s => (decimal?)s.Balance, ct) ?? 0;
+        var apPurchases = await db.Supplies.AsNoTracking().SumAsync(s => (decimal?)(s.TotalAmount - s.AmountPaid), ct) ?? 0;
+        var ap = apOrders + Math.Max(0, apPurchases);
         var ar = await db.Customers.AsNoTracking().SumAsync(c => (decimal?)c.Balance, ct) ?? 0;
         var rebates = await db.RebateEntries.AsNoTracking().Where(r => r.Status == "Accrued").SumAsync(r => (decimal?)r.Amount, ct) ?? 0;
-        return new FinanceSummaryDto(y, m, revenue, discounts, cogs, revenue - cogs, expenses, revenue - cogs - expenses, ap, ar, rebates);
+
+        // ---- the buying side of the same month. Purchase records and old purchase orders are both counted: together they are everything
+        // suppliers billed us. "Paid" is money actually handed over in the month, from either kind.
+        var boughtOnRecords = await db.Supplies.AsNoTracking().Where(s => s.SupplyDate >= from && s.SupplyDate < to)
+            .Select(s => new { s.TotalAmount, s.AmountPaid }).ToListAsync(ct);
+        var boughtOnOrders = await db.PurchaseOrders.AsNoTracking()
+            .Where(p => p.OrderDate >= from && p.OrderDate < to && p.Status != Domain.PurchaseStatuses.Cancelled && !p.IsSample)
+            .Select(p => new { p.TotalAmount, p.AmountPaid }).ToListAsync(ct);
+        var purchases = boughtOnRecords.Sum(x => x.TotalAmount) + boughtOnOrders.Sum(x => x.TotalAmount);
+        var purchasesUnpaid = boughtOnRecords.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid))
+            + boughtOnOrders.Sum(x => Math.Max(0, x.TotalAmount - x.AmountPaid));
+        var fromUtc = from.ToDateTime(TimeOnly.MinValue).AddHours(-1);
+        var toUtc = to.ToDateTime(TimeOnly.MinValue).AddHours(-1);
+        var paidToSuppliers = boughtOnRecords.Sum(x => x.AmountPaid)
+            + (await db.SupplierPayments.AsNoTracking().Where(p => p.PaidAt >= fromUtc && p.PaidAt < toUtc).SumAsync(p => (decimal?)p.Amount, ct) ?? 0);
+        var inventoryValue = await (from b in db.StockBatches.AsNoTracking() join p in db.Products.AsNoTracking() on b.ProductId equals p.Id
+                                    where b.QuantityOnHand > 0
+                                    select (decimal?)(b.QuantityOnHand * p.CostPrice)).SumAsync(ct) ?? 0;
+
+        return new FinanceSummaryDto(y, m, revenue, discounts, cogs, revenue - cogs, expenses, revenue - cogs - expenses, ap, ar, rebates,
+            purchases, purchasesUnpaid, paidToSuppliers, inventoryValue);
     }
 
     public async Task<List<MonthlyIncomeDto>> MonthlyIncomeAsync(int year, CancellationToken ct)

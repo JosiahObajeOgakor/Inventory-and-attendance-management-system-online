@@ -132,11 +132,16 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
         var overdue = open.Where(o => o.DueDate < today).Sum(o => o.Outstanding);
 
         var signals = Signals(today, revenue, gross, warehouses, slow, open, topProducts, customers, trailing, inventoryValue);
-        var owedSuppliers = await db.Suppliers.AsNoTracking().Where(s => s.Balance > 0).Select(s => s.Balance).ToListAsync(ct);
+        // Both halves of what we owe suppliers: old purchase-order balances plus what is unpaid on the per-supplier purchase records.
+        var owedSuppliers = await db.Suppliers.AsNoTracking().Where(s => s.Balance > 0).Select(s => new { s.Id, s.Balance }).ToListAsync(ct);
+        var owedOnPurchases = await db.Supplies.AsNoTracking().Where(s => s.TotalAmount > s.AmountPaid)
+            .GroupBy(s => s.SupplierId).Select(g => new { Id = g.Key, Owed = g.Sum(x => x.TotalAmount - x.AmountPaid) }).ToListAsync(ct);
+        // One supplier can be owed on both, so count them once.
+        var suppliersOwed = owedSuppliers.Select(s => s.Id).Concat(owedOnPurchases.Select(s => s.Id)).Distinct().Count();
         return new Overview(today, revenue, gross, net, losses, collected, inventoryValue, customers.Count(c => c.CustomerType != CustomerTypes.WalkIn),
             0, receivables, overdue, dayPoints, monthPoints, warehouses, top, topProducts, slow, signals,
             K(Cogs(monthStart, nextStart), Cogs(prevStart, monthStart)), K(Bought(monthStart, nextStart), Bought(prevStart, monthStart)),
-            owedSuppliers.Sum(), owedSuppliers.Count);
+            owedSuppliers.Sum(s => s.Balance) + owedOnPurchases.Sum(x => x.Owed), suppliersOwed);
     }
 
     /// <summary>Open (unpaid or part-paid) invoices that have a due date. Payments are applied oldest-first, so each invoice's balance is its own.</summary>

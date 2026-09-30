@@ -13,8 +13,8 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
   template: `
     <div class="page">
       <div class="page-head">
-        <h1>Purchases</h1>
-        <div class="actions"><a class="btn btn-primary" routerLink="/purchases/new"><app-icon name="plus" [size]="18" /> New purchase</a></div>
+        <h1>Older stock purchases</h1>
+        <div class="actions"><a class="btn btn-primary" routerLink="/purchases">Record a purchase</a></div>
       </div>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
@@ -24,7 +24,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
           <thead><tr><th>Order</th><th>Supplier</th><th>Date</th><th>Goods</th><th>Payment</th><th class="num">Total</th><th class="num">Still owed</th></tr></thead>
           <tbody>
             @for (p of list.items(); track p.id) {
-              <tr class="clickable" [routerLink]="['/purchases', p.id]"><td class="mono strong">{{ p.poNumber }}</td><td>{{ p.supplier }}</td><td>{{ p.orderDate | day }}</td>
+              <tr class="clickable" [routerLink]="['/stock-purchases', p.id]"><td class="mono strong">{{ p.poNumber }}</td><td>{{ p.supplier }}</td><td>{{ p.orderDate | day }}</td>
                 <td><app-stamp [label]="p.status" /></td><td><app-stamp [label]="p.paymentStatus" /></td>
                 <td class="num mono">{{ p.totalAmount | naira }}</td><td class="num mono">{{ p.totalAmount - p.amountPaid | naira }}</td></tr>
             }

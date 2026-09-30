@@ -94,6 +94,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
 
     public byte[] Receipt(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] PurchaseOrder(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    public byte[] Supply(SupplyDoc d) => SupplyDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Quotation(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Waybill(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] PriceList(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
@@ -105,6 +106,7 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     private static readonly ImageGenerationSettings Preview = new() { RasterDpi = 110 };
     public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> PurchaseOrderImages(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> SupplyImages(SupplyDoc d) => SupplyDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
     public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
@@ -153,6 +155,59 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             BankAndStamp(col, accent, r.Brand.Banks, r.Brand.Signature);
             ConnectBand(col, r.Brand, accent);
             col.Item().PaddingTop(5).AlignCenter().Text("Thanks for your patronage.").FontSize(8.5f).FontColor(Muted).Italic();
+        });
+    }));
+
+    // ------------------------------------------------------------------------------------------------ purchase from a supplier (their copy)
+    private static IDocument SupplyDocument(SupplyDoc s) => Compose(doc => doc.Page(page =>
+    {
+        var accent = Accent(s.Brand.CompanyKey);
+        Frame(page, s.Brand, $"{s.Brand.Name}   ·   Purchase {s.Number}   ·   computer-generated {s.GeneratedAt:dd MMM yyyy HH:mm}");
+        page.Content().ScaleToFit().Column(col =>
+        {
+            Letterhead(col, s.Brand, accent, "PURCHASE RECORD", [("Reference", s.Number), ("Date", D(s.Date)), ("Payment", s.PaymentStatus.ToUpperInvariant())]);
+            Panels(col, accent,
+                ("Supplier", [("Name", s.Supplier.Name, true), ("Contact", s.Supplier.Contact, false), ("Phone", s.Supplier.Phone, false), ("Address", s.Supplier.Address, false)]),
+                ("Details", [("Recorded by", s.RecordedBy, false), ("Items", s.Lines.Count.ToString(), false),
+                             ("Total units", s.Lines.Sum(l => l.Qty).ToString("N0"), false)]));
+
+            // The supplier's own items, named and packed the way they quote them.
+            col.Item().PaddingTop(4).Text("ITEMS SUPPLIED").Bold().FontSize(8.5f).FontColor(accent);
+            col.Item().PaddingTop(3).Table(t =>
+            {
+                t.ColumnsDefinition(c => { c.ConstantColumn(26); c.RelativeColumn(); c.ConstantColumn(64); c.ConstantColumn(48); c.ConstantColumn(46); c.ConstantColumn(76); c.ConstantColumn(84); });
+                foreach (var h in new[] { "#", "Item", "Pack size", "Unit", "Qty", "Price", "Amount" })
+                {
+                    var hc = t.Cell().Element(HeadCell(accent));
+                    (h is "Qty" or "Price" or "Amount" ? hc.AlignRight() : hc).Text(h).Bold().FontSize(8.5f);
+                }
+                foreach (var l in s.Lines)
+                {
+                    t.Cell().Element(BodyCell).Text(l.No.ToString());
+                    t.Cell().Element(BodyCell).Text(l.Name);
+                    t.Cell().Element(BodyCell).Text(l.Size ?? "—");
+                    t.Cell().Element(BodyCell).Text(l.Unit);
+                    t.Cell().Element(BodyCell).AlignRight().Text(l.Qty.ToString("N0"));
+                    t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Price));
+                    t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Amount));
+                }
+            });
+
+            var totals = new List<(string, string, int)> { ("TOTAL", Money(s.Total), 1), ("Paid", Money(s.Paid), 0) };
+            totals.Add(("Still owed (this purchase)", Money(s.BalanceDue), s.BalanceDue > 0 ? 2 : 0));
+            if (s.OwedElsewhere > 0)
+            {
+                totals.Add(("Owed on earlier purchases", Money(s.OwedElsewhere), 2));
+                totals.Add(("TOTAL WE OWE YOU", Money(s.BalanceDue + s.OwedElsewhere), 2));
+            }
+            var notes = new List<(string, bool)> { ($"{s.Lines.Count} item(s) · {s.Lines.Sum(l => l.Qty):N0} unit(s)", false) };
+            if (!string.IsNullOrWhiteSpace(s.Note)) notes.Add((s.Note!, false));
+            notes.Add(s.BalanceDue > 0 ? ($"We have paid {Money(s.Paid)}; {Money(s.BalanceDue)} is still to be paid.", true) : ("Fully paid. Thank you.", false));
+            notes.Add(("Please check this against your own invoice and tell us of any difference.", false));
+            Totals(col, accent, totals, notes);
+            SignOff(col, s.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, s.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thank you for your supply.").FontSize(8.5f).FontColor(Muted).Italic();
         });
     }));
 

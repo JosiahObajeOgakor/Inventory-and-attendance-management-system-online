@@ -18,14 +18,14 @@ import { SendDocument } from '../../shared/send-document';
       <div class="page-head">
         <h1>Purchase</h1>
         <div class="actions">
-          <a class="btn" routerLink="/purchases">All purchases</a>
+          <a class="btn" routerLink="/stock-purchases">All older purchases</a>
           @if (p(); as p) {
             @if (p.status === 'Pending') { <button type="button" class="btn btn-primary" (click)="receiveOpen.set(true)">Receive goods</button> }
             @if (p.paymentStatus !== 'Paid') { <button type="button" class="btn" (click)="markPaid()">Mark as paid</button> }
             @if (p.status !== 'Cancelled') {
               <button type="button" class="btn" (click)="sendOpen.set(true)"><app-icon name="send" [size]="18" /> Send to supplier</button>
-              <a class="btn" [href]="'/api/purchases/' + p.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> PDF</a>
-              <a class="btn" [routerLink]="['/purchases', p.id, 'edit']">Edit purchase</a>
+              <a class="btn" [href]="'/api/stock-purchases/' + p.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> PDF</a>
+
             }
           }
         </div>

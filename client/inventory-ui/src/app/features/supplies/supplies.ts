@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Auth } from '../../core/auth.service';
-import { Supplier } from '../../core/models';
+import { Product, Supplier, Warehouse } from '../../core/models';
 import { SupplierProduct, SupplyDetail, SupplyRow } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
@@ -12,37 +12,38 @@ import { Confirm, Toasts } from '../../shared/feedback';
 import { PagedList, asNumber } from '../../shared/paged-list';
 import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
 import { SupplierCatalog } from '../suppliers/supplier-catalog';
+import { SendDocument } from '../../shared/send-document';
 
 interface Picked { supplierProductId: number; name: string; unit: string; qty: number; cost: number; }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /**
- * What suppliers supplied — a record of its own. Choosing a supplier lists the items they supply; you type the quantity and price against each,
+ * Buying from suppliers. Choosing a supplier lists THAT supplier's own items; you type the quantity and price against each,
  * then save. Nothing here touches stock, a product's cost price or the ledger, so a supplier's figures stand on their own.
  */
 @Component({
   selector: 'app-supplies',
-  imports: [FormsModule, RouterLink, Icon, Modal, SupplierCatalog, NairaPipe, DayPipe, Pager, Stamp],
+  imports: [FormsModule, RouterLink, Icon, Modal, SupplierCatalog, SendDocument, NairaPipe, DayPipe, Pager, Stamp],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
       <div class="page-head">
         <div>
-          <h1>Supplies</h1>
-          <p class="crumb">{{ auth.companyName() }} <span>›</span> What suppliers supplied</p>
+          <h1>Purchases</h1>
+          <p class="crumb">{{ auth.companyName() }} <span>›</span> What we buy from suppliers</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> Record a supply</button>
+          <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> Record a purchase</button>
           @if (auth.canDelete()) { <button type="button" class="btn btn-danger" (click)="openClear()">Clear records</button> }
         </div>
       </div>
 
-      <p class="notice">These records are kept separate from your stock and from purchase orders on purpose: recording a supply never changes stock
-        levels or a product’s cost price. It answers one question only — what each supplier supplied, and what is still owed on it.</p>
+      <p class="notice">Buying from a supplier means picking from that supplier’s own item list. It records what you bought, what you paid and what you still owe — it never changes stock
+        levels or any product’s cost price. For goods that must go onto your shelves, use Stock purchases instead.</p>
 
       <section class="tiles">
-        <article class="card tile"><span>Supplied this month</span><strong class="mono">{{ monthTotal() | naira }}</strong>
+        <article class="card tile"><span>Bought this month</span><strong class="mono">{{ monthTotal() | naira }}</strong>
           <small>{{ rowsThisMonth() }} record(s) on this page</small></article>
         <article class="card tile" [class.owes]="pageOwed() > 0"><span>Owed on these records</span><strong class="mono">{{ pageOwed() | naira }}</strong>
           <small>Across the records listed below</small></article>
@@ -51,7 +52,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
       <section class="card">
         <div class="toolbar">
           <div class="search grow"><app-icon name="search" [size]="17" />
-            <input class="input" type="search" placeholder="Search reference or supplier" aria-label="Search supplies" (input)="list.setSearch($any($event.target).value)" /></div>
+            <input class="input" type="search" placeholder="Search reference or supplier" aria-label="Search purchases" (input)="list.setSearch($any($event.target).value)" /></div>
           <select class="input w-auto" aria-label="Filter by supplier" [ngModel]="filterSupplier()" (ngModelChange)="filterSupplier.set($event); reload()">
             <option [ngValue]="0">All suppliers</option>
             @for (s of suppliers(); track s.id) { <option [ngValue]="s.id">{{ s.name }}</option> }
@@ -77,6 +78,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
                 <td class="num mono" [class.owes]="s.outstanding > 0">{{ s.outstanding | naira }}</td>
                 <td><app-stamp [label]="s.paymentStatus" /></td>
                 <td class="actions">
+                  <button type="button" class="btn btn-sm" (click)="sending.set(s)"><app-icon name="send" [size]="15" /> Send</button>
+                  <a class="btn btn-sm" [href]="'/api/supplies/' + s.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="15" /> PDF</a>
                   @if (s.outstanding > 0) { <button type="button" class="btn btn-sm" (click)="openPay(s)">Pay</button> }
                   @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }
                 </td>
@@ -84,13 +87,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
             }
           </tbody>
         </table></div>
-        @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No supply records yet</strong>Use “Record a supply” after a supplier delivers.</div> }
+        @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No purchases yet</strong>Use “Record a purchase” after a supplier delivers.</div> }
         <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
       </section>
     </div>
 
-    <!-- record a supply -->
-    <app-modal [open]="formOpen()" heading="Record a supply" [wide]="true" (closed)="formOpen.set(false)">
+    <!-- record a purchase -->
+    <app-modal [open]="formOpen()" heading="Record a purchase" [wide]="true" (closed)="formOpen.set(false)">
       <div class="form-grid">
         <div class="field"><label for="sv-s">Supplier</label>
           <select id="sv-s" class="input" [ngModel]="supplierId()" (ngModelChange)="supplierId.set(+$event)">
@@ -129,6 +132,35 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
             <button type="button" class="btn btn-primary" (click)="itemsOpen.set(true)"><app-icon name="plus" [size]="17" /> Add items for {{ supplierName() }}</button></div>
         }
 
+        <!-- optional: the goods are here, so put them on the shelves too -->
+        <fieldset class="stock-box">
+          <label class="tick"><input type="checkbox" [checked]="addToStock()" (change)="addToStock.set($any($event.target).checked)" />
+            <span><strong>The goods are already here — add them to stock</strong>
+              <span class="muted sm">Leave this off to record the purchase only. Tick it and the quantities also go onto your shelves.</span></span></label>
+
+          @if (addToStock()) {
+            <div class="field" style="margin-top:.7rem"><label for="sv-w">Put the goods in</label>
+              <select id="sv-w" class="input" [ngModel]="warehouseId()" (ngModelChange)="warehouseId.set(+$event)">
+                @for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }
+              </select></div>
+
+            @if (chosen().length) {
+              <p class="muted sm" style="margin:.8rem 0 .3rem">Tell us which of your products each one counts as. It is remembered, so you only choose once.</p>
+              <div class="table-wrap"><table class="table">
+                <thead><tr><th>Their item</th><th>Counts as which product</th></tr></thead>
+                <tbody>@for (l of chosen(); track l.supplierProductId) {
+                  <tr><td><span class="strong">{{ l.name }}</span><div class="muted sm">{{ l.qty }} {{ l.unit }}</div></td>
+                    <td><select class="input" [ngModel]="productFor()[l.supplierProductId] ?? 0" (ngModelChange)="setProduct(l.supplierProductId, +$event)">
+                      <option [ngValue]="0">Choose a product…</option>
+                      @for (p of products(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
+                    </select></td></tr>
+                }</tbody>
+              </table></div>
+              @if (unmapped().length) { <p class="notice bad" style="margin-top:.6rem">Choose a product for: {{ unmapped().join(', ') }}.</p> }
+            } @else { <p class="muted sm" style="margin-top:.6rem">Add quantities above first.</p> }
+          }
+        </fieldset>
+
         <div class="form-grid" style="margin-top:1rem">
           <div class="field"><label for="sv-p">Paid now (₦)</label><input id="sv-p" class="input num" type="number" min="0" step="0.01" [ngModel]="paidNow()" (ngModelChange)="paidNow.set($event)" />
             <span class="hint">Leave 0 if nothing has been paid yet.</span></div>
@@ -148,12 +180,12 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
       <ng-container modal-actions>
         <button type="button" class="btn" (click)="formOpen.set(false)">Cancel</button>
-        <button type="button" class="btn btn-primary" [disabled]="busy() || !chosen().length" (click)="save()">{{ busy() ? 'Saving…' : 'Save supply record' }}</button>
+        <button type="button" class="btn btn-primary" [disabled]="busy() || !chosen().length || unmapped().length > 0" (click)="save()">{{ busy() ? 'Saving…' : addToStock() ? 'Save and add to stock' : 'Save purchase' }}</button>
       </ng-container>
     </app-modal>
 
     <!-- one record -->
-    <app-modal [open]="!!viewing()" [heading]="'Supply ' + (viewing()?.reference ?? '')" [wide]="true" (closed)="viewing.set(null)">
+    <app-modal [open]="!!viewing()" [heading]="'Purchase ' + (viewing()?.reference ?? '')" [wide]="true" (closed)="viewing.set(null)">
       @if (viewing(); as v) {
         <dl class="meta">
           <div><dt>Supplier</dt><dd>{{ v.supplier }}</dd></div>
@@ -175,12 +207,21 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
           @if (v.outstanding > 0) { <div class="owed"><dt>Still owed</dt><dd class="mono">{{ v.outstanding | naira }}</dd></div> }
         </dl>
       }
-      <ng-container modal-actions><button type="button" class="btn" (click)="viewing.set(null)">Close</button></ng-container>
+      <ng-container modal-actions>
+        <button type="button" class="btn" (click)="viewing.set(null)">Close</button>
+        @if (viewing(); as v) {
+          <a class="btn" [href]="'/api/supplies/' + v.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="17" /> Download PDF</a>
+          <button type="button" class="btn btn-primary" (click)="sendFromView(v)"><app-icon name="send" [size]="17" /> Send to supplier</button>
+        }
+      </ng-container>
     </app-modal>
+
+    <app-send-document [open]="!!sending()" kind="supplies" [docId]="sending()?.id ?? null" [number]="sending()?.reference ?? ''"
+      [defaultPhone]="sendPhone()" [defaultEmail]="''" (closed)="sending.set(null)" />
 
     <!-- pay one record -->
     <app-modal [open]="!!paying()" [heading]="'Pay ' + (paying()?.reference ?? '')" (closed)="paying.set(null)">
-      <p>Still owed on this supply: <strong class="mono">{{ paying()?.outstanding ?? 0 | naira }}</strong></p>
+      <p>Still owed on this purchase: <strong class="mono">{{ paying()?.outstanding ?? 0 | naira }}</strong></p>
       <div class="form-grid" style="margin-top:.9rem">
         <div class="field"><label for="pp-a">Amount (₦)</label><input id="pp-a" class="input num" type="number" min="0" step="0.01" [(ngModel)]="payAmount" /></div>
         <div class="field"><label for="pp-m">Paid by</label>
@@ -196,13 +237,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
       (closed)="itemsOpen.set(false)" (saved)="refreshItems()" />
 
     <!-- clear records (CEO) -->
-    <app-modal [open]="clearOpen()" heading="Clear supply records" (closed)="clearOpen.set(false)">
-      <p>This removes supply records only. Stock, products, suppliers, sales and purchase orders are untouched.</p>
+    <app-modal [open]="clearOpen()" heading="Clear purchase records" (closed)="clearOpen.set(false)">
+      <p>This removes these purchase records only. Stock, products, suppliers, sales and purchase orders are untouched.</p>
       <div class="field" style="margin-top:.9rem"><label for="cl-w">What to clear</label>
         <select id="cl-w" class="input" [ngModel]="clearWhat()" (ngModelChange)="clearWhat.set($event)">
-          <option value="supplier">Every record for one supplier</option>
-          <option value="month">Every record in one month</option>
-          <option value="all">Every supply record there is</option>
+          <option value="supplier">Every purchase from one supplier</option>
+          <option value="month">Every purchase in one month</option>
+          <option value="all">Every purchase record there is</option>
         </select></div>
       @if (clearWhat() === 'supplier') {
         <div class="field" style="margin-top:.7rem"><label for="cl-s">Supplier</label>
@@ -233,6 +274,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
     h3.sec { margin: 0; font-size: 1rem; }
     .sec-head { display: flex; align-items: center; gap: .8rem; margin: 1.2rem 0 .4rem; } .sec-head .btn { margin-left: auto; }
     .empty .btn { margin-top: .6rem; }
+    .stock-box { border: 1px dashed var(--line-strong); border-radius: var(--r-2); padding: .9rem 1rem; margin-top: 1rem; }
+    .tick { display: flex; align-items: flex-start; gap: .6rem; cursor: pointer; } .tick span { display: flex; flex-direction: column; gap: .15rem; }
     .sum { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding-top: .8rem; border-top: 2px solid var(--ink); }
     .sum strong { font-size: 1.5rem; margin-left: auto; }
     .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .8rem 1.5rem; margin: 0 0 1rem; }
@@ -249,6 +292,8 @@ export class SuppliesPage implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
 
+  /** "?supplier=12" (from a supplier's page): start with them chosen and the form already open. */
+  readonly preSupplier = input<string | undefined>(undefined, { alias: 'supplier' });
   protected readonly filterSupplier = signal(0);
   protected readonly filterMonth = signal(0);   // yyyyMM, 0 = all
   protected readonly list = new PagedList<SupplyRow>(q => this.api2.supplies({
@@ -285,12 +330,19 @@ export class SuppliesPage implements OnInit {
 
   ngOnInit() {
     void this.list.load();
-    void this.api.suppliers({ pageSize: 200 }).then(s => this.suppliers.set(s.items), () => { /* the page still lists records */ });
+    void this.api.suppliers({ pageSize: 200 }).then(s => {
+      this.suppliers.set(s.items);
+      const pre = Number(this.preSupplier());
+      if (pre > 0 && s.items.some(x => x.id === pre)) { this.filterSupplier.set(pre); this.openNew(); void this.list.load(); }
+    }, () => { /* the page still lists records */ });
+    // Only needed for the "add to stock" half of the form, so a failure here never blocks recording a purchase.
+    void this.api.warehouses().then(w => { this.warehouses.set(w); if (!this.warehouseId()) this.warehouseId.set(w[0]?.id ?? 0); }, () => { /* optional */ });
+    void this.api.products({ pageSize: 500 }).then(r => this.products.set(r.items), () => { /* optional */ });
   }
 
   protected reload() { void this.list.load(); }
 
-  // ---- record a supply
+  // ---- record a purchase
   protected readonly formOpen = signal(false);
   protected readonly supplierId = signal(0);
   protected readonly supplyDate = signal('');
@@ -304,6 +356,20 @@ export class SuppliesPage implements OnInit {
   protected readonly cost = signal<Record<number, number | undefined>>({});
   protected readonly formError = signal('');
   protected readonly itemsOpen = signal(false);
+
+  // ---- "the goods are already here": also put them on the shelves
+  protected readonly addToStock = signal(false);
+  protected readonly warehouses = signal<Warehouse[]>([]);
+  protected readonly warehouseId = signal(0);
+  protected readonly products = signal<Product[]>([]);
+  /** Which product each of the supplier's items counts as. Seeded from what the item already remembers. */
+  protected readonly productFor = signal<Record<number, number | undefined>>({});
+  protected setProduct(supplierProductId: number, productId: number) {
+    this.productFor.update(m => ({ ...m, [supplierProductId]: productId || undefined }));
+  }
+  /** Picked items with no product chosen yet — saving to stock is blocked until this is empty. */
+  protected readonly unmapped = computed(() =>
+    !this.addToStock() ? [] : this.chosen().filter(l => !this.productFor()[l.supplierProductId]).map(l => l.name));
 
   /** After the item list is edited, pull it in again without losing the quantities already typed. */
   protected refreshItems() {
@@ -333,7 +399,12 @@ export class SuppliesPage implements OnInit {
         if (!id) return;
         this.loadingItems.set(true);
         void this.api2.supplierCatalog(id).then(
-          xs => { if (this.supplierId() === id) this.items.set(xs); },
+          xs => {
+            if (this.supplierId() !== id) return;
+            this.items.set(xs);
+            // Each item may already remember which product it counts as; carry that in so the choice is pre-made.
+            this.productFor.set(Object.fromEntries(xs.filter(x => x.productId).map(x => [x.id, x.productId!])));
+          },
           () => { /* the empty state explains how to add items */ },
         ).finally(() => this.loadingItems.set(false));
       });
@@ -343,7 +414,7 @@ export class SuppliesPage implements OnInit {
   protected openNew() {
     this.supplierId.set(this.filterSupplier() || 0);
     this.supplyDate.set(new Date().toISOString().slice(0, 10));
-    this.paidNow.set(0); this.method.set('Cash'); this.note.set(''); this.formError.set('');
+    this.paidNow.set(0); this.method.set('Cash'); this.note.set(''); this.formError.set(''); this.addToStock.set(false);
     this.qty.set({}); this.cost.set({});
     this.formOpen.set(true);
   }
@@ -364,18 +435,33 @@ export class SuppliesPage implements OnInit {
       const r = await this.api2.createSupply({
         supplierId: this.supplierId(), supplyDate: this.supplyDate() || null, paidNow: this.asNum(this.paidNow()),
         paymentMethod: this.method(), note: this.note().trim() || null,
-        lines: lines.map(l => ({ supplierProductId: l.supplierProductId, quantity: l.qty, unitCost: l.cost })),
+        addToStock: this.addToStock(), warehouseId: this.addToStock() ? this.warehouseId() : 0,
+        lines: lines.map(l => ({ supplierProductId: l.supplierProductId, quantity: l.qty, unitCost: l.cost,
+          productId: this.addToStock() ? this.productFor()[l.supplierProductId] ?? null : null })),
       });
       const naira = new NairaPipe();
-      this.toasts.ok(`Supply ${r.reference} recorded — ${naira.transform(r.total)}${r.outstanding > 0 ? `, ${naira.transform(r.outstanding)} still owed` : ''}.`);
+      this.toasts.ok(`Purchase ${r.reference} recorded — ${naira.transform(r.total)}${r.outstanding > 0 ? `, ${naira.transform(r.outstanding)} still owed` : ''}.`);
       this.formOpen.set(false);
       await this.list.load();
+      // Straight on to sending the supplier their copy, the way a sale offers the receipt.
+      this.sendPhone.set('');
+      this.sending.set(this.list.items().find(x => x.id === r.id) ?? null);
     } catch (e) { this.formError.set(messageOf(e)); } finally { this.busy.set(false); }
   }
 
   // ---- one record / payment
   protected readonly viewing = signal<SupplyDetail | null>(null);
+  protected readonly sending = signal<SupplyRow | null>(null);
+  /** The supplier's number, when we happen to know it from the record just opened; the dialog asks otherwise. */
+  protected readonly sendPhone = signal('');
   protected readonly paying = signal<SupplyRow | null>(null);
+
+  /** Send straight from the open record: it already carries the supplier's phone number. */
+  protected sendFromView(v: SupplyDetail) {
+    this.sendPhone.set(v.supplierPhone ?? '');
+    this.viewing.set(null);
+    this.sending.set(this.list.items().find(r => r.id === v.id) ?? null);
+  }
   protected readonly payError = signal('');
   protected payAmount: number | string = 0;
   protected payMethod = 'Cash';
@@ -424,9 +510,9 @@ export class SuppliesPage implements OnInit {
 
   protected async clear() {
     const what = this.clearWhat();
-    const label = what === 'all' ? 'every supply record there is'
-      : what === 'supplier' ? `every supply record for ${this.suppliers().find(s => s.id === this.clearSupplier())?.name ?? 'this supplier'}`
-      : `every supply record in ${this.recentMonths().find(m => m.key === this.clearMonth())?.label ?? 'this month'}`;
+    const label = what === 'all' ? 'every purchase record there is'
+      : what === 'supplier' ? `every purchase from ${this.suppliers().find(s => s.id === this.clearSupplier())?.name ?? 'this supplier'}`
+      : `every purchase record in ${this.recentMonths().find(m => m.key === this.clearMonth())?.label ?? 'this month'}`;
     const ok = await this.confirm.ask({
       title: 'Clear these records?', message: `This permanently removes ${label}. Stock, products, suppliers, sales and purchase orders are untouched. It cannot be undone.`,
       confirmLabel: 'Clear records', danger: true,

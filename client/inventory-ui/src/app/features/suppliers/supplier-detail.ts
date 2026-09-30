@@ -31,7 +31,7 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
           <a class="btn" routerLink="/suppliers">All suppliers</a>
           @if (st(); as s) {
             @if (s.owed > 0) { <button type="button" class="btn" (click)="openPay()"><app-icon name="cash" [size]="18" /> Pay supplier</button> }
-            <a class="btn btn-primary" routerLink="/purchases/new" [queryParams]="{ supplier: s.supplier.id }"><app-icon name="plus" [size]="18" /> New purchase</a>
+            <a class="btn btn-primary" routerLink="/purchases" [queryParams]="{ supplier: s.supplier.id }"><app-icon name="plus" [size]="18" /> Record a purchase</a>
           }
         </div>
       </div>
@@ -46,7 +46,7 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
         </section>
 
         <section class="card">
-          <div class="c-head"><h2>Items they supply</h2><span class="muted">Their own items, as they quote them — their price prefills a new supply.</span>
+          <div class="c-head"><h2>Items they supply</h2><span class="muted">Their own items, as they quote them — their price prefills a new purchase.</span>
             <button type="button" class="btn btn-sm" style="margin-left:auto" (click)="itemsOpen.set(true)"><app-icon name="plus" [size]="15" /> Manage items</button></div>
           @if (ownItems().length) {
             <div class="table-wrap"><table class="table">
@@ -62,36 +62,36 @@ import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
         </section>
 
         <section class="card">
-          <div class="c-head"><h2>Supplies</h2><span class="muted">What they supplied, recorded on its own — these figures never touch stock or the orders below.</span>
-            <a class="btn btn-sm btn-primary" style="margin-left:auto" routerLink="/supplies">Record a supply</a></div>
+          <div class="c-head"><h2>Purchases from them</h2><span class="muted">What we bought from them, picked from their own item list — never touches stock.</span>
+            <a class="btn btn-sm btn-primary" style="margin-left:auto" routerLink="/purchases">Record a purchase</a></div>
           <div class="sup-tiles">
-            <div class="sup-tile"><span>Supplied, all time</span><strong class="mono">{{ s.suppliedTotal | naira }}</strong><small>{{ s.supplyRecords }} record(s)</small></div>
-            <div class="sup-tile" [class.owes]="s.suppliedOwed > 0"><span>Owed on supplies</span><strong class="mono">{{ s.suppliedOwed | naira }}</strong><small>Separate from the order balance</small></div>
+            <div class="sup-tile"><span>Bought, all time</span><strong class="mono">{{ s.suppliedTotal | naira }}</strong><small>{{ s.supplyRecords }} record(s)</small></div>
+            <div class="sup-tile" [class.owes]="s.suppliedOwed > 0"><span>Owed on purchases</span><strong class="mono">{{ s.suppliedOwed | naira }}</strong><small>Separate from the stock-order balance</small></div>
           </div>
           @if (supplyMonths().length) {
             <div class="table-wrap"><table class="table">
-              <thead><tr><th>Month</th><th class="num">Records</th><th class="num">Supplied</th><th class="num">Owed</th></tr></thead>
+              <thead><tr><th>Month</th><th class="num">Records</th><th class="num">Bought</th><th class="num">Owed</th></tr></thead>
               <tbody>@for (m of supplyMonths(); track m.year * 100 + m.month) {
                 <tr><td>{{ monthName(m.month) }} {{ m.year }}</td><td class="num mono">{{ m.records }}</td>
                   <td class="num mono">{{ m.amount | naira }}</td><td class="num mono" [class.owes]="m.owed > 0">{{ m.owed | naira }}</td></tr>
               }</tbody>
             </table></div>
-          } @else { <div class="empty"><strong>Nothing supplied yet</strong>Record what they bring under Supplies.</div> }
+          } @else { <div class="empty"><strong>Nothing bought yet</strong>Record what they bring under Purchases.</div> }
         </section>
 
         <section class="card">
-          <div class="c-head"><h2>Orders (stock purchases)</h2><span class="muted">Every purchase from this supplier that went through stock, newest first.</span></div>
+          <div class="c-head"><h2>Older stock purchases</h2><span class="muted">Purchases that went through stock, from the previous way of working.</span></div>
           @if (s.orderList.length) {
             <div class="table-wrap"><table class="table">
               <thead><tr><th>Order</th><th>Date</th><th>Status</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Owed</th><th><span class="sr-only">Actions</span></th></tr></thead>
               <tbody>@for (o of s.orderList; track o.id) {
-                <tr><td><a class="strong mono" [routerLink]="['/purchases', o.id]">{{ o.poNumber }}</a><div class="muted sm">{{ o.lines }} line(s) · {{ o.units }} unit(s)</div></td>
+                <tr><td><a class="strong mono" [routerLink]="['/stock-purchases', o.id]">{{ o.poNumber }}</a><div class="muted sm">{{ o.lines }} line(s) · {{ o.units }} unit(s)</div></td>
                   <td>{{ o.orderDate | day }}</td><td><span class="stamps"><app-stamp [label]="o.status" /><app-stamp [label]="o.paymentStatus" /></span></td>
                   <td class="num mono">{{ o.total | naira }}</td><td class="num mono">{{ o.paid | naira }}</td><td class="num mono" [class.owes]="o.outstanding > 0">{{ o.outstanding | naira }}</td>
                   <td class="actions">@if (o.status !== 'Cancelled') { <button type="button" class="btn btn-sm" (click)="sending.set(o)"><app-icon name="send" [size]="15" /> Send</button> }</td></tr>
               }</tbody>
             </table></div>
-          } @else { <div class="empty"><strong>No orders yet</strong>Start one with “New purchase”.</div> }
+          } @else { <div class="empty"><strong>No stock purchases</strong>Nothing was bought through stock.</div> }
         </section>
 
         <section class="card">

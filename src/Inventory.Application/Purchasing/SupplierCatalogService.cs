@@ -7,8 +7,9 @@ namespace Inventory.Application.Purchasing;
 
 /// <summary>One of a supplier's own items. <paramref name="Id"/> 0 on the way in means "new".</summary>
 public sealed record SupplierProductInput(int Id, string Name, string? Size, string Unit, decimal UnitCost, bool IsActive = true);
+/// <summary><paramref name="ProductId"/> is which of our products this item counts as, remembered from the last time it was added to stock.</summary>
 public sealed record SupplierProductDto(int Id, string Name, string? Size, string Unit, decimal UnitCost, bool IsActive, int TimesSupplied,
-    int QuantitySupplied, decimal AmountSupplied);
+    int QuantitySupplied, decimal AmountSupplied, int? ProductId = null);
 
 /// <summary>
 /// Each supplier's own list of goods — their names, their pack sizes, their prices. Nothing here touches products, stock or the catalogue we
@@ -28,7 +29,8 @@ public sealed class SupplierCatalogService(IBusinessDbContext db, TransactionRun
             .Select(g => new { Id = g.Key, Times = g.Count(), Qty = g.Sum(x => x.Quantity), Amount = g.Sum(x => x.LineTotal) })
             .ToDictionaryAsync(x => x.Id, ct);
         return items.Select(p => new SupplierProductDto(p.Id, p.Name, p.Size, p.Unit, p.UnitCost, p.IsActive,
-            used.GetValueOrDefault(p.Id)?.Times ?? 0, used.GetValueOrDefault(p.Id)?.Qty ?? 0, used.GetValueOrDefault(p.Id)?.Amount ?? 0)).ToList();
+            used.GetValueOrDefault(p.Id)?.Times ?? 0, used.GetValueOrDefault(p.Id)?.Qty ?? 0, used.GetValueOrDefault(p.Id)?.Amount ?? 0,
+            p.ProductId)).ToList();
     }
 
     /// <summary>

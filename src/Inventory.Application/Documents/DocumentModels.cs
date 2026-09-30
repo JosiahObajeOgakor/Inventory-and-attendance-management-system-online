@@ -47,11 +47,26 @@ public sealed record PurchaseOrderDoc(
     public decimal BalanceDue => Math.Max(0, Total - Paid);
 }
 
+/// <summary>One line of a supply: the supplier's own item, as they name and pack it.</summary>
+public sealed record SupplyDocLine(int No, string Name, string? Size, string Unit, int Qty, decimal Price, decimal Amount);
+
+/// <summary>
+/// What we bought from a supplier, sent to them as their copy: their own items, quantities, their prices, what we paid and what is still owed.
+/// Nothing about stock appears on it — this document is the supplier's record, not a stock document.
+/// </summary>
+public sealed record SupplyDoc(
+    Branding Brand, string Number, DateOnly Date, string PaymentStatus, PartyInfo Supplier, string RecordedBy, string? Note,
+    IReadOnlyList<SupplyDocLine> Lines, decimal Total, decimal Paid, decimal OwedElsewhere, DateTime GeneratedAt)
+{
+    public decimal BalanceDue => Math.Max(0, Total - Paid);
+}
+
 /// <summary>Turns a document model into a PDF. Implemented in Infrastructure so the Application layer has no PDF dependency.</summary>
 public interface IDocumentRenderer
 {
     byte[] Receipt(ReceiptDoc d);
     byte[] PurchaseOrder(PurchaseOrderDoc d);
+    byte[] Supply(SupplyDoc d);
     byte[] Quotation(QuotationDoc d);
     byte[] Waybill(WaybillDoc d);
     byte[] PriceList(PriceListDoc d);

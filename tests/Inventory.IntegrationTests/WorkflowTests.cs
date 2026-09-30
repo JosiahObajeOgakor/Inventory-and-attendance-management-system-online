@@ -1,8 +1,10 @@
 using FluentValidation;
 using Inventory.Application.Abstractions;
 using Inventory.Application.Common;
+using Inventory.Application.Analytics;
 using Inventory.Application.Products;
 using Inventory.Application.Purchasing;
+using Inventory.Application.Queries;
 using Inventory.Application.Sales;
 using Inventory.Application.Stock;
 using Inventory.Application.Staff;
@@ -28,7 +30,7 @@ internal sealed class Services(BusinessDbContext db)
     public ProductService Products => new(db, Tx, Stock, _clock, Company);
     public CustomerPaymentService Payments => new(db, Tx, _clock);
     public InvoiceVoidService Voids => new(db, Tx, Stock, _clock);
-    public SupplyService Supplies => new(db, Tx, _clock, Company, new SupplyRequestValidator());
+    public SupplyService Supplies => new(db, Tx, Stock, _clock, Company, new SupplyRequestValidator());
     public SupplierCatalogService Catalog => new(db, Tx, _clock);
     public SalesService Sales => SalesFor(db);
 }
@@ -145,6 +147,72 @@ public class PurchaseTests(MySqlFixture mysql)
         await using var check = NewContext(cs);
         var line = Assert.Single(await check.SupplyItems.ToListAsync());
         Assert.Equal(("Bran", "50kg", 3), (line.Name, line.Size, line.Quantity));   // the record still says what was supplied
+    }
+
+    [Fact]
+    public async Task A_customer_is_called_overdue_against_their_own_rhythm_not_a_fixed_number_of_days()
+    {
+        var cs = await mysql.NewSchemaAsync();
+        var seed = await SeedAsync(cs, stock: 500);
+        var clock = new SystemClock();
+        var today = clock.BusinessToday;
+        int weekly, monthly, twice;
+        await using (var db0 = NewContext(cs))
+        {
+            var a = new Customer { Name = "Weekly Buyer", CustomerType = "Retailer" };
+            var b = new Customer { Name = "Monthly Buyer", CustomerType = "Retailer" };
+            var c = new Customer { Name = "Only Twice", CustomerType = "Retailer" };
+            db0.AddRange(a, b, c); await db0.SaveChangesAsync();
+            (weekly, monthly, twice) = (a.Id, b.Id, c.Id);
+        }
+
+        // Weekly buyer: every 7 days, last seen 20 days ago — well past their habit.
+        foreach (var back in new[] { 41, 34, 27, 20 }) await SaleOn(cs, weekly, seed, today.AddDays(-back));
+        // Monthly buyer: every 30 days, last seen 20 days ago — not due yet, even though it is the same 20 days.
+        foreach (var back in new[] { 80, 50, 20 }) await SaleOn(cs, monthly, seed, today.AddDays(-back));
+        // Two orders is not a rhythm, however long ago they were.
+        foreach (var back in new[] { 90, 60 }) await SaleOn(cs, twice, seed, today.AddDays(-back));
+
+        await using var check = NewContext(cs);
+        var due = await new ReorderDueQueries(check, clock).DueAsync(10, default);
+
+        var w = Assert.Single(due, d => d.CustomerId == weekly);
+        Assert.Equal((7, 20, 13), (w.TypicalDays, w.DaysSince, w.DaysOverdue));
+        Assert.Equal("Adult Dog Food 20kg", w.UsualItems);                  // what to offer when calling them
+        Assert.DoesNotContain(due, d => d.CustomerId == monthly);            // same 20 days, but that is their normal gap
+        Assert.DoesNotContain(due, d => d.CustomerId == twice);              // too few orders to claim a pattern
+    }
+
+    private static async Task SaleOn(string cs, int customerId, Seed seed, DateOnly date)
+    {
+        await using var db = NewContext(cs);
+        var sale = Sale(seed, 2, vat: 0);
+        sale.CustomerId = customerId;
+        sale.SaleDate = date;
+        await SalesFor(db).SaveAsync(sale, Clerk, null);
+    }
+
+    [Fact]
+    public async Task What_we_owe_suppliers_counts_both_purchase_records_and_old_purchase_orders()
+    {
+        var cs = await mysql.NewSchemaAsync();
+        var seed = await SeedAsync(cs, stock: 0);
+        var supplier = await AddSupplier(cs);
+        var ownItem = await AddOwnItem(cs, supplier, "Layer Mash", 1000);
+        // An old-style purchase order leaves 6,000 on the supplier's balance...
+        await using (var a = NewContext(cs)) await new Services(a).Purchases.SaveAsync(Po(supplier, seed.ProductId, 10, 1000, paid: 4000), Clerk, null);
+        // ...and a purchase record keeps its own 5,000 owed, nowhere near that balance.
+        await using (var b = NewContext(cs)) await new Services(b).Supplies.CreateAsync(Sup(supplier, ownItem, 8, 1000, paid: 3000), Clerk);
+
+        await using var check = NewContext(cs);
+        Assert.Equal(6000m, (await check.Suppliers.SingleAsync()).Balance);   // the balance alone under-reports
+
+        var finance = await new FinanceQueries(check, new SystemClock()).SummaryAsync(null, null, default);
+        Assert.Equal(11000m, finance.AccountsPayable);                        // 6,000 + 5,000 — the figure the Finance screen shows
+
+        var overview = await new Inventory.Application.Dashboard.OverviewQueries(check, new SystemClock()).GetAsync(30, default);
+        Assert.Equal(11000m, overview.PayablesTotal);
+        Assert.Equal(1, overview.SuppliersOwed);                              // owed on both, counted once
     }
 
     [Fact]

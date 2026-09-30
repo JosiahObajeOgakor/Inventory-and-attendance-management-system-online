@@ -103,6 +103,27 @@ public sealed class DocumentEmailService(DocumentQueries docs, IDocumentRenderer
         return new EmailSent(address, msg.Subject, file);
     }
 
+    public async Task<EmailPreview> PreviewSupplyAsync(int supplyId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        var d = await docs.SupplyAsync(supplyId, ct);
+        return new EmailPreview(EmailTemplates.SupplySubject(d), EmailTemplates.Supply(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }), to ?? d.Supplier.Email);
+    }
+
+    /// <summary>The supplier's copy of a purchase we recorded from their own items (blank address = the one on their record), PDF attached.</summary>
+    public async Task<EmailSent> SendSupplyAsync(int supplyId, string? to, string? note, CurrentUser user, CancellationToken ct)
+    {
+        Require();
+        var d = await docs.SupplyAsync(supplyId, ct);
+        var address = CleanAddress(string.IsNullOrWhiteSpace(to) ? d.Supplier.Email : to);
+        Throttle(user.Id);
+        var file = $"Purchase-{d.Number}.pdf";
+        var msg = new EmailMessage(address, d.Supplier.Name, EmailTemplates.SupplySubject(d), EmailTemplates.Supply(d, note, user.FullName, d.Brand.Logo is { Length: > 0 }),
+            EmailTemplates.SupplyText(d, note, user.FullName), [new(file, renderer.Supply(d), "application/pdf")], d.Brand.Name, string.IsNullOrWhiteSpace(d.Brand.Email) ? null : d.Brand.Email, d.Brand.Logo);
+        await sender.SendAsync(msg, ct);
+        await AuditAsync(user, "SUPPLY_EMAILED", "Supply", supplyId.ToString(), $"{d.Number} to {address}", ct);
+        return new EmailSent(address, msg.Subject, file);
+    }
+
     private async Task<(PriceListDoc Doc, string? CustomerEmail)> PriceListAsync(int? customerId, string? tier, CancellationToken ct)
     {
         if (!company.HasPriceLists) throw new NotFoundException("Price list");

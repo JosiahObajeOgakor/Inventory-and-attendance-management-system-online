@@ -2,6 +2,7 @@ using Inventory.Api.Infrastructure;
 using Inventory.Application.Abstractions;
 using Inventory.Application.Ai;
 using Inventory.Application.Analytics;
+using Inventory.Application.Alerts;
 using Inventory.Application.Dashboard;
 using Inventory.Application.Documents;
 using Inventory.Application.Email;
@@ -31,9 +32,31 @@ public class AiController(ICurrentUser cu, AssistantService assistant, InsightSe
     public Task<InsightSet> Insights([FromQuery] bool refresh, CancellationToken ct) => insights.GetAsync(refresh, ct);
 }
 
+public sealed record SendAlertsRequest(string? Email, string? WhatsApp);
+
+/// <summary>
+/// The daily digest — what has run out, what expires soon, who owes money, and which customers are overdue to buy again. It is sent by itself
+/// each morning; these endpoints are for looking at it now, or having it sent again on demand.
+/// </summary>
+[ApiController, Route("api/alerts"), Authorize(Policy = Policies.Admin)]
+public class AlertsController(ICurrentUser cu, BusinessAlertService alerts) : AppController(cu)
+{
+    [HttpGet]
+    public Task<BusinessAlerts> Today(CancellationToken ct) => alerts.BuildAsync(ct);
+
+    /// <summary>Sends today's digest now, to the business mailbox and WhatsApp number unless another is given.</summary>
+    [HttpPost("send")]
+    public async Task<object> Send(SendAlertsRequest r, CancellationToken ct) => new { message = await alerts.SendAsync(r.Email, r.WhatsApp, ct) };
+}
+
 [ApiController, Route("api/dashboard"), Authorize(Policy = Policies.Admin)]
 public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q) : AppController(cu)
 {
+    /// <summary>Customers overdue to buy again, judged against each one's own rhythm.</summary>
+    [HttpGet("reorder-due")]
+    public Task<List<ReorderDue>> ReorderDue([FromQuery] int max, [FromServices] ReorderDueQueries q2, CancellationToken ct) =>
+        q2.DueAsync(max <= 0 ? 10 : max, ct);
+
     [HttpGet("overview")]
     public Task<Overview> Overview([FromQuery] int days = 30, CancellationToken ct = default) => q.GetAsync(days, ct);
 
@@ -58,6 +81,16 @@ public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSe
 
     [HttpPost("receipts/{id:int}/whatsapp"), Authorize(Policy = Policies.Staff)]
     public async Task<DocumentSent> WhatsAppReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.ReceiptToWhatsAppAsync(id, r.To, Me, ct);
+
+    // ---- a purchase from a supplier's own items, to that supplier
+    [HttpPost("supplies/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    public Task<EmailPreview> PreviewSupply(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewSupplyAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("supplies/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    public async Task<EmailSent> SendSupply(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendSupplyAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("supplies/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    public async Task<DocumentSent> WhatsAppSupply(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.SupplyToWhatsAppAsync(id, r.To, Me, ct);
 
     // ---- a purchase order, to the supplier (purchasing is for managers and the CEO)
     [HttpPost("purchases/{id:int}/preview"), Authorize(Policy = Policies.Admin)]

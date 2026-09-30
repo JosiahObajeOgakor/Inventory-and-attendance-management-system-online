@@ -91,7 +91,7 @@ export class SendDocument {
 
   readonly open = input(false);
   /** 'receipts' = a sale's receipt to the customer; 'purchases' = a purchase order to the supplier. */
-  readonly kind = input<'receipts' | 'purchases'>('receipts');
+  readonly kind = input<'receipts' | 'purchases' | 'supplies'>('receipts');
   readonly docId = input<number | null>(null);
   readonly number = input('');
   readonly defaultEmail = input('');
@@ -110,9 +110,12 @@ export class SendDocument {
   protected readonly error = signal('');
 
   protected readonly who = computed(() => (this.kind() === 'receipts' ? 'Customer' : 'Supplier'));
-  protected readonly label = computed(() => (this.kind() === 'receipts' ? 'Receipt' : 'Purchase order'));
+  protected readonly label = computed(() => (this.kind() === 'receipts' ? 'Receipt' : this.kind() === 'supplies' ? 'Purchase' : 'Purchase order'));
   protected readonly heading = computed(() => `Send ${this.label().toLowerCase()} ${this.number()}`);
-  protected readonly pdfUrl = computed(() => (this.kind() === 'receipts' ? `/api/sales/${this.docId()}/receipt.pdf` : `/api/purchases/${this.docId()}/pdf`));
+  protected readonly pdfUrl = computed(() =>
+    this.kind() === 'receipts' ? `/api/sales/${this.docId()}/receipt.pdf`
+      : this.kind() === 'supplies' ? `/api/supplies/${this.docId()}/pdf`
+      : `/api/stock-purchases/${this.docId()}/pdf`);
   protected readonly phoneOk = computed(() => this.phone().replace(/\D/g, '').length >= 10);
 
   constructor() {

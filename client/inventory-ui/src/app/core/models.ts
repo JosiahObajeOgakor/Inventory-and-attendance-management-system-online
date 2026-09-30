@@ -131,6 +131,8 @@ export interface Dashboard {
 export interface FinanceSummary {
   year: number; month: number; revenue: number; discounts: number; cogs: number; grossProfit: number; expenses: number; netProfit: number;
   accountsPayable: number; accountsReceivable: number; rebatesAvailable: number;
+  /** The buying side: what suppliers billed this month, what of it is unpaid, what was paid out, and stock at cost. */
+  purchasesThisMonth: number; purchasesUnpaid: number; paidToSuppliers: number; inventoryValue: number;
 }
 export interface MonthlyIncome { year: number; month: number; invoices: number; grossSales: number; vat: number; netSales: number; collected: number; outstanding: number; }
 export interface LedgerRow { id: number; entryDate: string; accountName: string; accountType: string; entryType: 'Debit' | 'Credit'; amount: number; reference: string | null; }

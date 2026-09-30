@@ -56,7 +56,10 @@ public sealed record LedgerRowDto(int Id, DateOnly EntryDate, string AccountName
 public sealed record MonthlyIncomeDto(int Year, int Month, int Invoices, decimal GrossSales, decimal Vat, decimal NetSales, decimal Collected, decimal Outstanding);
 
 public sealed record FinanceSummaryDto(int Year, int Month, decimal Revenue, decimal Discounts, decimal Cogs, decimal GrossProfit, decimal Expenses,
-    decimal NetProfit, decimal AccountsPayable, decimal AccountsReceivable, decimal RebatesAvailable);
+    decimal NetProfit, decimal AccountsPayable, decimal AccountsReceivable, decimal RebatesAvailable,
+    // The buying side, so the page summarises everything the system records and not only sales:
+    // what suppliers billed us this month, what of that is still unpaid, what we paid them, and what the shelves are worth at cost.
+    decimal PurchasesThisMonth = 0, decimal PurchasesUnpaid = 0, decimal PaidToSuppliers = 0, decimal InventoryValue = 0);
 
 public sealed record ReorderAdviceDto(int ProductId, string Product, int OnHand, int ReorderLevel, decimal AvgDailyDemand, decimal? DaysOfCover,
     int ReorderPoint, int SuggestedOrderQty, string Urgency, string Summary);

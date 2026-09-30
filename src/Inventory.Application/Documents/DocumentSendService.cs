@@ -38,6 +38,16 @@ public sealed class DocumentSendService(DocumentQueries docs, IDocumentRenderer 
         return new DocumentSent("whatsapp", "+" + to, file);
     }
 
+    public async Task<DocumentSent> SupplyToWhatsAppAsync(int supplyId, string? phone, CurrentUser user, CancellationToken ct)
+    {
+        var d = await docs.SupplyAsync(supplyId, ct);
+        var to = Number(phone, d.Supplier.Phone, "supplier");
+        var file = $"Purchase-{d.Number}.pdf";
+        await whatsapp.SendDocumentAsync(company.Key, to, renderer.Supply(d), file, EmailTemplates.SupplyCaption(d), ct);
+        await AuditAsync(user, "SUPPLY_WHATSAPPED", "Supply", supplyId, $"{d.Number} to +{to}", ct);
+        return new DocumentSent("whatsapp", "+" + to, file);
+    }
+
     private string Number(string? typed, string? onRecord, string who)
     {
         if (!WhatsAppReady) throw new BusinessRuleException("WhatsApp isn't set up for this business on the server. Use Share instead.");

@@ -5,7 +5,8 @@ import { messageOf } from '../../core/api.service';
 import { Loading } from '../../core/loading.service';
 import { Auth } from '../../core/auth.service';
 import { CalendarData, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
-import { SupplySummary } from '../../core/models-more';
+import { ReorderDue, SupplySummary } from '../../core/models-more';
+import { Toasts } from '../../shared/feedback';
 import { Icon } from '../../shared/icon';
 import { DueCalendar } from './due-calendar';
 import { Bubbles, Dots, LineChart, Series, compact, naira } from './widgets';
@@ -103,16 +104,35 @@ const POLL_MS = 30_000;
           } @else { <div class="empty"><strong>No customer sales yet</strong>Named customers appear here once they buy.</div> }
         </section>
 
+        <!-- customers overdue to buy again, each judged against their own rhythm -->
+        @if (dueBack().length) {
+          <section class="card reorder">
+            <div class="c-head"><app-icon name="customer" [size]="18" /><h2>Due to buy again</h2>
+              <span class="sub">Each one against their own pattern · <button type="button" class="ghost" [disabled]="alertsBusy()" (click)="sendAlerts()">{{ alertsBusy() ? 'Sending…' : 'Send me today’s alerts' }}</button></span></div>
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>Customer</th><th>Usually buys</th><th class="num">Last seen</th><th class="num">Average order</th><th>Usually takes</th><th><span class="sr-only">Call</span></th></tr></thead>
+              <tbody>@for (r of dueBack(); track r.customerId) {
+                <tr><td><a class="strong" [routerLink]="['/customers']">{{ r.customer }}</a><div class="muted xs">{{ r.orders }} order(s) on record</div></td>
+                  <td>every {{ r.typicalDays }} day(s)</td>
+                  <td class="num mono" [class.owes]="r.daysOverdue > r.typicalDays">{{ r.daysSince }} day(s) ago<div class="xs muted">{{ r.daysOverdue }} late</div></td>
+                  <td class="num mono">{{ full(r.averageOrder) }}</td>
+                  <td class="xs">{{ r.usualItems || '—' }}</td>
+                  <td>@if (r.phone) { <a class="btn btn-sm" [href]="waLink(r.phone)" target="_blank" rel="noopener">WhatsApp</a> }</td></tr>
+              }</tbody>
+            </table></div>
+          </section>
+        }
+
         <!-- supplies: what suppliers supplied, on its own (no stock, no purchase orders mixed in) -->
         @if (sup(); as sp) {
           <section class="card supplies">
-            <div class="c-head"><app-icon name="supplier" [size]="18" /><h2>Supplies from suppliers</h2>
-              <span class="sub">Recorded separately from stock · <a routerLink="/supplies">open supplies</a></span></div>
+            <div class="c-head"><app-icon name="supplier" [size]="18" /><h2>Purchases from suppliers</h2>
+              <span class="sub">Never touches stock · <a routerLink="/purchases">open purchases</a></span></div>
 
             <div class="s-tiles">
-              <div class="s-tile"><span>Supplied this month</span><strong class="mono">{{ full(sp.thisMonth) }}</strong>
+              <div class="s-tile"><span>Bought this month</span><strong class="mono">{{ full(sp.thisMonth) }}</strong>
                 <small>vs last month {{ full(sp.lastMonth) }}@if (sp.changePct !== null) { <span class="chip">{{ sp.changePct >= 0 ? '+' : '' }}{{ sp.changePct }}%</span> }</small></div>
-              <div class="s-tile" [class.owes]="sp.owedTotal > 0"><span>Owed on supplies</span><strong class="mono">{{ full(sp.owedTotal) }}</strong>
+              <div class="s-tile" [class.owes]="sp.owedTotal > 0"><span>Owed to suppliers on these</span><strong class="mono">{{ full(sp.owedTotal) }}</strong>
                 <small>{{ sp.recordsThisMonth }} record(s) this month</small></div>
             </div>
 
@@ -124,15 +144,15 @@ const POLL_MS = 30_000;
                     <tr><td><a [routerLink]="['/suppliers', b.supplierId]">{{ b.supplier }}</a><div class="muted xs">{{ b.records }} record(s) · {{ b.units }} unit(s)</div></td>
                       <td class="num mono">{{ full(b.amount) }}<div class="xs" [class.owes]="b.owed > 0">{{ b.owed > 0 ? full(b.owed) + ' owed' : 'settled' }}</div></td></tr>
                   }</tbody></table>
-                } @else { <p class="muted xs">Nothing supplied this month yet.</p> }
+                } @else { <p class="muted xs">Nothing bought this month yet.</p> }
               </div>
               <div>
-                <span class="eyebrow">Top items supplied, this month</span>
+                <span class="eyebrow">Top items bought, this month</span>
                 @if (sp.topItems.length) {
                   <table class="mini"><tbody>@for (t of sp.topItems; track t.name + (t.size ?? '')) {
                     <tr><td>{{ t.name }}<div class="muted xs">{{ t.quantity }} {{ t.unit }}{{ t.size ? ' · ' + t.size : '' }}</div></td><td class="num mono">{{ full(t.amount) }}</td></tr>
                   }</tbody></table>
-                } @else { <p class="muted xs">No items supplied this month yet.</p> }
+                } @else { <p class="muted xs">No items bought this month yet.</p> }
               </div>
             </div>
 
@@ -225,6 +245,8 @@ const POLL_MS = 30_000;
     .add { display: inline-flex; align-items: center; gap: .4rem; background: var(--blue); color: #fff; padding: .6rem 1rem; border-radius: 10px; font-weight: 600; text-decoration: none; } .add:hover { filter: brightness(.95); }
     .card { background: #fff; border-radius: 16px; padding: 1.1rem 1.25rem; box-shadow: none; border: 0; min-width: 0; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+    .reorder .sub { margin-left: auto; font-size: .8125rem; color: #6b7280; } .reorder .ghost { background: none; border: 0; color: var(--brand); cursor: pointer; text-decoration: underline; padding: 0; font: inherit; }
+    .reorder td.owes, .reorder .owes { color: var(--stamp); font-weight: 600; }
     .supplies { padding-bottom: 1rem; } .supplies .sub { margin-left: auto; font-size: .8125rem; color: #6b7280; }
     .s-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; padding: 0 1.15rem .4rem; }
     .s-tile { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border: 1px solid #eef1f6; border-radius: 12px; }
@@ -266,6 +288,7 @@ const POLL_MS = 30_000;
 export class AdminDashboard implements OnInit {
   private readonly api = inject(Api2);
   private readonly loading = inject(Loading);
+  private readonly toasts = inject(Toasts);
   protected readonly auth = inject(Auth);
   private readonly destroy = inject(DestroyRef);
   protected readonly compact = compact;
@@ -327,6 +350,28 @@ export class AdminDashboard implements OnInit {
     }));
   });
 
+  // ---- customers overdue to buy again, and the daily digest
+  protected readonly dueBack = signal<ReorderDue[]>([]);
+  protected readonly alertsBusy = signal(false);
+
+  /** Opens WhatsApp on this phone/computer with the customer's chat ready — the person still writes the message. */
+  protected waLink(phone: string) {
+    const d = phone.replace(/\D/g, '');
+    const intl = d.startsWith('234') ? d : d.startsWith('0') ? '234' + d.slice(1) : d;
+    return `https://wa.me/${intl}`;
+  }
+
+  protected async sendAlerts() {
+    this.alertsBusy.set(true);
+    try { const r = await this.api.sendAlerts(); this.toasts.info(r.message); }
+    catch (e) { this.toasts.error(messageOf(e)); } finally { this.alertsBusy.set(false); }
+  }
+
+  private async loadReorderDue(first: boolean) {
+    try { this.dueBack.set(await (first ? this.api.reorderDue(8) : this.loading.quiet(() => this.api.reorderDue(8)))); }
+    catch { /* the rest of the dashboard still works */ }
+  }
+
   private async loadSupplies(first: boolean) {
     try { this.sup.set(await (first ? this.api.supplySummary() : this.loading.quiet(() => this.api.supplySummary()))); }
     catch { /* the rest of the dashboard still works */ }
@@ -335,9 +380,12 @@ export class AdminDashboard implements OnInit {
   ngOnInit() {
     void this.loadOverview(true);
     void this.loadSupplies(true);
+    void this.loadReorderDue(true);
     void this.reloadInsights(false);
     // "Real time": the figures refresh on their own while this tab is open and visible.
-    this.timers.push(setInterval(() => { if (!document.hidden) { void this.loadOverview(false); void this.loadSupplies(false); } }, POLL_MS));
+    this.timers.push(setInterval(() => {
+      if (!document.hidden) { void this.loadOverview(false); void this.loadSupplies(false); void this.loadReorderDue(false); }
+    }, POLL_MS));
     document.addEventListener('visibilitychange', this.onVisible);
     this.destroy.onDestroy(() => { this.timers.forEach(clearInterval); document.removeEventListener('visibilitychange', this.onVisible); });
   }

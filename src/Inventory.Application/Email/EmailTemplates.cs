@@ -140,6 +140,45 @@ public static class EmailTemplates
         return Shell(d.Brand, p, hasLogo, "Purchase order", body, senderName);
     }
 
+    public static string SupplySubject(SupplyDoc d) => Clean($"Purchase {d.Number} from {d.Brand.Name}");
+
+    /// <summary>The supplier's copy of what we bought from them, built from their own items.</summary>
+    public static string Supply(SupplyDoc d, string? note, string senderName, bool hasLogo)
+    {
+        var p = Palette(d.Brand.CompanyKey);
+        var rows = new StringBuilder();
+        foreach (var l in d.Lines.Take(8))
+            rows.Append($"<tr><td style=\"padding:9px 0;border-bottom:1px solid #e8e2e6;font-size:14px;color:{p.Ink}\">{E(l.Name)}<br><span style=\"color:#7a7079;font-size:12px\">{l.Qty:N0} {E(l.Unit)}{(string.IsNullOrWhiteSpace(l.Size) ? "" : " · " + E(l.Size))} × {N(l.Price)}</span></td>" +
+                        $"<td align=\"right\" style=\"padding:9px 0;border-bottom:1px solid #e8e2e6;font-size:14px;color:{p.Ink};white-space:nowrap\">{N(l.Amount)}</td></tr>");
+        if (d.Lines.Count > 8) rows.Append($"<tr><td colspan=\"2\" style=\"padding:9px 0;font-size:12px;color:#7a7079\">…and {d.Lines.Count - 8} more item(s) in the attached PDF.</td></tr>");
+
+        var totals = new StringBuilder();
+        totals.Append(TotalRow("Total", N(d.Total), true, p));
+        totals.Append(TotalRow("Paid", N(d.Paid), false, p));
+        if (d.BalanceDue > 0) totals.Append(TotalRow("Still owed on this purchase", N(d.BalanceDue), false, p));
+        if (d.OwedElsewhere > 0) totals.Append(TotalRow("Owed on earlier purchases", N(d.OwedElsewhere), false, p));
+
+        var status = d.BalanceDue > 0 ? $"We have paid {N(d.Paid)} and <strong>{N(d.BalanceDue)}</strong> is still to be paid." : "It is fully paid.";
+        var body = $"""
+            <p style="margin:0 0 14px;font-size:16px;line-height:1.5;color:{p.Ink}">Dear {E(FirstName(d.Supplier.Name))},</p>
+            <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:{p.Ink}">Thank you for the supply. Here is our record of what we bought from you. {status}</p>
+            {NoteBlock(note ?? d.Note, p)}
+            {Summary(p, "Purchase", d.Number, $"{d.Date:d MMMM yyyy}", "Total", N(d.Total))}
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 6px">{rows}</table>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px">{totals}</table>
+            <p style="margin:18px 0 0;font-size:14px;line-height:1.6;color:{p.Ink}">Please check this against your own invoice and reply if anything differs.</p>
+            """;
+        return Shell(d.Brand, p, hasLogo, "Purchase record", body, senderName);
+    }
+
+    public static string SupplyText(SupplyDoc d, string? note, string senderName) =>
+        $"Dear {FirstName(d.Supplier.Name)},\n\nThank you for the supply. Our purchase record {d.Number} ({d.Date:d MMMM yyyy}) for {N(d.Total)} is attached as a PDF. " +
+        (d.BalanceDue > 0 ? $"We have paid {N(d.Paid)}; {N(d.BalanceDue)} is still to be paid." : "It is fully paid.") + "\n\n" +
+        (string.IsNullOrWhiteSpace(note ?? d.Note) ? "" : (note ?? d.Note)!.Trim() + "\n\n") + $"{senderName}\n{d.Brand.Name}\n{d.Brand.Phone}";
+
+    public static string SupplyCaption(SupplyDoc d) =>
+        $"{d.Brand.Name}: purchase {d.Number}, total {N(d.Total)}" + (d.BalanceDue > 0 ? $", paid {N(d.Paid)}, still owed {N(d.BalanceDue)}." : ", fully paid.");
+
     public static string ReceiptText(ReceiptDoc d, string? note, string senderName) =>
         $"Dear {FirstName(d.Customer.Name)},\n\nThank you for your purchase. Receipt {d.Number} ({d.Date:d MMMM yyyy}) for {N(d.Total)} is attached as a PDF. " +
         (d.BalanceDue > 0 ? $"{N(d.BalanceDue)} is still to be paid." : "It is fully paid.") + "\n\n" +

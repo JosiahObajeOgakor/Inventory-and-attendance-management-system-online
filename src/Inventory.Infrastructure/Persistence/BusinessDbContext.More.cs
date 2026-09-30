@@ -265,6 +265,8 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.HasIndex(x => new { x.SupplierId, x.Name });
             e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            // Deleting a product must not delete a supplier's item; the link simply forgets itself.
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<SupplyItem>(e =>
