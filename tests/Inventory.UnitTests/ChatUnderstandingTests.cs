@@ -22,6 +22,17 @@ public class ChatUnderstandingTests
     private static string N(string s) => ChatLexicon.Normalize(s);
 
     [Theory]
+    [InlineData("Hi Chewy Pet! I'd like to order some dog food.", true)]       // the landing page's old prefilled message
+    [InlineData("Hi! I'd like to order dog food.", true)]                       // the new one
+    [InlineData("good morning, abeg i wan buy pizza", true)]
+    [InlineData("hello", true)]
+    [InlineData("history of dog food", false)]                                  // only whole words count: "hi" inside "history" is not a greeting
+    [InlineData("2 adult dog food", false)]
+    [InlineData("order pizza", false)]
+    public void A_message_that_opens_with_a_greeting_is_recognised(string text, bool expected) =>
+        Assert.Equal(expected, ChatLexicon.StartsWithGreeting(N(text)));
+
+    [Theory]
     [InlineData("abeg i wan buy 2 adult dog food", ChatLanguages.Pidgin)]
     [InlineData("Ndewo, achọrọ m 1 adult dog food", ChatLanguages.Igbo)]
     [InlineData("Sannu, ina son 3 puppy starter", ChatLanguages.Hausa)]

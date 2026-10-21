@@ -101,6 +101,10 @@ public static class ChatLexicon
     public static bool IsPriceQuestion(string n) => Has(n, PriceWords);
     public static bool IsGreeting(string n) => Tokens(n).Length <= 6 && Has(n, GreetingWords);
 
+    private static readonly string[] OpeningGreetings = ["hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening", "good day", "how far", "nnoo", "ndewo", "kedu", "sannu", "barka", "ina kwana", "salam", "assalamu alaikum"];
+    /// <summary>The message OPENS with a greeting ("Hi Chewy Pet! I'd like to order some dog food"), however long the rest is. Whole words only.</summary>
+    public static bool StartsWithGreeting(string n) => OpeningGreetings.Any(g => n == g || n.StartsWith(g + " ", StringComparison.Ordinal));
+
     // ---------------------------------------------------------------- numbers & filler
 
     public static readonly Dictionary<string, int> NumberWords = new()

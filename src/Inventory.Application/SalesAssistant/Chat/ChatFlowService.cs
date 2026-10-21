@@ -174,6 +174,7 @@ public sealed class ChatFlowService(
         }
         var near = parsed.FirstOrDefault(p => p.Near.Count > 0);
         if (near is not null) { AskWhich(t, near.Near.Select(n => n.Id).ToList(), near.Raw.Qty); return; }
+        if (ChatLexicon.StartsWithGreeting(t.Norm)) { WelcomeReply(t, cat); return; }      // "Hi Chewy Pet! I'd like some dog food" is a hello, not a product called "chewy pet"
 
         if (await TryAiAsync(t, cat, ct)) return;
         if (!ai.CanSpend(t.C) && t.C.AiCalls >= Opt.MaxAiCallsPerSale) t.Say("handoff");

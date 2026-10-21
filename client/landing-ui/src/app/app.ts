@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { ChatWidget } from './chat/chat-widget';
 
-// TODO: swap in the real WhatsApp Business number (international format, digits only)
-// before this ships. Everything else on the page reads from this one constant.
-const WHATSAPP_NUMBER = '2348000000000';
-const WHATSAPP_MESSAGE = "Hi Chewy Pet! I'd like to order some dog food.";
+// The shop's WhatsApp Business number (international format, digits only): the number connected to the sales assistant
+// in Twilio. Everything else on the page reads from this one constant.
+const WHATSAPP_NUMBER = '2347054272549';
+// What the customer's first message says. Kept to a plain greeting plus what they want, which is what the sales assistant understands best.
+const WHATSAPP_MESSAGE = "Hi! I'd like to order dog food.";
 
 @Component({
   selector: 'app-root',
