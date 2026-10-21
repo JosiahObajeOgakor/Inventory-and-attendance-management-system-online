@@ -8,12 +8,20 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Application.Sales;
 
 /// <summary>C2: "Record payment" — spreads across the customer's open invoices oldest first.</summary>
-public sealed class CustomerPaymentService(IBusinessDbContext db, TransactionRunner tx, IClock clock)
+public sealed class CustomerPaymentService(IBusinessDbContext db, TransactionRunner tx, IClock clock, PaymentAccountService? paymentAccounts = null)
 {
     public Task<decimal> RecordAsync(int customerId, decimal amount, string method, CurrentUser user, CancellationToken ct = default) =>
+        RecordAsync(customerId, amount, method, null, user, ct);
+
+    public Task<decimal> RecordAsync(int customerId, decimal amount, string method, string? accountNumber, CurrentUser user, CancellationToken ct = default) =>
+        RecordAsync(customerId, amount, method, accountNumber, null, user, ct);
+
+    /// <param name="payerName">Who actually sent the money, when it is not the customer ("Josiah paid for Ngozi"). Defaults to the customer's name.</param>
+    public Task<decimal> RecordAsync(int customerId, decimal amount, string method, string? accountNumber, string? payerName, CurrentUser user, CancellationToken ct = default) =>
         tx.RunAsync(async inner =>
         {
             if (amount <= 0) throw new BusinessRuleException("Enter an amount greater than zero.");
+            var account = paymentAccounts is null ? null : await paymentAccounts.ResolveAsync(method, accountNumber, amount, inner);
             var customer = await db.Customers
                 .FromSqlInterpolated($"SELECT * FROM customers WHERE Id = {customerId} FOR UPDATE")
                 .SingleOrDefaultAsync(inner) ?? throw new NotFoundException("Customer");
@@ -29,7 +37,7 @@ public sealed class CustomerPaymentService(IBusinessDbContext db, TransactionRun
                 var inv = open.First(i => i.Id == a.DocumentId);
                 inv.AmountPaid += a.Amount;
                 inv.Status = inv.AmountPaid >= inv.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
-                db.Payments.Add(new Payment { InvoiceId = inv.Id, PaymentDate = clock.UtcNow, Amount = a.Amount, Method = method, ReceivedByUserId = user.Id });
+                db.Payments.Add(new Payment { InvoiceId = inv.Id, PaymentDate = clock.UtcNow, Amount = a.Amount, Method = method, ReceivedByUserId = user.Id }.With(account, payerName ?? customer.Name));
             }
             customer.Balance -= amount;
             db.Ledger.Add(new LedgerEntry
@@ -47,7 +55,7 @@ public sealed class CustomerPaymentService(IBusinessDbContext db, TransactionRun
     /// Returns what was applied and what was left over (an overpayment). Runs inside the caller's transaction. Locks customer first, then invoice,
     /// the same order as <see cref="RecordAsync"/>, so the two can never deadlock.
     /// </summary>
-    public async Task<(decimal Applied, decimal Leftover)> ApplyToInvoiceWithinAsync(int invoiceId, decimal amount, string method, CurrentUser user, CancellationToken ct)
+    public async Task<(decimal Applied, decimal Leftover)> ApplyToInvoiceWithinAsync(int invoiceId, decimal amount, string method, CurrentUser user, CancellationToken ct, AccountRef? account = null, string? payerName = null)
     {
         var customerId = await db.Invoices.AsNoTracking().Where(i => i.Id == invoiceId).Select(i => (int?)i.CustomerId).SingleOrDefaultAsync(ct) ?? throw new NotFoundException("Invoice");
         var customer = await db.Customers.FromSqlInterpolated($"SELECT * FROM customers WHERE Id = {customerId} FOR UPDATE").SingleAsync(ct);
@@ -57,7 +65,7 @@ public sealed class CustomerPaymentService(IBusinessDbContext db, TransactionRun
 
         inv.AmountPaid += apply;
         inv.Status = inv.AmountPaid >= inv.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
-        db.Payments.Add(new Payment { InvoiceId = inv.Id, PaymentDate = clock.UtcNow, Amount = apply, Method = method, ReceivedByUserId = user.Id });
+        db.Payments.Add(new Payment { InvoiceId = inv.Id, PaymentDate = clock.UtcNow, Amount = apply, Method = method, ReceivedByUserId = user.Id }.With(account, payerName ?? customer.Name));
         customer.Balance -= apply;
         db.Ledger.Add(new LedgerEntry
         {

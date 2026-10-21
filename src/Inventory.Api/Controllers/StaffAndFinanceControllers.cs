@@ -18,7 +18,7 @@ namespace Inventory.Api.Controllers;
 public class QuotationsController(ICurrentUser cu, QuotationService svc) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<QuotationRowDto>> List([FromQuery] PageRequest page, CancellationToken ct) => svc.ListAsync(page, ct);
+    public Task<PagedResult<QuotationRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => svc.ListAsync(paging, ct);
 
     [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
     public async Task<ActionResult<QuotationDetailDto>> Get(int id, CancellationToken ct) => await svc.GetAsync(id, ct) is { } q ? q : NotFound();
@@ -37,10 +37,10 @@ public class QuotationsController(ICurrentUser cu, QuotationService svc) : AppCo
 public class WaybillsController(ICurrentUser cu, WaybillService svc) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<WaybillRowDto>> List([FromQuery] PageRequest page, CancellationToken ct) => svc.ListAsync(page, ct);
+    public Task<PagedResult<WaybillRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => svc.ListAsync(paging, ct);
 
     [HttpGet("invoices"), Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<PendingInvoiceDto>> Invoices([FromQuery] PageRequest page, [FromQuery] bool pendingOnly, CancellationToken ct) => svc.InvoicesAsync(page, pendingOnly, ct);
+    public Task<PagedResult<PendingInvoiceDto>> Invoices([FromQuery] PageRequest paging, [FromQuery] bool pendingOnly, CancellationToken ct) => svc.InvoicesAsync(paging, pendingOnly, ct);
 
     [HttpGet("prefill/{invoiceId:int}"), Authorize(Policy = Policies.Staff)]
     public Task<WaybillPrefillDto> Prefill(int invoiceId, CancellationToken ct) => svc.PrefillAsync(invoiceId, ct);
@@ -66,7 +66,7 @@ public class AttendanceController(ICurrentUser cu, AttendanceService svc) : AppC
     public async Task<IActionResult> Decline(CancellationToken ct) { await svc.DeclineAsync(Me, ct); return NoContent(); }
 
     [HttpGet("events"), Authorize(Policy = Policies.Admin)]
-    public Task<PagedResult<AttendanceEventDto>> Events([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] PageRequest page, CancellationToken ct) => svc.EventsAsync(from, to, page, ct);
+    public Task<PagedResult<AttendanceEventDto>> Events([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] PageRequest paging, CancellationToken ct) => svc.EventsAsync(from, to, paging, ct);
 
     [HttpGet("daily"), Authorize(Policy = Policies.Admin)]
     public Task<List<AttendanceDayDto>> Daily([FromQuery] DateOnly from, [FromQuery] DateOnly to, CancellationToken ct) => svc.DailySummaryAsync(from, to, ct);
@@ -172,7 +172,7 @@ public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppContro
     public string[] Categories() => ExpenseCategories.All;
 
     [HttpGet]
-    public Task<ExpenseListDto> List([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] string? category, [FromQuery] PageRequest page, CancellationToken ct) => svc.ListAsync(from, to, category, page, ct);
+    public Task<ExpenseListDto> List([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] string? category, [FromQuery] PageRequest paging, CancellationToken ct) => svc.ListAsync(from, to, category, paging, ct);
 
     [HttpPost]
     public async Task<IActionResult> Create(ExpenseInput i, CancellationToken ct) => Ok(new { id = await svc.CreateAsync(i, Me, ct) });
@@ -208,10 +208,10 @@ public sealed record AddPriceProductsRequest(List<NewPriceProduct> Products, str
 public class PriceBookController(ICurrentUser cu, PriceBookService svc) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Staff)]
-    public Task<PriceBookDto> Current([FromQuery] PageRequest page, [FromQuery] int? categoryId, CancellationToken ct) => svc.CurrentAsync(page, categoryId, ct);
+    public Task<PriceBookDto> Current([FromQuery] PageRequest paging, [FromQuery] int? categoryId, CancellationToken ct) => svc.CurrentAsync(paging, categoryId, ct);
 
     [HttpGet("history"), Authorize(Policy = Policies.Admin)]
-    public Task<PagedResult<PriceHistoryDto>> History([FromQuery] PageRequest page, [FromQuery] int? productId, CancellationToken ct) => svc.HistoryAsync(page, productId, ct);
+    public Task<PagedResult<PriceHistoryDto>> History([FromQuery] PageRequest paging, [FromQuery] int? productId, CancellationToken ct) => svc.HistoryAsync(paging, productId, ct);
 
     [HttpPost("apply"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Apply(ApplyPricesRequest r, CancellationToken ct) => Ok(new { changed = await svc.ApplyAsync(r.Updates, r.Note, Me, ct) });

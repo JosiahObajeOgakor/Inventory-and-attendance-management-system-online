@@ -26,6 +26,7 @@ public sealed class PurchaseRequest
     public int WarehouseId { get; set; }
     public decimal PaidNow { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
+    public string? AccountNumber { get; set; }
     public List<PurchaseLineDto> Lines { get; set; } = [];
 }
 
@@ -52,7 +53,7 @@ public sealed class PurchaseRequestValidator : AbstractValidator<PurchaseRequest
 /// <summary>Purchasing (rules P1–P6). Mirror of sales, with the debt running the other way.</summary>
 public sealed class PurchaseService(
     IBusinessDbContext db, TransactionRunner tx, StockService stock, IClock clock,
-    ICompanyContext company, IValidator<PurchaseRequest> validator)
+    ICompanyContext company, IValidator<PurchaseRequest> validator, PaymentAccountService? paymentAccounts = null)
 {
     private const string Scope = "purchase";
 
@@ -87,6 +88,7 @@ public sealed class PurchaseService(
         var previous = supplier.Balance;
         var totals = DocumentCalculator.Purchase(req.Lines.Select(l => (l.Quantity, l.UnitCost)), req.VatRate);
         var split = PaymentWaterfall.ForNewDocument(previous, totals.Total, req.PaidNow);
+        var account = paymentAccounts is null ? null : await paymentAccounts.ResolveAsync(req.PaymentMethod, req.AccountNumber, split.PaidNow, ct);
 
         var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.PurchaseOrders.AnyAsync(p => p.PoNumber == n, c), ct);
         var order = new PurchaseOrder
@@ -97,6 +99,13 @@ public sealed class PurchaseService(
         };
         db.PurchaseOrders.Add(order);
         await db.SaveChangesAsync(ct);
+        if (split.AppliedToNew > 0)
+            db.SupplierPayments.Add(new SupplierPayment
+            {
+                PurchaseOrderId = order.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew,
+                Method = req.PaymentMethod, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
+                AccountNumber = account?.AccountNumber,
+            });
 
         // Overflow pays older orders, oldest first (P2).
         var appliedToOld = 0m;
@@ -111,6 +120,12 @@ public sealed class PurchaseService(
                 var old = open.First(o => o.Id == a.DocumentId);
                 old.AmountPaid += a.Amount;
                 old.PaymentStatus = old.AmountPaid >= old.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
+                db.SupplierPayments.Add(new SupplierPayment
+                {
+                    PurchaseOrderId = old.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = a.Amount,
+                    Method = req.PaymentMethod, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
+                    AccountNumber = account?.AccountNumber,
+                });
             }
             appliedToOld = applied;
         }
@@ -158,9 +173,9 @@ public sealed class PurchaseService(
 
         foreach (var line in order.Items.OrderBy(i => i.ProductId))
         {
-            // One batch per purchase, named by its number, so any unit traces back to it (P4).
-            await stock.ReceiveAsync(line.ProductId, warehouseId, order.PoNumber, line.Quantity, null,
-                MovementReferences.PurchaseOrder, order.Id, user.Id, ct);
+            // The purchase tops up the product's existing stock in this warehouse (no new row per purchase); the stock history still records this order (P4).
+            await stock.ReceiveToShelfAsync(line.ProductId, warehouseId, line.Quantity, null,
+                MovementReferences.PurchaseOrder, order.Id, user.Id, ct, $"Purchase {order.PoNumber}");
             var p = await db.Products.SingleAsync(x => x.Id == line.ProductId, ct);
             if (line.UnitCost > 0) p.CostPrice = line.UnitCost;
             if (string.IsNullOrEmpty(p.Barcode)) p.Barcode = Barcodes.MintInternalBarcode(p.Id);
@@ -170,6 +185,9 @@ public sealed class PurchaseService(
 
     /// <summary>"Mark paid" (P5): pays whatever remains on this one order.</summary>
     public Task PayAsync(int purchaseOrderId, CurrentUser user, CancellationToken ct = default) =>
+        PayAsync(purchaseOrderId, "Cash", null, user, ct);
+
+    public Task PayAsync(int purchaseOrderId, string method, string? accountNumber, CurrentUser user, CancellationToken ct = default) =>
         tx.RunAsync<bool>(async inner =>
         {
             var order = await db.PurchaseOrders
@@ -180,12 +198,19 @@ public sealed class PurchaseService(
                 .SingleAsync(inner);
             var outstanding = order.TotalAmount - order.AmountPaid;
             if (outstanding <= 0) return true;
+            var account = paymentAccounts is null ? null : await paymentAccounts.ResolveAsync(method, accountNumber, outstanding, inner);
 
             order.AmountPaid = order.TotalAmount;
             order.PaymentStatus = PaymentStatuses.Paid;
             supplier.Balance -= outstanding;
+            db.SupplierPayments.Add(new SupplierPayment
+            {
+                PurchaseOrderId = order.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = outstanding,
+                Method = method, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
+                AccountNumber = account?.AccountNumber,
+            });
             db.Ledger.Add(SupplierLedger(clock.BusinessToday, supplier, LedgerEntryTypes.Debit, outstanding, order.PoNumber));
-            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PURCHASE_PAID", Entity = "PurchaseOrder", EntityId = order.Id.ToString(), At = clock.UtcNow, Detail = $"{order.PoNumber} ₦{outstanding:N2}" });
+            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PURCHASE_PAID", Entity = "PurchaseOrder", EntityId = order.Id.ToString(), At = clock.UtcNow, Detail = $"{order.PoNumber} ₦{outstanding:N2} via {method}" });
             await db.SaveChangesAsync(inner);
             return true;
         }, ct);

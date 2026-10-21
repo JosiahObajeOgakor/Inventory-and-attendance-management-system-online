@@ -15,7 +15,7 @@ public sealed class SystemClock : IClock
 public sealed record BankDefault(string Bank, string AccountName, string AccountNumber);
 
 public sealed record CompanyInfo(string Key, string DisplayName, string DocumentPrefix, string Schema, string LegalName = "", bool HasPriceLists = false,
-    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0);
+    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, int Order = 0);
 
 public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
 {

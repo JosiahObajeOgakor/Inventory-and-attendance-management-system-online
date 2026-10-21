@@ -2,14 +2,16 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, si
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
+import { Api2 } from '../../core/api-more';
 import { PurchaseDetail as Detail, Warehouse } from '../../core/models';
+import { Bank } from '../../core/models-more';
 import { Modal } from '../../shared/modal';
-import { Confirm, Toasts } from '../../shared/feedback';
-import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
+import { Toasts } from '../../shared/feedback';
+import { DayPipe, NairaPipe, Stamp, StampTimePipe } from '../../shared/ui';
 
 @Component({
   selector: 'app-purchase-detail',
-  imports: [RouterLink, FormsModule, Modal, NairaPipe, DayPipe, Stamp],
+  imports: [RouterLink, FormsModule, Modal, NairaPipe, DayPipe, StampTimePipe, Stamp],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -19,7 +21,7 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
           <a class="btn" routerLink="/purchases">All purchases</a>
           @if (p(); as p) {
             @if (p.status === 'Pending') { <button type="button" class="btn btn-primary" (click)="receiveOpen.set(true)">Receive goods</button> }
-            @if (p.paymentStatus !== 'Paid') { <button type="button" class="btn" (click)="markPaid()">Mark as paid</button> }
+            @if (p.paymentStatus !== 'Paid') { <button type="button" class="btn" (click)="openPay()">Mark as paid</button> }
           }
         </div>
       </div>
@@ -37,6 +39,15 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
             <div><dt>Paid</dt><dd class="mono">{{ p.amountPaid | naira }}</dd></div>
             @if (owed() > 0) { <div class="owed"><dt>Still owed</dt><dd class="mono">{{ owed() | naira }}</dd></div> }
           </dl>
+          @if (p.payments.length) {
+            <div class="payments"><span class="eyebrow">Payments to supplier</span>
+              @for (payment of p.payments; track $index) {
+                <div class="payment"><span>{{ payment.at | stampTime }} · {{ payment.method }}
+                  @if (payment.accountNumber) { <span class="muted"> · paid from {{ payment.bankName }} · {{ payment.accountName }} · {{ payment.accountNumber }}</span> }
+                </span><span class="mono">{{ payment.amount | naira }}</span></div>
+              }
+            </div>
+          }
         </article>
       } @else if (!error()) { <div class="card skeleton" style="height:14rem"></div> }
     </div>
@@ -46,30 +57,53 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
       <div class="field" style="margin-top:.9rem"><label for="rw">Put the goods in</label>
         <select id="rw" class="input" [(ngModel)]="warehouseId">@for (w of warehouses(); track w.id) { <option [ngValue]="w.id">{{ w.name }}</option> }</select></div>
       <ng-container modal-actions><button type="button" class="btn" (click)="receiveOpen.set(false)">Cancel</button><button type="button" class="btn btn-primary" [disabled]="busy()" (click)="receive()">Add to stock</button></ng-container>
+    </app-modal>
+
+    <app-modal [open]="payOpen()" heading="Pay supplier" (closed)="payOpen.set(false)">
+      @if (p(); as p) {
+        <p>Record payment of <strong class="mono">{{ owed() | naira }}</strong> to {{ p.supplier }}.</p>
+        <div class="field" style="margin-top:.9rem"><label for="purchase-pay-method">Paid by</label>
+          <select id="purchase-pay-method" class="input" [(ngModel)]="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option></select></div>
+        @if (paymentMethod === 'Bank Transfer' && banks().length) {
+          <div class="field" style="margin-top:.9rem"><label for="purchase-pay-account">Company account paid from</label>
+            <select id="purchase-pay-account" class="input" [(ngModel)]="accountNumber">
+              <option value="">Choose an account</option>
+              @for (b of banks(); track b.accountNumber) { <option [value]="b.accountNumber">{{ b.bankName }} · {{ b.accountName }} · {{ b.accountNumber }}</option> }
+            </select></div>
+        }
+      }
+      <ng-container modal-actions><button type="button" class="btn" (click)="payOpen.set(false)">Cancel</button>
+        <button type="button" class="btn btn-primary" [disabled]="busy() || (paymentMethod === 'Bank Transfer' && banks().length > 0 && !accountNumber)" (click)="pay()">{{ busy() ? 'Saving…' : 'Record payment' }}</button></ng-container>
     </app-modal>`,
   styles: `
     .doc { max-width: 52rem; padding: 1.5rem 1.75rem; } header { display: flex; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--ink); margin-bottom: .5rem; }
      .right { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; } .stamps { display: flex; gap: .4rem; } .sm { font-size: .75rem; }
     .totals { margin: 1.1rem 0 0 auto; width: min(20rem, 100%); display: grid; gap: .35rem; } .totals div { display: flex; justify-content: space-between; align-items: baseline; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
     .totals .figure { font-size: 1.9rem; color: var(--brand); } .owed dt, .owed dd { color: var(--stamp) !important; font-weight: 700; }
+    .payments { margin-top: 1rem; display: grid; gap: .35rem; } .payment { display: flex; justify-content: space-between; gap: 1rem; font-size: .875rem; }
   `,
 })
 export class PurchaseDetail implements OnInit {
   readonly id = input.required<string>();
   private readonly api = inject(Api);
+  private readonly api2 = inject(Api2);
   private readonly toasts = inject(Toasts);
-  private readonly confirm = inject(Confirm);
   protected readonly p = signal<Detail | null>(null);
   protected readonly error = signal('');
   protected readonly warehouses = signal<Warehouse[]>([]);
+  protected readonly banks = signal<Bank[]>([]);
   protected readonly receiveOpen = signal(false);
+  protected readonly payOpen = signal(false);
   protected readonly busy = signal(false);
   protected warehouseId = 0;
+  protected paymentMethod = 'Cash';
+  protected accountNumber = '';
   protected readonly owed = computed(() => (this.p() ? this.p()!.totalAmount - this.p()!.amountPaid : 0));
 
   async ngOnInit() {
     await this.load();
     try { const w = await this.api.warehouses(); this.warehouses.set(w); this.warehouseId = w[0]?.id ?? 0; } catch { /* the receive dialog will show an empty list */ }
+    try { this.banks.set((await this.api2.companyProfile()).banks); } catch (e) { this.error.set(messageOf(e)); }
   }
 
   private async load() { try { this.p.set(await this.api.purchase(Number(this.id()))); } catch (e) { this.error.set(messageOf(e)); } }
@@ -80,10 +114,16 @@ export class PurchaseDetail implements OnInit {
     catch (e) { this.toasts.error(messageOf(e)); } finally { this.busy.set(false); }
   }
 
-  protected async markPaid() {
-    const p = this.p(); if (!p) return;
-    const ok = await this.confirm.ask({ title: 'Mark as paid?', message: `This records a payment of the remaining amount on ${p.poNumber} and reduces what you owe ${p.supplier}.`, confirmLabel: 'Mark as paid' });
-    if (ok === null) return;
-    try { await this.api.payPurchase(p.id); this.toasts.ok('Marked as paid.'); await this.load(); } catch (e) { this.toasts.error(messageOf(e)); }
+  protected openPay() {
+    this.paymentMethod = 'Cash';
+    this.accountNumber = '';
+    this.payOpen.set(true);
+  }
+
+  protected async pay() {
+    const p = this.p(); if (!p || (this.paymentMethod === 'Bank Transfer' && this.banks().length > 0 && !this.accountNumber)) return;
+    this.busy.set(true);
+    try { await this.api.payPurchase(p.id, this.paymentMethod, this.accountNumber || null); this.toasts.ok('Payment recorded.'); this.payOpen.set(false); await this.load(); }
+    catch (e) { this.toasts.error(messageOf(e)); } finally { this.busy.set(false); }
   }
 }

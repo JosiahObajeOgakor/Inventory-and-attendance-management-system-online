@@ -143,16 +143,21 @@ public partial class BusinessDbContext
             e.Property(x => x.DocType).HasMaxLength(20).IsRequired();
             e.Property(x => x.DocNumber).HasMaxLength(60);
             e.Property(x => x.CustomerName).HasMaxLength(150);
+            e.Property(x => x.Provider).HasMaxLength(20).IsRequired();
+            e.Property(x => x.ExternalId).HasMaxLength(80);
+            e.Property(x => x.AccountNumber).HasMaxLength(30);
+            e.Property(x => x.BankName).HasMaxLength(60);
+            e.HasIndex(x => x.ExternalId);
             e.Property(x => x.Amount).HasPrecision(14, 2);
             e.Property(x => x.PaidAmount).HasPrecision(14, 2);
             e.Property(x => x.Url).HasMaxLength(400).IsRequired();
-            e.Property(x => x.Status).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
             e.Property(x => x.Channel).HasMaxLength(40);
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.PaidAt).HasPrecision(6);
             e.Property(x => x.NotifiedAt).HasPrecision(6);
             e.HasIndex(x => new { x.DocType, x.DocId, x.Status });
-            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid')"));
+            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled')"));
         });
 
 
@@ -173,6 +178,9 @@ public partial class BusinessDbContext
             e.ToTable("chat_conversations");
             e.Property(x => x.Channel).HasMaxLength(10).IsRequired();
             e.Property(x => x.ExternalId).HasMaxLength(100).IsRequired();
+            e.Property(x => x.State).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Language).HasMaxLength(5).IsRequired();
+            e.Property(x => x.DraftJson).HasMaxLength(4000);
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.LastMessageAt).HasPrecision(6);
             e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
@@ -187,6 +195,46 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.HasIndex(x => new { x.ConversationId, x.CreatedAt });
             e.HasOne<ChatConversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<SupplierPayment>(e =>
+        {
+            e.ToTable("supplier_payments");
+            e.Property(x => x.Amount).HasPrecision(14, 2);
+            e.Property(x => x.Method).HasMaxLength(20).IsRequired();
+            e.Property(x => x.BankName).HasMaxLength(80);
+            e.Property(x => x.AccountName).HasMaxLength(150);
+            e.Property(x => x.AccountNumber).HasMaxLength(40);
+            e.Property(x => x.PaymentDate).HasPrecision(6);
+            e.HasIndex(x => x.PurchaseOrderId);
+            e.HasIndex(x => x.SupplierId);
+        });
+
+        b.Entity<Campaign>(e =>
+        {
+            e.ToTable("campaigns");
+            e.Property(x => x.Type).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(80).IsRequired();
+            e.Property(x => x.LastRunNote).HasMaxLength(300);
+            e.Property(x => x.UpdatedBy).HasMaxLength(100);
+            e.Property(x => x.UpdatedAt).HasPrecision(6);
+            e.Property(x => x.LastRunAt).HasPrecision(6);
+            e.HasIndex(x => x.Type).IsUnique();
+        });
+
+        b.Entity<CampaignMessage>(e =>
+        {
+            e.ToTable("campaign_messages");
+            e.Property(x => x.Recipient).HasMaxLength(120).IsRequired();
+            e.Property(x => x.Channel).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Language).HasMaxLength(5).IsRequired();
+            e.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Detail).HasMaxLength(300);
+            e.Property(x => x.Mode).HasMaxLength(10);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
+            e.HasIndex(x => new { x.CampaignId, x.CreatedAt });
         });
     }
 }

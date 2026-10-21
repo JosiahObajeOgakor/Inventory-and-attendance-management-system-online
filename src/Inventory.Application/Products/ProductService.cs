@@ -68,6 +68,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         {
             var p = req.Product;
             if (await db.Products.AnyAsync(x => x.Sku == p.Sku, inner)) throw new BusinessRuleException($"A product with SKU \"{p.Sku}\" already exists.");
+            await EnsureNameIsFreeAsync(p.Name, null, inner);
             var barcode = string.IsNullOrWhiteSpace(p.Barcode) ? null : p.Barcode.Trim();
             if (barcode is not null && await db.Products.AnyAsync(x => x.Barcode == barcode, inner))
                 throw new BusinessRuleException("That barcode already belongs to another product.");
@@ -75,7 +76,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
 
             var product = new Product
             {
-                Sku = p.Sku.Trim(), Name = p.Name.Trim(), CategoryId = p.CategoryId, Unit = p.Unit.Trim(), ReorderLevel = p.ReorderLevel,
+                Sku = p.Sku.Trim(), Name = ProductNames.Clean(p.Name), CategoryId = p.CategoryId, Unit = p.Unit.Trim(), ReorderLevel = p.ReorderLevel,
                 CostPrice = p.CostPrice, PriceDistributor = p.PriceDistributor, PriceWholesaler = p.PriceWholesaler,
                 PriceRetail = p.PriceRetail, SellingPrice = p.PriceRetail, Barcode = barcode, TracksSerial = p.TracksSerial,
                 Species = p.Species, LifeStage = p.LifeStage, ProteinPct = p.ProteinPct, FatPct = p.FatPct,
@@ -99,12 +100,27 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         }, ct);
     }
 
+    /// <summary>
+    /// One product per name. Buying more of something must be recorded as a purchase of the product that already exists (it tops up that product's stock),
+    /// not by creating a second product with the same name.
+    /// </summary>
+    private async Task EnsureNameIsFreeAsync(string name, int? exceptId, CancellationToken ct)
+    {
+        var key = ProductNames.Key(name);
+        var clash = (await db.Products.AsNoTracking().Where(x => x.Id != exceptId).Select(x => new { x.Id, x.Name, x.Sku, x.IsActive }).ToListAsync(ct))
+            .FirstOrDefault(x => ProductNames.Key(x.Name) == key);
+        if (clash is not null)
+            throw new BusinessRuleException($"There is already a product named \"{clash.Name}\" (SKU {clash.Sku}){(clash.IsActive ? "" : ", currently switched off")}. " +
+                "Record a purchase of that product to add stock to it, instead of creating another with the same name.");
+    }
+
     /// <summary>Edit cost, tier prices, reorder level (Admin). SellingPrice stays equal to the retail price.</summary>
     public async Task UpdateAsync(int id, ProductInput input, CurrentUser user, CancellationToken ct = default)
     {
         await new ProductInputValidator().ValidateAndThrowAsync(input, ct);
         var p = await db.Products.SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Product");
         if (await db.Products.AnyAsync(x => x.Sku == input.Sku && x.Id != id, ct)) throw new BusinessRuleException($"A product with SKU \"{input.Sku}\" already exists.");
+        await EnsureNameIsFreeAsync(input.Name, id, ct);
         var barcode = string.IsNullOrWhiteSpace(input.Barcode) ? p.Barcode : input.Barcode.Trim();
         if (barcode is not null && await db.Products.AnyAsync(x => x.Barcode == barcode && x.Id != id, ct))
             throw new BusinessRuleException("That barcode already belongs to another product.");
@@ -112,7 +128,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         if (company.HasPriceLists && (p.PriceDistributor != input.PriceDistributor || p.PriceWholesaler != input.PriceWholesaler || p.PriceRetail != input.PriceRetail))
             db.PriceChanges.Add(new PriceChange { ProductId = id, OldDistributor = p.PriceDistributor, OldWholesaler = p.PriceWholesaler, OldRetail = p.PriceRetail,
                 NewDistributor = input.PriceDistributor, NewWholesaler = input.PriceWholesaler, NewRetail = input.PriceRetail, ChangedAt = clock.UtcNow, ChangedByUserId = user.Id, Note = "Edited on product" });
-        p.Sku = input.Sku.Trim(); p.Name = input.Name.Trim(); p.CategoryId = input.CategoryId; p.Unit = input.Unit.Trim();
+        p.Sku = input.Sku.Trim(); p.Name = ProductNames.Clean(input.Name); p.CategoryId = input.CategoryId; p.Unit = input.Unit.Trim();
         p.ReorderLevel = input.ReorderLevel; p.CostPrice = input.CostPrice; p.PriceDistributor = input.PriceDistributor;
         p.PriceWholesaler = input.PriceWholesaler; p.PriceRetail = input.PriceRetail; p.SellingPrice = input.PriceRetail;
         p.Barcode = barcode; p.TracksSerial = input.TracksSerial;

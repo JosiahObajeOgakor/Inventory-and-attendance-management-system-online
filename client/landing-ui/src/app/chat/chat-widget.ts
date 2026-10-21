@@ -1,4 +1,4 @@
-import { Component, ElementRef, signal, viewChild, effect } from '@angular/core';
+import { Component, DestroyRef, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 
@@ -11,11 +11,18 @@ interface ChatBubble {
 
 interface WebChatResponse {
   reply: string;
+  replies?: string[];
   checkoutUrl?: string | null;
   quotationNumber?: string | null;
+  awaitingPayment?: boolean;
+  at?: string;
 }
 
+interface WebChatUpdates { messages: string[]; awaitingPayment: boolean; at: string; }
+
 const SESSION_KEY = 'chewypet.chat.session';
+/** How often to look for the "payment received" message while the customer has an account to pay into. */
+const PAYMENT_CHECK_MS = 10_000;
 
 function sessionId(): string {
   try {
@@ -29,6 +36,10 @@ function sessionId(): string {
   }
 }
 
+/**
+ * The website chat. It talks to the same order-taking assistant as the WhatsApp number: tell it what you want in English, Pidgin, Igbo or Hausa,
+ * it shows a bank account to pay into right here, and the confirmation appears in this window once the money arrives.
+ */
 @Component({
   selector: 'app-chat-widget',
   imports: [FormsModule],
@@ -40,17 +51,21 @@ export class ChatWidget {
   protected readonly sending = signal(false);
   protected readonly draft = signal('');
   protected readonly bubbles = signal<ChatBubble[]>([
-    { role: 'assistant', text: "Hi! I'm the Chewy Pet assistant — ask me about a product, get a quote, or order right here. What's up?" },
+    { role: 'assistant', text: "Hi! Tell me what you'd like and how many, for example \"2 adult dog food\". English, Pidgin, Igbo or Hausa are all fine. You can pay into an account I show you right here." },
   ]);
 
   private readonly scrollAnchor = viewChild<ElementRef<HTMLDivElement>>('scrollAnchor');
   private readonly session = sessionId();
+  private readonly http = inject(HttpClient);
+  private since = new Date().toISOString();
+  private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly http: HttpClient) {
+  constructor() {
     effect(() => {
       this.bubbles();
       queueMicrotask(() => this.scrollAnchor()?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'end' }));
     });
+    inject(DestroyRef).onDestroy(() => this.stopChecking());
   }
 
   toggle(): void {
@@ -66,10 +81,15 @@ export class ChatWidget {
 
     this.http.post<WebChatResponse>('/api/webchat/message', { sessionId: this.session, message: text }).subscribe({
       next: (res) => {
+        const parts = res.replies?.length ? res.replies : [res.reply];
         this.bubbles.update((b) => [
           ...b,
-          { role: 'assistant', text: res.reply, checkoutUrl: res.checkoutUrl ?? undefined, quotationNumber: res.quotationNumber ?? undefined },
+          ...parts.map((t, i) => ({ role: 'assistant' as const, text: t,
+            checkoutUrl: i === parts.length - 1 ? res.checkoutUrl ?? undefined : undefined,
+            quotationNumber: i === parts.length - 1 ? res.quotationNumber ?? undefined : undefined })),
         ]);
+        if (res.at) this.since = res.at;
+        if (res.awaitingPayment) this.startChecking(); else this.stopChecking();
         this.sending.set(false);
       },
       error: () => {
@@ -77,5 +97,24 @@ export class ChatWidget {
         this.sending.set(false);
       },
     });
+  }
+
+  /** While a payment is outstanding, quietly look for the bot's "payment received" message so it appears without the customer doing anything. */
+  private startChecking(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      this.http.get<WebChatUpdates>('/api/webchat/updates', { params: { sessionId: this.session, since: this.since } }).subscribe({
+        next: (u) => {
+          if (u.messages.length) this.bubbles.update((b) => [...b, ...u.messages.map((t) => ({ role: 'assistant' as const, text: t }))]);
+          this.since = u.at;
+          if (!u.awaitingPayment) this.stopChecking();
+        },
+        error: () => { /* try again on the next tick */ },
+      });
+    }, PAYMENT_CHECK_MS);
+  }
+
+  private stopChecking(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }
 }

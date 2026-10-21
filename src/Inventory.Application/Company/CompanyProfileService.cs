@@ -53,6 +53,18 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
         return p;
     }
 
+    /// <summary>
+    /// The company's bank accounts, read-only: the saved list, or — before the profile has ever been saved — the configured defaults that <see cref="EnsureAsync"/> would seed.
+    /// Unlike <see cref="EnsureAsync"/> it never writes, so it is safe to call inside a sale's or payment's transaction (a rolled-back first write would otherwise leave a phantom row tracked).
+    /// </summary>
+    public async Task<IReadOnlyList<BankDto>> BanksAsync(CancellationToken ct)
+    {
+        var p = await db.CompanyProfiles.AsNoTracking().Include(x => x.Banks).SingleOrDefaultAsync(x => x.Id == 1, ct);
+        return p is not null
+            ? p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankDto(b.BankName, b.AccountName, b.AccountNumber)).ToList()
+            : company.DefaultBanks.Select(b => new BankDto(b.Bank, b.AccountName, b.AccountNumber)).ToList();
+    }
+
     public async Task<CompanyProfileDto> GetAsync(CancellationToken ct)
     {
         var p = await EnsureAsync(ct);

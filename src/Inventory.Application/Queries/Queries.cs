@@ -22,7 +22,7 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
         var q = db.Products.AsNoTracking().Where(p => includeInactive || p.IsActive);
         if (page.Term is { } t) q = q.Where(p => p.Name.Contains(t) || p.Sku.Contains(t) || (p.Barcode != null && p.Barcode.Contains(t)));
         var total = await q.CountAsync(ct);
-        var rows = await q.OrderBy(p => p.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
+        var rows = await q.OrderBy(p => p.Name).ThenBy(p => p.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
             .Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
         var ids = rows.Select(r => r.p.Id).ToList();
         var qty = await db.StockBatches.AsNoTracking().Where(b => ids.Contains(b.ProductId))
@@ -56,26 +56,37 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
     public Task<List<WarehouseDto>> WarehousesAsync(CancellationToken ct) =>
         db.Warehouses.AsNoTracking().OrderBy(w => w.Name).Select(w => new WarehouseDto(w.Id, w.Name, w.Location)).ToListAsync(ct);
 
-    /// <summary>Stock per batch with the status rule of vw_LowStock: qty ≤ reorder level → Low stock; expiry within 60 days → Expiring soon (T5).</summary>
+    /// <summary>
+    /// Stock rows with their status. "Low stock" is a fact about the PRODUCT (everything on hand, all rows and warehouses, at or below its reorder level) — never about one
+    /// old row, which would flag a product as low just because one of its emptied rows is at zero. "Expiring soon" (within 60 days) is about the row.
+    /// A row with nothing in it is history, not stock, so it is hidden — except the single row of a product that is completely out, which stays as "Out of stock" so you still see what to buy.
+    /// Paging is stable: ties on category, name and expiry are broken by the row's id, so every page continues exactly where the previous one stopped.
+    /// </summary>
     public async Task<PagedResult<BatchRowDto>> BatchesAsync(PageRequest page, bool onlyLow, CancellationToken ct)
     {
         var today = clock.BusinessToday;
+        var soon = today.AddDays(60);
+        var totals = db.StockBatches.AsNoTracking().GroupBy(b => b.ProductId).Select(g => new { ProductId = g.Key, Total = g.Sum(b => b.QuantityOnHand) });
         var q = from b in db.StockBatches.AsNoTracking()
                 join p in db.Products.AsNoTracking() on b.ProductId equals p.Id
                 join w in db.Warehouses.AsNoTracking() on b.WarehouseId equals w.Id
-                select new { b, p, Category = p.Category!.Name, Warehouse = w.Name };
-        if (page.Term is { } t) q = q.Where(x => x.p.Name.Contains(t) || x.p.Sku.Contains(t) || x.b.BatchNumber.Contains(t));
-        if (onlyLow) q = q.Where(x => x.b.QuantityOnHand <= x.p.ReorderLevel);
+                join t in totals on b.ProductId equals t.ProductId
+                where b.QuantityOnHand > 0 || (t.Total <= 0 && b.Id == db.StockBatches.Where(x => x.ProductId == b.ProductId).Min(x => x.Id))
+                select new { b, p, Category = p.Category!.Name, Warehouse = w.Name, t.Total };
+        if (page.Term is { } term) q = q.Where(x => x.p.Name.Contains(term) || x.p.Sku.Contains(term) || x.b.BatchNumber.Contains(term));
+        if (onlyLow) q = q.Where(x => x.Total <= x.p.ReorderLevel || (x.b.QuantityOnHand > 0 && x.b.ExpiryDate != null && x.b.ExpiryDate <= soon));
         var total = await q.CountAsync(ct);
-        var rows = await q.OrderBy(x => x.Category).ThenBy(x => x.p.Name).ThenBy(x => x.b.ExpiryDate)
+        var rows = await q.OrderBy(x => x.Category).ThenBy(x => x.p.Name).ThenBy(x => x.Warehouse).ThenBy(x => x.b.ExpiryDate).ThenBy(x => x.b.Id)
             .Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
-        return new PagedResult<BatchRowDto>(rows.Select(x => ToBatch(x.b, x.p, x.Category, x.Warehouse, today)).ToList(), total, page.SafePage, page.SafeSize);
+        return new PagedResult<BatchRowDto>(rows.Select(x => ToBatch(x.b, x.p, x.Category, x.Warehouse, today, x.Total)).ToList(), total, page.SafePage, page.SafeSize);
     }
 
-    public static BatchRowDto ToBatch(Domain.Entities.StockBatch b, Domain.Entities.Product p, string category, string warehouse, DateOnly today) =>
+    /// <param name="productTotal">Everything on hand of this product across all its rows and warehouses.</param>
+    public static BatchRowDto ToBatch(Domain.Entities.StockBatch b, Domain.Entities.Product p, string category, string warehouse, DateOnly today, int productTotal) =>
         new(b.Id, p.Id, p.Sku, p.Name, category, b.WarehouseId, warehouse, b.BatchNumber, b.ExpiryDate, b.QuantityOnHand, p.ReorderLevel,
-            b.QuantityOnHand <= p.ReorderLevel ? "Low stock"
-            : b.ExpiryDate is { } e && e.DayNumber - today.DayNumber <= 60 ? "Expiring soon" : "OK");
+            productTotal <= 0 ? "Out of stock"
+            : productTotal <= p.ReorderLevel ? "Low stock"
+            : b.QuantityOnHand > 0 && b.ExpiryDate is { } e && e.DayNumber - today.DayNumber <= 60 ? "Expiring soon" : "OK");
 
     public async Task<PagedResult<MovementRowDto>> MovementsAsync(PageRequest page, string? referenceType, int? productId, CancellationToken ct)
     {
@@ -102,7 +113,7 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
         var q = db.Suppliers.AsNoTracking().AsQueryable();
         if (page.Term is { } t) q = q.Where(s => s.Name.Contains(t) || (s.Phone != null && s.Phone.Contains(t)));
         var total = await q.CountAsync(ct);
-        var items = await q.OrderBy(s => s.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
+        var items = await q.OrderBy(s => s.Name).ThenBy(s => s.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
             .Select(s => new SupplierDto(s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId, s.Balance)).ToListAsync(ct);
         return new PagedResult<SupplierDto>(items, total, page.SafePage, page.SafeSize);
     }
@@ -112,7 +123,7 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
         var q = db.Customers.AsNoTracking().AsQueryable();
         if (page.Term is { } t) q = q.Where(c => c.Name.Contains(t) || (c.Phone != null && c.Phone.Contains(t)) || (c.Location != null && c.Location.Contains(t)));
         var total = await q.CountAsync(ct);
-        var rows = await q.OrderBy(c => c.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
+        var rows = await q.OrderBy(c => c.Name).ThenBy(c => c.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var since = clock.BusinessToday.AddMonths(-12);
         var ids = rows.Select(r => r.Id).ToList();
         var spend = await db.Invoices.AsNoTracking().Where(i => ids.Contains(i.CustomerId) && i.InvoiceDate >= since && i.Status != PaymentStatuses.Voided)
@@ -142,7 +153,7 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
         var q = from i in db.Invoices.AsNoTracking() join c in db.Customers.AsNoTracking() on i.CustomerId equals c.Id select new { i, c.Name, c.Phone };
         if (page.Term is { } t) q = q.Where(x => x.i.InvoiceNumber.Contains(t) || x.Name.Contains(t) || (x.Phone != null && x.Phone.Contains(t)) || x.i.PaymentMethod.Contains(t) || x.i.Status.Contains(t));
         var total = await q.CountAsync(ct);
-        var rows = await q.OrderByDescending(x => x.i.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
+        var rows = await q.OrderByDescending(x => x.i.InvoiceDate).ThenByDescending(x => x.i.CreatedAt).ThenByDescending(x => x.i.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var ids = rows.Select(r => r.i.Id).ToList();
         Dictionary<int, decimal> cogs = [];
         if (isAdmin)
@@ -173,7 +184,7 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
         return new InvoiceDetailDto(i.Id, i.InvoiceNumber, c.Id, c.Name, c.CustomerType, i.InvoiceDate, i.DueDate, i.Subtotal, i.DiscountPct,
             i.DiscountAmount, i.VatRate, i.VatAmount, i.TotalAmount, i.AmountPaid, i.Status, i.PaymentMethod, i.PriceTier, i.WarehouseId,
             names.GetValueOrDefault(i.CreatedByUserId, ""), i.VoidReason, items,
-            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method)).ToList());
+            i.Payments.OrderBy(p => p.PaymentDate).Select(p => new PaymentDto(p.PaymentDate, p.Amount, p.Method, p.BankName, p.AccountName, p.AccountNumber, p.PayerName)).ToList());
     }
 }
 
@@ -184,7 +195,7 @@ public sealed class PurchaseQueries(IBusinessDbContext db)
         var q = from p in db.PurchaseOrders.AsNoTracking() join s in db.Suppliers.AsNoTracking() on p.SupplierId equals s.Id select new { p, s.Name };
         if (page.Term is { } t) q = q.Where(x => x.p.PoNumber.Contains(t) || x.Name.Contains(t) || x.p.Status.Contains(t));
         var total = await q.CountAsync(ct);
-        var rows = await q.OrderByDescending(x => x.p.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
+        var rows = await q.OrderByDescending(x => x.p.OrderDate).ThenByDescending(x => x.p.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         return new PagedResult<PurchaseRowDto>(rows.Select(x => new PurchaseRowDto(x.p.Id, x.p.PoNumber, x.Name, x.p.OrderDate, x.p.Status,
             x.p.PaymentStatus, x.p.TotalAmount, x.p.AmountPaid)).ToList(), total, page.SafePage, page.SafeSize);
     }
@@ -196,8 +207,10 @@ public sealed class PurchaseQueries(IBusinessDbContext db)
         var s = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == p.SupplierId, ct);
         var ids = p.Items.Select(i => i.ProductId).ToList();
         var products = await db.Products.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        var payments = await db.SupplierPayments.AsNoTracking().Where(x => x.PurchaseOrderId == p.Id).OrderBy(x => x.PaymentDate)
+            .Select(x => new SupplierPaymentDto(x.PaymentDate, x.Amount, x.Method, x.BankName, x.AccountName, x.AccountNumber)).ToListAsync(ct);
         return new PurchaseDetailDto(p.Id, p.PoNumber, s.Id, s.Name, p.OrderDate, p.Status, p.PaymentStatus, p.TotalAmount, p.AmountPaid,
-            p.Items.Select(i => new PurchaseItemDto(i.ProductId, products[i.ProductId].Name, products[i.ProductId].Sku, i.Quantity, i.UnitCost, i.Quantity * i.UnitCost)).ToList());
+            p.Items.Select(i => new PurchaseItemDto(i.ProductId, products[i.ProductId].Name, products[i.ProductId].Sku, i.Quantity, i.UnitCost, i.Quantity * i.UnitCost)).ToList(), payments);
     }
 }
 
@@ -249,11 +262,15 @@ public sealed class DashboardQueries(IBusinessDbContext db, IClock clock, Financ
         var today = clock.BusinessToday;
         var stockValue = await (from b in db.StockBatches.AsNoTracking() join p in db.Products.AsNoTracking() on b.ProductId equals p.Id
                                 select (decimal?)(b.QuantityOnHand * p.CostPrice)).SumAsync(ct) ?? 0;
+        // One entry per LOW PRODUCT (total on hand across all its rows at or below its reorder level), shown on the row holding most of it — not one entry per old row.
+        var totals = db.StockBatches.AsNoTracking().GroupBy(b => b.ProductId).Select(g => new { ProductId = g.Key, Total = g.Sum(b => b.QuantityOnHand) });
         var low = await (from b in db.StockBatches.AsNoTracking() join p in db.Products.AsNoTracking() on b.ProductId equals p.Id
                          join w in db.Warehouses.AsNoTracking() on b.WarehouseId equals w.Id
-                         where b.QuantityOnHand <= p.ReorderLevel
-                         orderby p.Name select new { b, p, Category = p.Category!.Name, Warehouse = w.Name }).Take(100).ToListAsync(ct);
-        var lowRows = low.Select(x => CatalogQueries.ToBatch(x.b, x.p, x.Category, x.Warehouse, today)).ToList();
+                         join t in totals on b.ProductId equals t.ProductId
+                         where p.IsActive && t.Total <= p.ReorderLevel
+                         select new { b, p, Category = p.Category!.Name, Warehouse = w.Name, t.Total }).ToListAsync(ct);
+        var lowRows = low.GroupBy(x => x.p.Id).Select(g => g.OrderByDescending(x => x.b.QuantityOnHand).ThenBy(x => x.b.Id).First())
+            .OrderBy(x => x.p.Name).Take(100).Select(x => CatalogQueries.ToBatch(x.b, x.p, x.Category, x.Warehouse, today, x.Total)).ToList();
         var todays = await db.Invoices.AsNoTracking().CountAsync(i => i.InvoiceDate == today && i.Status != PaymentStatuses.Voided, ct);
         var recent = (await sales.InvoicesAsync(new PageRequest(1, 10), isAdmin: false, ct)).Items;
 

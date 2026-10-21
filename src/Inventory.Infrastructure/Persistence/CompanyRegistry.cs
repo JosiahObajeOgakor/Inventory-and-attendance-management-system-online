@@ -23,11 +23,30 @@ public sealed class CompanyRegistry
         var list = config.GetSection("Companies").Get<List<CompanyInfo>>() ?? [];
         if (list.Count == 0) throw new InvalidOperationException("No companies configured (Companies section).");
         _byKey = list.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
+        // Display order: "Order" from configuration (1, 2, 3…), otherwise the order they are listed in. Kept separate from the list position because
+        // environment overrides address companies by position (Companies__0__Schema), so reordering the list itself would re-point those overrides.
+        _ordered = list.Select((c, i) => (c, i)).OrderBy(x => x.c.Order > 0 ? x.c.Order : int.MaxValue).ThenBy(x => x.i).Select(x => x.c).ToList();
     }
 
+    private readonly IReadOnlyList<CompanyInfo> _ordered;
     public string IdentitySchema { get; }
-    public IEnumerable<CompanyInfo> All => _byKey.Values;
+    public IEnumerable<CompanyInfo> All => _ordered;
     public CompanyInfo? Find(string? key) => key is not null && _byKey.TryGetValue(key, out var c) ? c : null;
+
+    /// <summary>
+    /// For CONFIGURATION only (never for logins or cookies): the company a setting means, forgiving a near-miss such as "chewypetsfeeds" for "chewypets".
+    /// An exact key wins; otherwise the company whose key is the START of the given text ("chewypetsfeeds" starts with "chewypets"), but only if exactly one does.
+    /// A fragment of a key ("che") is never enough: that would be a guess.
+    /// </summary>
+    public CompanyInfo? Resolve(string? text)
+    {
+        if (Find(text) is { } exact) return exact;
+        static string N(string? s) => new string((s ?? "").Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        var wanted = N(text);
+        if (wanted.Length < 3) return null;
+        var matches = All.Where(c => { var k = N(c.Key); return k.Length >= 3 && wanted.StartsWith(k); }).ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
 
     public string ConnectionFor(string schema) =>
         new MySqlConnectionStringBuilder(_baseConnection) { Database = schema }.ConnectionString;

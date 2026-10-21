@@ -1,0 +1,170 @@
+import { HttpClient } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
+import { messageOf } from '../../core/api.service';
+import { Confirm, Toasts } from '../../shared/feedback';
+import { StampTimePipe } from '../../shared/ui';
+
+interface Campaign {
+  id: number; type: string; name: string; description: string; enabled: boolean; sendWhatsApp: boolean; sendEmail: boolean; runTime: string; everyNDays: number;
+  startDate: string | null; endDate: string | null; cooldownDays: number; maxRecipients: number; thresholdDays: number; fallbackRepurchaseDays: number;
+  lastRunOn: string | null; lastRunAt: string | null; lastRunSent: number; lastRunNote: string | null; forAdmin: boolean;
+}
+interface RunResult { planned: number; sent: number; failed: number; skipped: number; samples: string[]; note: string; }
+interface Consent { optedIn: number; optedOut: number; unknown: number; }
+interface LogRow { id: number; campaign: string; customer: string; recipient: string; channel: string; language: string; status: string; detail: string | null; mode: string | null; text: string; at: string; }
+
+/**
+ * Campaigns: reminders, offers and restock alerts that write themselves from live stock and each customer's own buying history, and go out on the days and times set here.
+ * The admin decides WHAT KIND of message runs and WHEN; the wording is drafted fresh every run, so no message needs approving one by one.
+ */
+@Component({
+  selector: 'app-campaigns',
+  imports: [FormsModule, StampTimePipe],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="page">
+      <div class="page-head"><h1>Campaigns</h1></div>
+      <p class="muted lede">Switch a campaign on, choose the time and how often, and it runs by itself. Each message is written fresh from today's stock and the customer's own purchases — nothing is mass-produced, nothing needs approving one by one.
+        Only customers who said yes in the WhatsApp chat (or later subscribed) are ever messaged, never twice inside the cooldown, never before 07:00 or after 20:30, and STOP always works.</p>
+
+      @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
+
+      @if (consent(); as c) {
+        <p class="stats"><strong>{{ c.optedIn }}</strong> customers have agreed to messages · <strong>{{ c.optedOut }}</strong> opted out · <strong>{{ c.unknown }}</strong> not asked yet (they are asked on their next WhatsApp order)</p>
+      }
+
+      @for (c of campaigns(); track c.id) {
+        <section class="card card-pad" [class.on]="c.enabled">
+          <div class="top">
+            <div>
+              <h2 class="display sub">{{ c.name }}</h2>
+              <p class="muted sm">{{ c.description }}</p>
+            </div>
+            <label class="switch"><input type="checkbox" [(ngModel)]="c.enabled" [attr.aria-label]="'Turn ' + c.name + ' on or off'" /><span>{{ c.enabled ? 'On' : 'Off' }}</span></label>
+          </div>
+
+          <div class="grid">
+            <div class="field"><label [for]="'t' + c.id">Send at (Lagos time)</label><input [id]="'t' + c.id" class="input" type="time" [(ngModel)]="c.runTime" /></div>
+            <div class="field"><label [for]="'e' + c.id">Repeat every</label>
+              <div class="inline"><input [id]="'e' + c.id" class="input num" type="number" min="1" max="60" [(ngModel)]="c.everyNDays" /> <span>day(s)</span></div></div>
+            <div class="field"><label [for]="'s' + c.id">From date (optional)</label><input [id]="'s' + c.id" class="input" type="date" [(ngModel)]="c.startDate" /></div>
+            <div class="field"><label [for]="'n' + c.id">Until date (optional)</label><input [id]="'n' + c.id" class="input" type="date" [(ngModel)]="c.endDate" /></div>
+            <div class="field"><label>Channels</label>
+              <div class="inline"><label class="chk"><input type="checkbox" [(ngModel)]="c.sendWhatsApp" /> WhatsApp</label><label class="chk"><input type="checkbox" [(ngModel)]="c.sendEmail" /> Email</label></div></div>
+            <div class="field"><label [for]="'h' + c.id">{{ c.forAdmin ? 'Warn me when stock covers fewer than' : '"Running low" means fewer than' }}</label>
+              <div class="inline"><input [id]="'h' + c.id" class="input num" type="number" min="1" max="60" [(ngModel)]="c.thresholdDays" /> <span>days of sales</span></div></div>
+          </div>
+
+          @if (!c.forAdmin) {
+            <details>
+              <summary>Safety limits</summary>
+              <div class="grid">
+                <div class="field"><label [for]="'c' + c.id">Don't message the same customer again for</label><div class="inline"><input [id]="'c' + c.id" class="input num" type="number" min="0" max="60" [(ngModel)]="c.cooldownDays" /> <span>day(s)</span></div></div>
+                <div class="field"><label [for]="'m' + c.id">Most customers per run</label><input [id]="'m' + c.id" class="input num" type="number" min="1" max="1000" [(ngModel)]="c.maxRecipients" /></div>
+                @if (c.type === 'Reorder') {
+                  <div class="field"><label [for]="'f' + c.id">Remind this long after the last purchase, if we don't know their rhythm yet</label><div class="inline"><input [id]="'f' + c.id" class="input num" type="number" min="3" max="120" [(ngModel)]="c.fallbackRepurchaseDays" /> <span>days</span></div></div>
+                }
+              </div>
+            </details>
+          }
+
+          <div class="actions">
+            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="save(c)">Save</button>
+            <button type="button" class="btn" [disabled]="busy()" (click)="preview(c)">Show me today's messages</button>
+            <button type="button" class="btn" [disabled]="busy()" (click)="runNow(c)">Run now</button>
+            @if (c.lastRunNote) { <span class="muted sm">Last run {{ c.lastRunAt ? (c.lastRunAt | stampTime) : '' }}: {{ c.lastRunNote }}</span> }
+          </div>
+
+          @if (preview$()?.id === c.id) {
+            <div class="sample" aria-live="polite">
+              <strong>{{ preview$()!.result.note }}</strong>
+              @for (s of preview$()!.result.samples; track $index) { <p class="msg">{{ s }}</p> }
+              @empty { <p class="muted sm">Nothing to send right now.</p> }
+            </div>
+          }
+        </section>
+      }
+
+      <section class="card card-pad">
+        <h2 class="display sub">What was sent</h2>
+        <table class="table small">
+          <thead><tr><th>When</th><th>Campaign</th><th>To</th><th>Via</th><th>Result</th><th>Message</th></tr></thead>
+          <tbody>
+            @for (m of log(); track m.id) {
+              <tr><td>{{ m.at | stampTime }}</td><td>{{ m.campaign }}</td><td>{{ m.customer }}<br /><span class="muted mono">{{ m.recipient }}</span></td>
+                <td>{{ m.channel }}@if (m.mode) { <span class="muted"> ({{ m.mode }})</span> }</td>
+                <td><span class="pill" [class.bad]="m.status === 'Failed'" [class.skip]="m.status === 'Skipped'">{{ m.status }}</span>@if (m.detail) { <br /><span class="muted sm">{{ m.detail }}</span> }</td>
+                <td class="text">{{ m.text }}</td></tr>
+            } @empty { <tr><td colspan="6" class="muted">Nothing sent yet.</td></tr> }
+          </tbody>
+        </table>
+      </section>
+    </div>`,
+  styles: `
+    .lede { margin: 0 0 1rem; max-width: 52rem; } .sm { font-size: .8rem; } section { margin-bottom: 1rem; } .sub { font-size: 1.4rem; margin: 0 0 .3rem; }
+    .stats { margin: 0 0 1rem; } section.on { border-left: 4px solid var(--brand); }
+    .top { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+    .switch { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; cursor: pointer; } .switch input { width: 1.2rem; height: 1.2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .8rem 1.2rem; margin: .8rem 0; }
+    .field label { display: block; font-size: .82rem; margin-bottom: .25rem; } .inline { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; } .chk { display: inline-flex; gap: .3rem; align-items: center; margin: 0; }
+    .num { width: 6rem; } details { margin: .4rem 0; } summary { cursor: pointer; font-weight: 600; }
+    .actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: .8rem; }
+    .sample { margin-top: .8rem; padding: .8rem 1rem; background: color-mix(in srgb, var(--brand) 6%, transparent); border-radius: 8px; }
+    .msg { margin: .5rem 0 0; white-space: pre-wrap; } .small { font-size: .82rem; } .text { white-space: pre-wrap; max-width: 28rem; }
+    .pill { display: inline-block; padding: .05rem .5rem; border-radius: 99px; background: #dff3e6; font-size: .75rem; } .pill.bad { background: #f8d9d6; } .pill.skip { background: #eee; }
+  `,
+})
+export class CampaignsPage implements OnInit {
+  private readonly http = inject(HttpClient);
+  private readonly toasts = inject(Toasts);
+  private readonly confirm = inject(Confirm);
+  protected readonly campaigns = signal<Campaign[]>([]);
+  protected readonly consent = signal<Consent | null>(null);
+  protected readonly log = signal<LogRow[]>([]);
+  protected readonly preview$ = signal<{ id: number; result: RunResult } | null>(null);
+  protected readonly busy = signal(false);
+  protected readonly error = signal('');
+
+  ngOnInit() { void this.load(); }
+
+  private async load() {
+    try {
+      this.campaigns.set(await firstValueFrom(this.http.get<Campaign[]>('/api/campaigns')));
+      this.consent.set(await firstValueFrom(this.http.get<Consent>('/api/campaigns/consent')));
+      this.log.set(await firstValueFrom(this.http.get<LogRow[]>('/api/campaigns/log', { params: { take: 100 } })));
+    } catch (e) { this.error.set(messageOf(e)); }
+  }
+
+  private body(c: Campaign) {
+    return { enabled: c.enabled, sendWhatsApp: c.sendWhatsApp, sendEmail: c.sendEmail, runTime: c.runTime, everyNDays: Number(c.everyNDays), startDate: c.startDate || null, endDate: c.endDate || null,
+      cooldownDays: Number(c.cooldownDays), maxRecipients: Number(c.maxRecipients), thresholdDays: Number(c.thresholdDays), fallbackRepurchaseDays: Number(c.fallbackRepurchaseDays) };
+  }
+
+  protected async save(c: Campaign) {
+    this.busy.set(true); this.error.set('');
+    try {
+      const saved = await firstValueFrom(this.http.put<Campaign>(`/api/campaigns/${c.id}`, this.body(c)));
+      this.campaigns.update(l => l.map(x => x.id === saved.id ? saved : x));
+      this.toasts.ok(`${saved.name} is ${saved.enabled ? `on — next run ${saved.runTime}` : 'off'}.`);
+    } catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
+  }
+
+  protected async preview(c: Campaign) {
+    this.busy.set(true); this.error.set('');
+    try { this.preview$.set({ id: c.id, result: await firstValueFrom(this.http.post<RunResult>(`/api/campaigns/${c.id}/preview`, {})) }); }
+    catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
+  }
+
+  protected async runNow(c: Campaign) {
+    const ok = await this.confirm.ask({
+      title: `Run "${c.name}" now?`, confirmLabel: 'Run now',
+      message: 'Real messages go out to the customers it picks, using the same rules as the scheduled run (opted in, cooldown, quiet hours). Use "Show me today\'s messages" first to see who and what.',
+    });
+    if (ok === null) return;
+    this.busy.set(true); this.error.set('');
+    try { const r = await firstValueFrom(this.http.post<RunResult>(`/api/campaigns/${c.id}/run`, {})); this.toasts.ok(r.note); await this.load(); }
+    catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
+  }
+}

@@ -59,6 +59,36 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
         }
     }
 
+    /// <summary>Batch number of the product's ordinary shelf stock (no expiry date). Stock received later is added to it rather than starting another row.</summary>
+    public const string MainBatch = "MAIN";
+
+    public static string ShelfBatchNumber(DateOnly? expiry) => expiry is { } e ? "EXP-" + e.ToString("yyMMdd") : MainBatch;
+
+    /// <summary>
+    /// Receives stock onto the product's EXISTING shelf stock in that warehouse: it is added to the batch with the same expiry date (none = ordinary stock),
+    /// and only if there is no such batch yet is one created. So buying more of a product tops up the one record instead of adding a new row every time;
+    /// what was bought, when and from which order stays in the stock history (an IN movement carrying the purchase order). Logs an IN.
+    /// </summary>
+    public async Task<StockBatch> ReceiveToShelfAsync(int productId, int warehouseId, int quantity, DateOnly? expiry, string referenceType, int? referenceId,
+        int userId, CancellationToken ct, string? note = null)
+    {
+        if (quantity <= 0) throw new BusinessRuleException("Quantity must be greater than zero.");
+        await LockWarehouseBatchesAsync(productId, warehouseId, ct);     // loads and locks what exists
+        // Local also holds a batch created earlier in this same transaction (not yet saved), so two lines for one product can't create two rows.
+        var batches = db.StockBatches.Local.Where(b => b.ProductId == productId && b.WarehouseId == warehouseId).OrderBy(b => b.Id == 0 ? int.MaxValue : b.Id).ToList();
+        var batch = batches.FirstOrDefault(b => b.ExpiryDate == expiry);
+        if (batch is null)
+        {
+            var number = ShelfBatchNumber(expiry);
+            if (batches.Any(b => b.BatchNumber == number)) number = $"{number}-{batches.Count + 1}";      // an old batch already uses the name for a different expiry
+            batch = new StockBatch { ProductId = productId, WarehouseId = warehouseId, BatchNumber = number, QuantityOnHand = quantity, ExpiryDate = expiry };
+            db.StockBatches.Add(batch);
+        }
+        else batch.QuantityOnHand += quantity;
+        AddMovement(productId, warehouseId, MovementTypes.In, quantity, referenceType, referenceId, userId, note);
+        return batch;
+    }
+
     /// <summary>Adds stock to the (product, warehouse, batch number) batch, creating it if needed, and logs an IN.</summary>
     public async Task<StockBatch> ReceiveAsync(int productId, int warehouseId, string batchNumber, int quantity,
         DateOnly? expiry, string referenceType, int? referenceId, int userId, CancellationToken ct, string? note = null)

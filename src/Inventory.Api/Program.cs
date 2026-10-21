@@ -39,6 +39,36 @@ builder.Services.Configure<Inventory.Infrastructure.Payments.PaystackOptions>(bu
 builder.Services.Configure<Inventory.Infrastructure.Payments.NotifyOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.NotifyOptions.Section));
 builder.Services.AddHttpClient<Inventory.Application.Payments.IPaymentGateway, Inventory.Infrastructure.Payments.PaystackGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient("sms", c => c.Timeout = TimeSpan.FromSeconds(20));
+// WhatsApp sales chat: Twilio carries the messages, AlatPay issues the single-use bank account shown inside the chat.
+builder.Services.Configure<Inventory.Infrastructure.Payments.AlatPayOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.AlatPayOptions.Section));
+builder.Services.AddHttpClient<Inventory.Application.Payments.IVirtualAccountGateway, Inventory.Infrastructure.Payments.AlatPayGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.Configure<Inventory.Infrastructure.WhatsApp.TwilioOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.WhatsApp.TwilioOptions.Section));
+builder.Services.AddHttpClient<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddScoped<Inventory.Application.Messaging.IChatSender>(sp => sp.GetRequiredService<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>());
+Inventory.Application.SalesAssistant.Chat.ChatText.LoadOverrides(builder.Configuration["SalesAssistant:PhrasesFile"]);
+// Campaigns: admin-scheduled reminders, offers and restock alerts. Email goes through SendGrid when a key is set, otherwise the existing SMTP mailbox.
+builder.Services.Configure<Inventory.Application.Campaigns.CampaignOptions>(builder.Configuration.GetSection(Inventory.Application.Campaigns.CampaignOptions.Section));
+// A WhatsApp number mapped to a company name that is only a near-miss ("chewypetsfeeds" for "chewypets") is mapped to the real company instead of being silently ignored.
+builder.Services.PostConfigure<Inventory.Infrastructure.WhatsApp.TwilioOptions>(o =>
+{
+    foreach (var n in o.Numbers)
+        if (registry.Find(n.CompanyKey) is null && registry.Resolve(n.CompanyKey) is { } real)
+        {
+            Console.WriteLine($"[config] Twilio number {n.From}: company \"{n.CompanyKey}\" is not a company key; using \"{real.Key}\". Set Twilio__Numbers__*__CompanyKey={real.Key} to silence this.");
+            n.CompanyKey = real.Key;
+        }
+});
+builder.Services.PostConfigure<Inventory.Application.Campaigns.CampaignOptions>(o =>
+{
+    var cfg = builder.Configuration;
+    if (o.AdminPhone.Length == 0) o.AdminPhone = cfg["Notify:AdminPhone"] ?? "";
+    if (o.AdminEmail.Length == 0) o.AdminEmail = cfg["Notify:AdminEmail"] ?? "";
+    if (o.PublicBaseUrl.Length == 0) o.PublicBaseUrl = cfg["Twilio:PublicBaseUrl"] ?? "";
+    if (o.SecretKey.Length == 0) o.SecretKey = cfg["Twilio:AuthToken"] ?? "";
+});
+builder.Services.Configure<Inventory.Infrastructure.Email.SendGridOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Email.SendGridOptions.Section));
+builder.Services.AddHttpClient<Inventory.Application.Messaging.ICampaignEmailSender, Inventory.Infrastructure.Email.CampaignEmailSender>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.CampaignScheduler>();
 builder.Services.AddScoped<Inventory.Application.Payments.IAdminNotifier, Inventory.Infrastructure.Payments.AdminNotifier>();
 builder.Services.Configure<Inventory.Infrastructure.Localization.LocalizationOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Localization.LocalizationOptions.Section));
 builder.Services.AddSingleton<Inventory.Infrastructure.Localization.LanguageCatalogue>();
@@ -140,6 +170,34 @@ if (builder.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<DatabaseProvisioner>().EnsureAsync();
+
+    // Where a company has no duplicate product names, make the database itself refuse new ones (the app already checks). Where duplicates exist it stays off until an admin
+    // runs Stock > Tidy up, which merges them and then turns the guard on. Never blocks start-up.
+    foreach (var company in registry.All)
+    {
+        try
+        {
+            using var companyScope = app.Services.CreateScope();
+            companyScope.ServiceProvider.GetRequiredService<Inventory.Api.Infrastructure.RequestCompany>().BackgroundKey = company.Key;
+            var guarded = await companyScope.ServiceProvider.GetRequiredService<Inventory.Application.Stock.StockConsolidationService>().EnsureUniqueNameGuardAsync(default);
+            if (!guarded) app.Logger.LogWarning("Company {Company} has products that share a name. Open Stock > Tidy up to merge them.", company.Key);
+        }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Could not check product-name uniqueness for {Company}", company.Key); }
+    }
+}
+
+// Say loudly, once, at start-up what would otherwise fail silently later (a customer's WhatsApp message that is just ignored, a payment webhook that is just rejected).
+{
+    var startLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    var twilio = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.WhatsApp.TwilioOptions>>().Value;
+    var alat = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.Payments.AlatPayOptions>>().Value;
+    var known = string.Join(", ", registry.All.Select(c => c.Key));
+    foreach (var n in twilio.Numbers.Where(n => registry.Find(n.CompanyKey) is null))
+        startLog.LogError("Twilio number {From} is mapped to company '{Key}', which is not one of the configured companies ({Known}). Its WhatsApp messages will be IGNORED. Fix Twilio__Numbers__*__CompanyKey.", n.From, n.CompanyKey, known);
+    if (twilio.Numbers.Count > 0 && (twilio.AccountSid.Length == 0 || twilio.AuthToken.Length == 0)) startLog.LogError("Twilio numbers are configured but Twilio__AccountSid / Twilio__AuthToken are empty: no WhatsApp message can be verified or sent.");
+    if (twilio.Numbers.Count > 0 && twilio.PublicBaseUrl.Length == 0) startLog.LogWarning("Twilio__PublicBaseUrl is empty: webhook signatures are checked against the request's own URL, which fails behind a proxy.");
+    if (alat.SubscriptionKey.Length > 0 && alat.WebhookSecret.Length == 0) startLog.LogError("AlatPay is configured without AlatPay__WebhookSecret: every AlatPay webhook will be rejected, so paid orders would never complete on their own.");
+    if (alat.SubscriptionKey.Length > 0 && alat.BusinessId.Length == 0) startLog.LogError("AlatPay__BusinessId is empty: no payment account can be created.");
 }
 
 app.Run();

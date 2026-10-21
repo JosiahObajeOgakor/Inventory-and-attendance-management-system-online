@@ -63,12 +63,12 @@ export interface InvoiceDetail {
   id: number; invoiceNumber: string; customerId: number; customer: string; customerType: string; invoiceDate: string; dueDate: string | null;
   subtotal: number; discountPct: number; discountAmount: number; vatRate: number; vatAmount: number; totalAmount: number; amountPaid: number;
   status: string; paymentMethod: string; priceTier: string; warehouseId: number | null; createdBy: string; voidReason: string | null;
-  items: InvoiceItem[]; payments: { at: string; amount: number; method: string }[];
+  items: InvoiceItem[]; payments: { at: string; amount: number; method: string; bankName: string | null; accountName: string | null; accountNumber: string | null; payerName?: string | null }[];
 }
 
 export interface SaleLine { productId: number; quantity: number; unitPrice: number; serials?: string[]; }
 export interface SaleRequest {
-  customerId: number; saleDate?: string | null; priceTier: string; warehouseId: number; paymentMethod: string;
+  customerId: number; saleDate?: string | null; priceTier: string; warehouseId: number; paymentMethod: string; accountNumber?: string | null;
   discountPct: number; vatRate: number; paidNow: number; dueDate?: string | null; lines: SaleLine[];
 }
 export interface SaleResult {
@@ -84,9 +84,10 @@ export interface PurchaseRow { id: number; poNumber: string; supplier: string; o
 export interface PurchaseDetail {
   id: number; poNumber: string; supplierId: number; supplier: string; orderDate: string; status: string; paymentStatus: string;
   totalAmount: number; amountPaid: number; items: { productId: number; product: string; sku: string; quantity: number; unitCost: number; lineTotal: number }[];
+  payments: { at: string; amount: number; method: string; bankName: string | null; accountName: string | null; accountNumber: string | null }[];
 }
 export interface PurchaseRequest {
-  supplierId: number; orderDate?: string | null; vatRate: number; receiveNow: boolean; warehouseId: number; paidNow: number; paymentMethod: string;
+  supplierId: number; orderDate?: string | null; vatRate: number; receiveNow: boolean; warehouseId: number; paidNow: number; paymentMethod: string; accountNumber?: string | null;
   lines: { productId: number; quantity: number; unitCost: number }[];
 }
 export interface PurchaseResult {

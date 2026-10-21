@@ -35,6 +35,7 @@ export const routes: Routes = [
       { path: 'expenses', canActivate: [adminGuard], loadComponent: () => import('./features/money/expenses').then(m => m.ExpensesPage), title: 'Expenses' },
       { path: 'rebates', canActivate: [adminGuard], loadComponent: () => import('./features/money/rebates').then(m => m.RebatesPage), title: 'Rebates' },
       { path: 'company', canActivate: [adminGuard], loadComponent: () => import('./features/company/company').then(m => m.CompanyPage), title: 'Company & documents' },
+      { path: 'campaigns', canActivate: [adminGuard], loadComponent: () => import('./features/campaigns/campaigns').then(m => m.CampaignsPage), title: 'Campaigns' },
       { path: 'analytics', canActivate: [adminGuard], loadComponent: () => import('./features/analytics/analytics').then(m => m.AnalyticsPage), title: 'Analytics' },
       { path: 'storage', canActivate: [adminGuard], loadComponent: () => import('./features/system/storage').then(m => m.StoragePage), title: 'Database storage' },
       { path: 'appearance', loadComponent: () => import('./features/system/appearance').then(m => m.AppearancePage), title: 'Appearance' },

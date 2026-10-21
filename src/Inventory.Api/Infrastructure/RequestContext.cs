@@ -17,7 +17,10 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     /// <summary>Set by the payment webhook only, from a reference this server generated and the processor confirmed. Signed-in requests never use it.</summary>
     public const string OverrideItem = "company-override";
 
-    public CompanyInfo Info => registry.Find(http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
+    /// <summary>Set by the campaign scheduler only (there is no HTTP request there): which company this scope works for.</summary>
+    public string? BackgroundKey { get; set; }
+
+    public CompanyInfo Info => registry.Find(BackgroundKey ?? http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
         ?? throw new InvalidOperationException("No company selected for this request.");
     public string Key => Info.Key;
     public string DocumentPrefix => Info.DocumentPrefix;

@@ -12,7 +12,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Api.Controllers;
 
 public sealed record VoidRequest(string Reason);
-public sealed record PaymentRequest(decimal Amount, string? Method);
+public sealed record PaymentRequest(decimal Amount, string? Method, string? AccountNumber = null, string? PayerName = null);
+public sealed record PurchasePaymentRequest(string? Method, string? AccountNumber);
 public sealed record ReceiveRequest(int WarehouseId);
 public sealed record SalePreviewResult(decimal Subtotal, decimal DiscountAmount, decimal VatAmount, decimal Total, decimal PreviousBalance,
     decimal AppliedToInvoice, decimal AppliedToPreviousBalance, decimal Outstanding, string Status);
@@ -23,7 +24,7 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     private const string IdempotencyHeader = "Idempotency-Key";
 
     [HttpGet, Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<InvoiceRowDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.InvoicesAsync(page, IsAdmin, ct);
+    public Task<PagedResult<InvoiceRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.InvoicesAsync(paging, IsAdmin, ct);
 
     [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
     public async Task<ActionResult<InvoiceDetailDto>> Get(int id, CancellationToken ct) => await q.InvoiceAsync(id, IsAdmin, ct) is { } d ? d : NotFound();
@@ -70,7 +71,7 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
 public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerService svc, CustomerPaymentService payments) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Admin)]
-    public Task<PagedResult<CustomerDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.CustomersAsync(page, ct);
+    public Task<PagedResult<CustomerDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.CustomersAsync(paging, ct);
 
     /// <summary>Picker for the sale form. Clerks may not open the Customers screen but must be able to choose a customer.</summary>
     [HttpGet("lookup"), Authorize(Policy = Policies.Staff)]
@@ -88,14 +89,14 @@ public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerServi
 
     [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Pay(int id, PaymentRequest r, CancellationToken ct) =>
-        Ok(new { applied = await payments.RecordAsync(id, r.Amount, string.IsNullOrWhiteSpace(r.Method) ? "Cash" : r.Method, Me, ct) });
+        Ok(new { applied = await payments.RecordAsync(id, r.Amount, string.IsNullOrWhiteSpace(r.Method) ? "Cash" : r.Method, r.AccountNumber, r.PayerName, Me, ct) });
 }
 
 [ApiController, Route("api/suppliers")]
 public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerService svc) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Admin)]
-    public Task<PagedResult<SupplierDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.SuppliersAsync(page, ct);
+    public Task<PagedResult<SupplierDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.SuppliersAsync(paging, ct);
 
     [HttpPost, Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Create(SupplierInput input, CancellationToken ct) => Ok(new { id = await svc.CreateSupplierAsync(input, Me, ct) });
@@ -111,7 +112,7 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
 public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQueries q) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Admin)]
-    public Task<PagedResult<PurchaseRowDto>> List([FromQuery] PageRequest page, CancellationToken ct) => q.ListAsync(page, ct);
+    public Task<PagedResult<PurchaseRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.ListAsync(paging, ct);
 
     [HttpGet("{id:int}"), Authorize(Policy = Policies.Admin)]
     public async Task<ActionResult<PurchaseDetailDto>> Get(int id, CancellationToken ct) => await q.GetAsync(id, ct) is { } d ? d : NotFound();
@@ -128,5 +129,5 @@ public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQ
     public async Task<IActionResult> Receive(int id, ReceiveRequest r, CancellationToken ct) { await svc.ReceiveAsync(id, r.WarehouseId, Me, ct); return NoContent(); }
 
     [HttpPost("{id:int}/pay"), Authorize(Policy = Policies.Admin)]
-    public async Task<IActionResult> Pay(int id, CancellationToken ct) { await svc.PayAsync(id, Me, ct); return NoContent(); }
+    public async Task<IActionResult> Pay(int id, PurchasePaymentRequest r, CancellationToken ct) { await svc.PayAsync(id, string.IsNullOrWhiteSpace(r.Method) ? "Cash" : r.Method, r.AccountNumber, Me, ct); return NoContent(); }
 }

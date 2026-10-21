@@ -45,6 +45,7 @@ nav a.active { background: var(--brand); color: var(--brand-on); font-weight: 60
 .switch button.on { color: #fff; }
 .switch button[data-co='chewypets'].on { background: #1f6b4f; }
 .switch button[data-co='candid'].on { background: #6a2c5b; }
+.switch button[data-co='k9cravings'].on { background: #8a4a14; }
 
 .user { position: relative; }
 .avatar { width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 2px solid var(--ink); background: var(--signal); color: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 1rem; letter-spacing: .04em; cursor: pointer; }

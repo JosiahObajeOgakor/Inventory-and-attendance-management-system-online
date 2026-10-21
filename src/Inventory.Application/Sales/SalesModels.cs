@@ -21,6 +21,9 @@ public sealed class SaleRequest
     public string PriceTier { get; set; } = PriceTiers.Retailer;
     public int WarehouseId { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
+    public string? AccountNumber { get; set; }
+    /// <summary>Who sent the money, if it was not the customer themselves ("Josiah paid for Ngozi"). Defaults to the customer's name.</summary>
+    public string? PayerName { get; set; }
     public decimal DiscountPct { get; set; }
     /// <summary>0 when VAT isn't being charged.</summary>
     public decimal VatRate { get; set; }

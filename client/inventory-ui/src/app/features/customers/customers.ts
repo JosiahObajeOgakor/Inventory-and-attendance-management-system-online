@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
+import { Api2 } from '../../core/api-more';
 import { Customer, CustomerInput, CustomerType } from '../../core/models';
+import { Bank } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { CustomerMetricsDialog } from './customer-metrics';
 import { Modal } from '../../shared/modal';
@@ -68,14 +70,24 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
         <form id="pay" [formGroup]="payForm" (ngSubmit)="pay()" class="form-grid" style="margin-top:.9rem" novalidate>
           <div class="field"><label for="pa">Amount received</label><input id="pa" class="input num" type="number" min="0.01" [max]="c.balance" step="0.01" formControlName="amount" /></div>
           <div class="field"><label for="pm">Paid by</label><select id="pm" class="input" formControlName="method"><option>Cash</option><option>Bank Transfer</option><option>Card</option></select></div>
+          @if (payForm.controls.method.value === 'Bank Transfer' && payForm.controls.amount.value > 0 && banks().length) {
+            <div class="field"><label for="customer-account">Company account received into</label>
+              <select id="customer-account" class="input" formControlName="accountNumber">
+                <option value="">Choose an account</option>
+                @for (b of banks(); track b.accountNumber) { <option [value]="b.accountNumber">{{ b.bankName }} · {{ b.accountName }} · {{ b.accountNumber }}</option> }
+              </select></div>
+            <div class="field"><label for="customer-payer">Sent by (name on the transfer)</label><input id="customer-payer" class="input" formControlName="payerName" [placeholder]="c.name" maxlength="150" /></div>
+          }
+          @if (accountError()) { <p class="notice bad span-2" role="alert">{{ accountError() }}</p> }
         </form>
       }
-      <ng-container modal-actions><button type="button" class="btn" (click)="paying.set(null)">Cancel</button><button type="submit" form="pay" class="btn btn-primary" [disabled]="payForm.invalid || busy()">Record payment</button></ng-container>
+      <ng-container modal-actions><button type="button" class="btn" (click)="paying.set(null)">Cancel</button><button type="submit" form="pay" class="btn btn-primary" [disabled]="payForm.invalid || busy() || (payForm.controls.method.value === 'Bank Transfer' && payForm.controls.amount.value > 0 && banks().length > 0 && !payForm.controls.accountNumber.value)">Record payment</button></ng-container>
     </app-modal>`,
   styles: `.sm { font-size: .75rem; } .owes { color: var(--stamp); font-weight: 600; }`,
 })
 export class CustomersPage implements OnInit {
   private readonly api = inject(Api);
+  private readonly api2 = inject(Api2);
   private readonly fb = inject(FormBuilder);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
@@ -85,14 +97,19 @@ export class CustomersPage implements OnInit {
   protected readonly editing = signal<Customer | null>(null);
   protected readonly paying = signal<Customer | null>(null);
   protected readonly busy = signal(false);
+  protected readonly banks = signal<Bank[]>([]);
+  protected readonly accountError = signal('');
 
   protected readonly form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(150)]], customerType: ['Retailer' as CustomerType], contactName: [''], phone: [''], email: ['', Validators.email],
     location: [''], taxId: [''], address: [''], rebateRatePct: [1, [Validators.min(0), Validators.max(100)]], creditLimit: [0, Validators.min(0)],
   });
-  protected readonly payForm = this.fb.nonNullable.group({ amount: [0, [Validators.required, Validators.min(0.01)]], method: ['Cash'] });
+  protected readonly payForm = this.fb.nonNullable.group({ amount: [0, [Validators.required, Validators.min(0.01)]], method: ['Cash'], accountNumber: [''], payerName: [''] });
 
-  ngOnInit() { void this.list.load(); }
+  ngOnInit() {
+    void this.list.load();
+    void this.api2.companyProfile().then(p => this.banks.set(p.banks)).catch(e => this.accountError.set(messageOf(e)));
+  }
 
   protected openNew() { this.editing.set(null); this.form.reset({ customerType: 'Retailer', rebateRatePct: 1, creditLimit: 0 }); this.formOpen.set(true); }
   protected openEdit(c: Customer) {
@@ -101,7 +118,7 @@ export class CustomersPage implements OnInit {
       taxId: c.taxId ?? '', address: c.address ?? '', rebateRatePct: c.rebateRatePct, creditLimit: c.creditLimit });
     this.formOpen.set(true);
   }
-  protected openPay(c: Customer) { this.paying.set(c); this.payForm.reset({ amount: c.balance, method: 'Cash' }); }
+  protected openPay(c: Customer) { this.accountError.set(''); this.paying.set(c); this.payForm.reset({ amount: c.balance, method: 'Cash', accountNumber: '', payerName: '' }); }
 
   protected async save() {
     if (this.form.invalid) return;
@@ -121,8 +138,9 @@ export class CustomersPage implements OnInit {
   protected async pay() {
     const c = this.paying(); if (!c || this.payForm.invalid) return;
     const v = this.payForm.getRawValue();
+    if (v.method === 'Bank Transfer' && v.amount > 0 && this.banks().length > 0 && !v.accountNumber) return;
     this.busy.set(true);
-    try { await this.api.recordPayment(c.id, v.amount, v.method); this.toasts.ok('Payment recorded.'); this.paying.set(null); await this.list.load(); }
+    try { await this.api.recordPayment(c.id, v.amount, v.method, v.accountNumber || null, v.payerName.trim() || null); this.toasts.ok('Payment recorded.'); this.paying.set(null); await this.list.load(); }
     catch (e) { this.toasts.error(messageOf(e)); } finally { this.busy.set(false); }
   }
 

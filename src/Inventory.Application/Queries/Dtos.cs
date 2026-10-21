@@ -36,7 +36,8 @@ public sealed record CustomerInput(string Name, string CustomerType, string? Con
 public sealed record InvoiceRowDto(int Id, string InvoiceNumber, string Customer, DateOnly InvoiceDate, string PaymentMethod, decimal TotalAmount,
     string Status, decimal? EstProfit);
 public sealed record InvoiceItemDto(int ProductId, string Product, string Sku, string Unit, int Quantity, decimal UnitPrice, decimal LineTotal, decimal? UnitCost);
-public sealed record PaymentDto(DateTime At, decimal Amount, string Method);
+public sealed record PaymentDto(DateTime At, decimal Amount, string Method, string? BankName, string? AccountName, string? AccountNumber, string? PayerName = null);
+public sealed record SupplierPaymentDto(DateTime At, decimal Amount, string Method, string? BankName, string? AccountName, string? AccountNumber);
 public sealed record InvoiceDetailDto(int Id, string InvoiceNumber, int CustomerId, string Customer, string CustomerType, DateOnly InvoiceDate,
     DateOnly? DueDate, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount, decimal VatRate, decimal VatAmount, decimal TotalAmount,
     decimal AmountPaid, string Status, string PaymentMethod, string PriceTier, int? WarehouseId, string CreatedBy, string? VoidReason,
@@ -45,7 +46,7 @@ public sealed record InvoiceDetailDto(int Id, string InvoiceNumber, int Customer
 public sealed record PurchaseRowDto(int Id, string PoNumber, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus, decimal TotalAmount, decimal AmountPaid);
 public sealed record PurchaseItemDto(int ProductId, string Product, string Sku, int Quantity, decimal UnitCost, decimal LineTotal);
 public sealed record PurchaseDetailDto(int Id, string PoNumber, int SupplierId, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus,
-    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items);
+    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items, IReadOnlyList<SupplierPaymentDto> Payments);
 
 public sealed record LedgerRowDto(int Id, DateOnly EntryDate, string AccountName, string AccountType, string EntryType, decimal Amount, string? Reference);
 

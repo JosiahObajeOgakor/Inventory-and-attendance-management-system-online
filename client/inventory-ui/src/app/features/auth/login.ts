@@ -68,7 +68,7 @@ import { CompanyChoice } from '../../core/models';
     .choice { display: flex; align-items: center; gap: .7rem; padding: .7rem .85rem; border: 1.5px solid var(--line-strong); border-radius: var(--r-2); cursor: pointer; font-weight: 600; background: #fff; transition: border-color .12s, background .12s; }
     .choice input { position: absolute; opacity: 0; }
     .choice .dot { width: 1rem; height: 1rem; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; }
-    .choice[data-co='chewypets'] { --c: #1f6b4f; --t: #dcebe3; } .choice[data-co='candid'] { --c: #6a2c5b; --t: #ecdfe8; }
+    .choice[data-co='chewypets'] { --c: #1f6b4f; --t: #dcebe3; } .choice[data-co='candid'] { --c: #6a2c5b; --t: #ecdfe8; } .choice[data-co='k9cravings'] { --c: #8a4a14; --t: #f3e5d6; }
     .choice.on { border-color: var(--c); background: var(--t); } .choice.on .dot { border-color: var(--c); background: var(--c); box-shadow: inset 0 0 0 3px var(--t); }
     .choice:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: 2px; }
     .small { font-size: .8125rem; }

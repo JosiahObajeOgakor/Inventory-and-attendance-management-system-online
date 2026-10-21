@@ -20,12 +20,14 @@ public static class DependencyInjection
     {
         s.AddValidatorsFromAssemblyContaining<SaleRequestValidator>();
         s.AddScoped<TransactionRunner>();
+        s.AddScoped<PaymentAccountService>();
         s.AddScoped<StockService>();
         s.AddScoped<SalesService>();
         s.AddScoped<CustomerPaymentService>();
         s.AddScoped<InvoiceVoidService>();
         s.AddScoped<PurchaseService>();
         s.AddScoped<StockOperations>();
+        s.AddScoped<StockConsolidationService>();
         s.AddScoped<ProductService>();
         s.AddScoped<PartnerService>();
         s.AddScoped<CatalogQueries>();
@@ -59,6 +61,16 @@ public static class DependencyInjection
         s.AddScoped<SalesAssistant.SalesAssistantToolbox>();
         s.AddScoped<SalesAssistant.VetGuidanceService>();
         s.AddScoped<SalesAssistant.SalesAssistantService>();
+        s.AddScoped<SalesAssistant.Chat.StockAvailabilityService>();
+        s.AddScoped<SalesAssistant.Chat.ChatAiInterpreter>();
+        s.AddScoped<SalesAssistant.Chat.ChatOrderText>();
+        s.AddScoped<SalesAssistant.Chat.ChatFlowService>();
+        s.AddScoped<SalesAssistant.Chat.ChatPaymentNotifier>();
+        s.AddScoped<Campaigns.ConsentService>();
+        s.AddScoped<Campaigns.CampaignPlanner>();
+        s.AddScoped<Campaigns.CampaignWriter>();      // scoped on purpose: one scope = one run = one AI budget
+        s.AddScoped<Campaigns.CampaignRunner>();
+        s.AddScoped<Campaigns.CampaignService>();
         return s;
     }
 }

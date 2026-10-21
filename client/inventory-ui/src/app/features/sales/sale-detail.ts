@@ -55,7 +55,7 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
             <div class="pay">
               @if (s.payments.length) {
                 <span class="eyebrow">Payments</span>
-                @for (p of s.payments; track $index) { <div class="row"><span>{{ p.at | stampTime }} · {{ p.method }}</span><span class="mono">{{ p.amount | naira }}</span></div> }
+                @for (p of s.payments; track $index) { <div class="row"><span>{{ p.at | stampTime }} · @if (p.payerName) { <strong>{{ p.payerName }}</strong> paid by } {{ p.method }}@if (p.accountNumber) { <span class="muted"> · received into {{ p.bankName }} · {{ p.accountName }} · {{ p.accountNumber }}</span> }</span><span class="mono">{{ p.amount | naira }}</span></div> }
               }
             </div>
             <dl class="totals">

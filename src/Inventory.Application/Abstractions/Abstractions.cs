@@ -41,6 +41,9 @@ public interface IBusinessDbContext
     DbSet<PaymentLink> PaymentLinks { get; }
     DbSet<ChatConversation> ChatConversations { get; }
     DbSet<ChatLogMessage> ChatMessages { get; }
+    DbSet<SupplierPayment> SupplierPayments { get; }
+    DbSet<Campaign> Campaigns { get; }
+    DbSet<CampaignMessage> CampaignMessages { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);

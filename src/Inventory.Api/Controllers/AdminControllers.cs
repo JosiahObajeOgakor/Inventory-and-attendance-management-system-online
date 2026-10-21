@@ -30,7 +30,7 @@ public class FinanceController(ICurrentUser cu, FinanceQueries q) : AppControlle
     public Task<List<MonthlyIncomeDto>> Income([FromQuery] int year, CancellationToken ct) => q.MonthlyIncomeAsync(year, ct);
 
     [HttpGet("ledger")]
-    public Task<PagedResult<LedgerRowDto>> Ledger([FromQuery] PageRequest page, [FromQuery] string? accountType, CancellationToken ct) => q.LedgerAsync(page, accountType, ct);
+    public Task<PagedResult<LedgerRowDto>> Ledger([FromQuery] PageRequest paging, [FromQuery] string? accountType, CancellationToken ct) => q.LedgerAsync(paging, accountType, ct);
 }
 
 public sealed record UserRow(int Id, string Username, string FullName, string Role, bool IsActive, bool MustChangePassword, string CompanyAccess, DateTime? LastLoginAt);
@@ -113,21 +113,21 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
 public class AuditController(ICurrentUser cu, IBusinessDbContext db, IdentityStore store) : AppController(cu)
 {
     [HttpGet]
-    public async Task<PagedResult<AuditRowDto>> Actions([FromQuery] PageRequest page, CancellationToken ct)
+    public async Task<PagedResult<AuditRowDto>> Actions([FromQuery] PageRequest paging, CancellationToken ct)
     {
         var q = db.AuditLogs.AsNoTracking().AsQueryable();
-        if (page.Term is { } t) q = q.Where(a => a.Action.Contains(t) || a.UserName.Contains(t) || a.Entity.Contains(t) || (a.Detail != null && a.Detail.Contains(t)));
+        if (paging.Term is { } t) q = q.Where(a => a.Action.Contains(t) || a.UserName.Contains(t) || a.Entity.Contains(t) || (a.Detail != null && a.Detail.Contains(t)));
         var total = await q.CountAsync(ct);
-        var items = await q.OrderByDescending(a => a.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
+        var items = await q.OrderByDescending(a => a.Id).Skip((paging.SafePage - 1) * paging.SafeSize).Take(paging.SafeSize)
             .Select(a => new AuditRowDto(a.Id, a.At, a.UserName, a.Action, a.Entity, a.EntityId, a.Detail)).ToListAsync(ct);
-        return new PagedResult<AuditRowDto>(items, total, page.SafePage, page.SafeSize);
+        return new PagedResult<AuditRowDto>(items, total, paging.SafePage, paging.SafeSize);
     }
 
     [HttpGet("logins")]
-    public async Task<PagedResult<LoginAuditEntry>> Logins([FromQuery] PageRequest page, CancellationToken ct)
+    public async Task<PagedResult<LoginAuditEntry>> Logins([FromQuery] PageRequest paging, CancellationToken ct)
     {
         var total = await store.LoginAudit.CountAsync(ct);
-        var items = await store.LoginAudit.AsNoTracking().OrderByDescending(a => a.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
-        return new PagedResult<LoginAuditEntry>(items, total, page.SafePage, page.SafeSize);
+        var items = await store.LoginAudit.AsNoTracking().OrderByDescending(a => a.Id).Skip((paging.SafePage - 1) * paging.SafeSize).Take(paging.SafeSize).ToListAsync(ct);
+        return new PagedResult<LoginAuditEntry>(items, total, paging.SafePage, paging.SafeSize);
     }
 }

@@ -19,6 +19,41 @@ public class ChatConversation
     public int? QuotationId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastMessageAt { get; set; }
+
+    // ---- deterministic chat flow (WhatsApp via Twilio) ----
+    /// <summary>Where the buying conversation is: see <see cref="ChatStates"/>.</summary>
+    public string State { get; set; } = ChatStates.Idle;
+    /// <summary>Language the customer is writing in: see <see cref="ChatLanguages"/>. Sticky until the customer clearly switches.</summary>
+    public string Language { get; set; } = ChatLanguages.English;
+    /// <summary>The order being built (lines, pending question), as JSON. Only ever product ids and quantities — never a price.</summary>
+    public string? DraftJson { get; set; }
+    /// <summary>AI calls spent on the sale in progress. Hard-capped; reset to 0 when the sale completes or is cancelled.</summary>
+    public int AiCalls { get; set; }
+}
+
+public static class ChatStates
+{
+    public const string Idle = "Idle";
+    /// <summary>We asked what they want / which product / how many.</summary>
+    public const string Collecting = "Collecting";
+    public const string AwaitingName = "AwaitingName";
+    /// <summary>Web chat only: asked for the customer's WhatsApp number (WhatsApp already knows it).</summary>
+    public const string AwaitingPhone = "AwaitingPhone";
+    /// <summary>First order only: asked whether we may send reminders and offers. A yes/no in words, like everything else.</summary>
+    public const string AwaitingConsent = "AwaitingConsent";
+    public const string AwaitingConfirm = "AwaitingConfirm";
+    /// <summary>A virtual account was issued; waiting for the transfer.</summary>
+    public const string AwaitingPayment = "AwaitingPayment";
+}
+
+public static class ChatLanguages
+{
+    public const string English = "en";
+    public const string Pidgin = "pcm";
+    public const string Igbo = "ig";
+    public const string Hausa = "ha";
+    public const string Igala = "igl";
+    public static readonly string[] All = [English, Pidgin, Igbo, Hausa, Igala];
 }
 
 public static class ChatRoles

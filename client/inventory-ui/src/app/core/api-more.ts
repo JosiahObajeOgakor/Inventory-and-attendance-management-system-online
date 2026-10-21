@@ -30,7 +30,7 @@ export class Api2 {
   quotations(q: PageQuery) { return this.get<Paged<N.QuotationRow>>('/api/quotations', q); }
   quotation(id: number) { return this.get<N.QuotationDetail>(`/api/quotations/${id}`); }
   createQuotation(r: N.QuoteRequest) { return this.post<N.QuoteResult>('/api/quotations', r); }
-  convertQuotation(id: number, r: { warehouseId: number; paymentMethod: string; paidNow: number; dueDate: string | null }) { return this.post<SaleResult>(`/api/quotations/${id}/convert`, r); }
+  convertQuotation(id: number, r: { warehouseId: number; paymentMethod: string; accountNumber: string | null; paidNow: number; dueDate: string | null }) { return this.post<SaleResult>(`/api/quotations/${id}/convert`, r); }
   deleteQuotation(id: number) { return this.del<void>(`/api/quotations/${id}`); }
   waybills(q: PageQuery) { return this.get<Paged<N.WaybillRow>>('/api/waybills', q); }
   waybillInvoices(q: PageQuery & { pendingOnly?: boolean }) { return this.get<Paged<N.PendingInvoice>>('/api/waybills/invoices', q); }

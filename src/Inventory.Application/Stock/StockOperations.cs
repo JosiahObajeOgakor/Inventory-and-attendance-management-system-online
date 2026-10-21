@@ -17,8 +17,17 @@ public sealed class StockOperations(IBusinessDbContext db, TransactionRunner tx,
         {
             if (quantity <= 0) throw new BusinessRuleException("Enter how many were produced.");
             await EnsureProductAndWarehouse(productId, warehouseId, inner);
-            var batch = string.IsNullOrWhiteSpace(batchNumber) ? "PROD-" + producedOn.ToString("yyMMdd") : batchNumber.Trim();
-            var b = await stock.AddToBatchAsync(productId, warehouseId, batch, quantity, expiry, inner);
+            // No batch number typed: add to the product's existing stock (same expiry) like a purchase does. A number typed on purpose still names its own batch.
+            StockBatch b;
+            if (string.IsNullOrWhiteSpace(batchNumber))
+            {
+                await stock.LockWarehouseBatchesAsync(productId, warehouseId, inner);
+                var existing = db.StockBatches.Local.Where(x => x.ProductId == productId && x.WarehouseId == warehouseId && x.ExpiryDate == expiry).OrderBy(x => x.Id == 0 ? int.MaxValue : x.Id).FirstOrDefault();
+                b = existing is not null
+                    ? await stock.AddToBatchAsync(productId, warehouseId, existing.BatchNumber, quantity, expiry, inner)
+                    : await stock.AddToBatchAsync(productId, warehouseId, StockService.ShelfBatchNumber(expiry), quantity, expiry, inner);
+            }
+            else b = await stock.AddToBatchAsync(productId, warehouseId, batchNumber.Trim(), quantity, expiry, inner);
             await db.SaveChangesAsync(inner);   // batch id needed as the movement's reference
             var m = stock.AddMovement(productId, warehouseId, MovementTypes.In, quantity, MovementReferences.Production, b.Id, user.Id);
             m.MovementDate = producedOn.ToDateTime(TimeOnly.MinValue) - TimeSpan.FromHours(1);   // production date, Lagos midnight, stored UTC

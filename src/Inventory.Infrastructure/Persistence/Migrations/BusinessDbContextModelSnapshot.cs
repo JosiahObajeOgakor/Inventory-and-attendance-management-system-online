@@ -16,7 +16,7 @@ namespace Inventory.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("Inventory.Domain.Entities.AttendanceEvent", b =>
@@ -100,6 +100,143 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("audit_log", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.Campaign", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("CooldownDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("EveryNDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FallbackRepurchaseDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastRunAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("LastRunNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<DateTime?>("LastRunOn")
+                        .HasColumnType("date");
+
+                    b.Property<int>("LastRunSent")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxRecipients")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<int>("RunMinute")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SendEmail")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("SendWhatsApp")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("ThresholdDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Type")
+                        .IsUnique();
+
+                    b.ToTable("campaigns", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.CampaignMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CampaignId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)");
+
+                    b.Property<string>("Mode")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("varchar(120)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignId", "CreatedAt");
+
+                    b.HasIndex("CustomerId", "CreatedAt");
+
+                    b.ToTable("campaign_messages", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -125,6 +262,9 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
+                    b.Property<int>("AiCalls")
+                        .HasColumnType("int");
+
                     b.Property<string>("Channel")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -137,10 +277,19 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.Property<int?>("CustomerId")
                         .HasColumnType("int");
 
+                    b.Property<string>("DraftJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("varchar(4000)");
+
                     b.Property<string>("ExternalId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)");
 
                     b.Property<DateTime>("LastMessageAt")
                         .HasPrecision(6)
@@ -148,6 +297,11 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("QuotationId")
                         .HasColumnType("int");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
 
                     b.HasKey("Id");
 
@@ -327,6 +481,19 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)");
 
+                    b.Property<string>("MarketingSource")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("MarketingStatus")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("varchar(12)");
+
+                    b.Property<DateTime?>("MarketingUpdatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -335,6 +502,10 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.Property<string>("Phone")
                         .HasMaxLength(30)
                         .HasColumnType("varchar(30)");
+
+                    b.Property<string>("PreferredLanguage")
+                        .HasMaxLength(5)
+                        .HasColumnType("varchar(5)");
 
                     b.Property<decimal>("RebateRatePct")
                         .HasPrecision(5, 2)
@@ -730,9 +901,21 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
+                    b.Property<string>("AccountName")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
                     b.Property<decimal>("Amount")
                         .HasPrecision(14, 2)
                         .HasColumnType("decimal(14,2)");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
 
                     b.Property<int>("InvoiceId")
                         .HasColumnType("int");
@@ -741,6 +924,10 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
+
+                    b.Property<string>("PayerName")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
 
                     b.Property<DateTime>("PaymentDate")
                         .HasPrecision(6)
@@ -762,9 +949,17 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
                     b.Property<decimal>("Amount")
                         .HasPrecision(14, 2)
                         .HasColumnType("decimal(14,2)");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
 
                     b.Property<string>("Channel")
                         .HasMaxLength(40)
@@ -792,6 +987,13 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
 
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ExternalId")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
                     b.Property<DateTime?>("NotifiedAt")
                         .HasPrecision(6)
                         .HasColumnType("datetime(6)");
@@ -804,6 +1006,11 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasPrecision(6)
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
                     b.Property<string>("Reference")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -811,8 +1018,8 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("varchar(10)");
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
 
                     b.Property<string>("Url")
                         .IsRequired()
@@ -821,6 +1028,8 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExternalId");
+
                     b.HasIndex("Reference")
                         .IsUnique();
 
@@ -828,7 +1037,7 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.ToTable("payment_links", null, t =>
                         {
-                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid')");
+                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled')");
                         });
                 });
 
@@ -1439,6 +1648,55 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("suppliers", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<string>("AccountName")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(80)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<int>("PaidByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PaymentDate")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("PurchaseOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("supplier_payments", (string)null);
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.Warehouse", b =>

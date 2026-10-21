@@ -207,6 +207,8 @@ public static class PaymentLinkStatuses
 {
     public const string Pending = "Pending";
     public const string Paid = "Paid";
+    /// <summary>Money arrived but the sale could not be completed (e.g. stock ran out after the reservation lapsed). A person must refund or fulfil.</summary>
+    public const string PaidUnfulfilled = "PaidUnfulfilled";
 }
 
 /// <summary>An online-payment link (Paystack) for a quotation or an invoice, at an exact amount. One row per link; a paid row is never changed again.</summary>
@@ -228,4 +230,11 @@ public class PaymentLink
     public string? Channel { get; set; }
     /// <summary>When the admin was told. Null on a paid link means the message failed and someone should check.</summary>
     public DateTime? NotifiedAt { get; set; }
+    /// <summary>Which processor issued this: Paystack (hosted link) or AlatPay (virtual bank account shown inside the chat).</summary>
+    public string Provider { get; set; } = "Paystack";
+    /// <summary>The processor's own id for the attempt (AlatPay transactionId), used to ask it whether the money arrived.</summary>
+    public string? ExternalId { get; set; }
+    public string? AccountNumber { get; set; }
+    public string? BankName { get; set; }
+    public DateTime? ExpiresAt { get; set; }
 }

@@ -20,8 +20,8 @@ public abstract class AppController(ICurrentUser current) : ControllerBase
 public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductService svc) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<ProductDto>> List([FromQuery] PageRequest page, [FromQuery] bool includeInactive, CancellationToken ct) =>
-        q.ProductsAsync(page, includeInactive && IsAdmin, IsAdmin, ct);
+    public Task<PagedResult<ProductDto>> List([FromQuery] PageRequest paging, [FromQuery] bool includeInactive, CancellationToken ct) =>
+        q.ProductsAsync(paging, includeInactive && IsAdmin, IsAdmin, ct);
 
     [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
     public async Task<ActionResult<ProductDto>> Get(int id, CancellationToken ct) =>
@@ -76,15 +76,28 @@ public class ReferenceDataController(ICurrentUser cu, CatalogQueries q, PartnerS
 }
 
 [ApiController, Route("api/inventory")]
-public class InventoryController(ICurrentUser cu, CatalogQueries q) : AppController(cu)
+public class InventoryController(ICurrentUser cu, CatalogQueries q, Inventory.Application.Stock.StockConsolidationService consolidation) : AppController(cu)
 {
+    /// <summary>What "Tidy up" would do: products sharing a name that would become one, and stock rows that would be added together. Changes nothing.</summary>
+    [HttpGet("consolidate/preview"), Authorize(Policy = Policies.Admin)]
+    public Task<Inventory.Application.Stock.ConsolidationPreview> ConsolidatePreview(CancellationToken ct) => consolidation.PreviewAsync(ct);
+
+    /// <summary>Does it. Quantities are added, never lost (the total on hand must be identical afterwards or nothing is saved).</summary>
+    [HttpPost("consolidate"), Authorize(Policy = Policies.Admin)]
+    public async Task<object> Consolidate(CancellationToken ct)
+    {
+        var result = await consolidation.RunAsync(Me, ct);
+        var guard = await consolidation.EnsureUniqueNameGuardAsync(ct);
+        return new { result.ProductsMerged, result.StockRowsMerged, result.StockOnHandBefore, result.StockOnHandAfter, DatabaseRefusesDuplicateNames = guard };
+    }
+
     [HttpGet("batches"), Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<BatchRowDto>> Batches([FromQuery] PageRequest page, [FromQuery] bool onlyLow, CancellationToken ct) => q.BatchesAsync(page, onlyLow, ct);
+    public Task<PagedResult<BatchRowDto>> Batches([FromQuery] PageRequest paging, [FromQuery] bool onlyLow, CancellationToken ct) => q.BatchesAsync(paging, onlyLow, ct);
 
     /// <param name="referenceType">Production | Transfer | PurchaseOrder | Invoice | OpeningBalance | Manual …</param>
     [HttpGet("movements"), Authorize(Policy = Policies.Staff)]
-    public Task<PagedResult<MovementRowDto>> Movements([FromQuery] PageRequest page, [FromQuery] string? referenceType, [FromQuery] int? productId, CancellationToken ct) =>
-        q.MovementsAsync(page, referenceType, productId, ct);
+    public Task<PagedResult<MovementRowDto>> Movements([FromQuery] PageRequest paging, [FromQuery] string? referenceType, [FromQuery] int? productId, CancellationToken ct) =>
+        q.MovementsAsync(paging, referenceType, productId, ct);
 }
 
 public sealed record ProductionRequest(int ProductId, int WarehouseId, int Quantity, DateOnly? ProducedOn, string? BatchNumber, DateOnly? ExpiryDate);

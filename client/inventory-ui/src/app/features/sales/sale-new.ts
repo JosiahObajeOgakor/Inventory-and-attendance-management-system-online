@@ -6,6 +6,7 @@ import { Api, messageOf, problemOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Auth } from '../../core/auth.service';
 import { CustomerLookup, CustomerType, Problem, Product, SalePreview, SaleRequest, Warehouse } from '../../core/models';
+import { Bank } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Toasts } from '../../shared/feedback';
@@ -137,6 +138,13 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
             <div class="field"><label for="paid">Amount received now</label>
               <div class="inline"><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
                 <button type="button" class="btn btn-sm" [disabled]="!preview()" (click)="payInFull()">Full</button></div></div>
+            @if (form.controls.paymentMethod.value === 'Bank Transfer' && form.controls.paidNow.value > 0 && banks().length) {
+              <div class="field"><label for="sale-account">Company account received into</label>
+                <select id="sale-account" class="input" formControlName="accountNumber">
+                  <option value="">Choose an account</option>
+                  @for (b of banks(); track b.accountNumber) { <option [value]="b.accountNumber">{{ b.bankName }} · {{ b.accountName }} · {{ b.accountNumber }}</option> }
+                </select></div>
+            }
             @if ((preview()?.outstanding ?? 0) > 0) {
               <div class="field"><label for="due">Payment due by</label><input id="due" class="input" type="date" formControlName="dueDate" /></div>
             }
@@ -207,6 +215,7 @@ export class SaleNew implements OnInit {
   protected readonly customers = signal<CustomerLookup[]>([]);
   protected readonly customer = signal<CustomerLookup | null>(null);
   protected readonly warehouses = signal<Warehouse[]>([]);
+  protected readonly banks = signal<Bank[]>([]);
   protected readonly lines = signal<Line[]>([]);
   protected readonly results = signal<Product[]>([]);
   protected readonly preview = signal<SalePreview | null>(null);
@@ -221,6 +230,7 @@ export class SaleNew implements OnInit {
     warehouseId: [0, Validators.min(1)],
     priceTier: ['Retailer' as Tier],
     paymentMethod: ['Cash'],
+    accountNumber: [''],
     discountPct: [0, [Validators.min(0), Validators.max(100)]],
     vat: [true],
     paidNow: [0, Validators.min(0)],
@@ -234,8 +244,10 @@ export class SaleNew implements OnInit {
   protected readonly request = computed<SaleRequest | null>(() => {
     const c = this.customer(); const f = this.formValue(); const lines = this.lines();
     if (!c || !lines.length || !(Number(f.warehouseId) > 0) || lines.some(l => !(l.qty > 0) || l.price < 0)) return null;
+    if (f.paymentMethod === 'Bank Transfer' && asNumber(f.paidNow) > 0 && this.banks().length > 0 && !f.accountNumber) return null;
     return {
       customerId: c.id, priceTier: f.priceTier ?? 'Retailer', warehouseId: Number(f.warehouseId), paymentMethod: f.paymentMethod ?? 'Cash',
+      accountNumber: f.paymentMethod === 'Bank Transfer' ? f.accountNumber || null : null,
       discountPct: asNumber(f.discountPct), vatRate: f.vat ? VAT : 0, paidNow: asNumber(f.paidNow), dueDate: f.dueDate || null,
       lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitPrice: l.price, ...(l.tracks && !this.quote ? { serials: splitSerials(l.serials) } : {}) })),
     };
@@ -276,6 +288,8 @@ export class SaleNew implements OnInit {
       this.warehouses.set(ws); this.customers.set(cs);
       if (ws[0]) this.form.controls.warehouseId.setValue(ws[0].id);
     } catch (e) { this.error.set(messageOf(e)); }
+    try { this.banks.set((await this.api2.companyProfile()).banks); }
+    catch (e) { this.error.set(messageOf(e)); }
   }
 
   // ---- customer ----

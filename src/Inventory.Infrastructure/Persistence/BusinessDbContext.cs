@@ -41,6 +41,9 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<PaymentLink> PaymentLinks => Set<PaymentLink>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatLogMessage> ChatMessages => Set<ChatLogMessage>();
+    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public DbSet<Campaign> Campaigns => Set<Campaign>();
+    public DbSet<CampaignMessage> CampaignMessages => Set<CampaignMessage>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
@@ -157,6 +160,10 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Address).HasMaxLength(200);
             e.Property(x => x.Email).HasMaxLength(100);
             e.Property(x => x.CustomerType).HasMaxLength(20).IsRequired();
+            e.Property(x => x.MarketingStatus).HasMaxLength(12).IsRequired();
+            e.Property(x => x.MarketingSource).HasMaxLength(20);
+            e.Property(x => x.PreferredLanguage).HasMaxLength(5);
+            e.Property(x => x.MarketingUpdatedAt).HasPrecision(6);
             e.Property(x => x.TaxId).HasMaxLength(40);
             e.Property(x => x.RebateRatePct).HasPrecision(5, 2);
             e.Property(x => x.CreditLimit).HasPrecision(14, 2);
@@ -200,6 +207,10 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Amount).HasPrecision(14, 2);
             e.Property(x => x.Method).HasMaxLength(20).IsRequired();
             e.Property(x => x.PaymentDate).HasPrecision(6);
+            e.Property(x => x.BankName).HasMaxLength(80);
+            e.Property(x => x.AccountName).HasMaxLength(150);
+            e.Property(x => x.AccountNumber).HasMaxLength(40);
+            e.Property(x => x.PayerName).HasMaxLength(150);
         });
         b.Entity<PriceOverride>(e =>
         {

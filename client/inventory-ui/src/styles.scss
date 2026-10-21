@@ -41,6 +41,13 @@ html[data-company='candid'] {
   --brand-tint: #ecdfe8;
 }
 
+/* K9 Cravings: a warm biscuit-brown, so nobody records a sale in the wrong business. */
+html[data-company='k9cravings'] {
+  --brand: #8a4a14;
+  --brand-2: #66360d;
+  --brand-tint: #f3e5d6;
+}
+
 *,
 *::before,
 *::after { box-sizing: border-box; }

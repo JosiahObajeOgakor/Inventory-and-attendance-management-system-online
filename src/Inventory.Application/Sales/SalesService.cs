@@ -16,7 +16,7 @@ namespace Inventory.Application.Sales;
 /// </summary>
 public sealed class SalesService(
     IBusinessDbContext db, TransactionRunner tx, StockService stock, IClock clock,
-    ICompanyContext company, IValidator<SaleRequest> validator)
+    ICompanyContext company, IValidator<SaleRequest> validator, PaymentAccountService? paymentAccounts = null)
 {
     private const string IdempotencyScope = "sale";
 
@@ -77,6 +77,7 @@ public sealed class SalesService(
         var previous = customer.Balance;
         var totals = DocumentCalculator.Sale(lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
         var split = PaymentWaterfall.ForNewDocument(previous, totals.Total, req.PaidNow);
+        var account = paymentAccounts is null ? null : await paymentAccounts.ResolveAsync(req.PaymentMethod, req.AccountNumber, split.PaidNow, ct);
 
         var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.Invoices.AnyAsync(i => i.InvoiceNumber == n, c), ct);
         var invoice = new Invoice
@@ -126,7 +127,7 @@ public sealed class SalesService(
                 var old = open.First(i => i.Id == a.DocumentId);
                 old.AmountPaid += a.Amount;
                 old.Status = old.AmountPaid >= old.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
-                db.Payments.Add(new Payment { InvoiceId = old.Id, PaymentDate = clock.UtcNow, Amount = a.Amount, Method = req.PaymentMethod, ReceivedByUserId = user.Id });
+                db.Payments.Add(new Payment { InvoiceId = old.Id, PaymentDate = clock.UtcNow, Amount = a.Amount, Method = req.PaymentMethod, ReceivedByUserId = user.Id }.With(account, req.PayerName ?? customer.Name));
             }
             appliedToOld = applied;
         }
@@ -138,7 +139,7 @@ public sealed class SalesService(
         if (split.Outstanding > 0)
             db.Ledger.Add(Ledger(saleDate, customer, LedgerEntryTypes.Debit, split.Outstanding, number));
         if (split.AppliedToNew > 0)
-            db.Payments.Add(new Payment { InvoiceId = invoice.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew, Method = req.PaymentMethod, ReceivedByUserId = user.Id });
+            db.Payments.Add(new Payment { InvoiceId = invoice.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew, Method = req.PaymentMethod, ReceivedByUserId = user.Id }.With(account, req.PayerName ?? customer.Name));
 
         var rebate = RebateCalculator.Accrue(customer.CustomerType, totals.Total, totals.VatAmount, customer.RebateRatePct);
         if (rebate > 0)

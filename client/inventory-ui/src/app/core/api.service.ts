@@ -61,6 +61,8 @@ export class Api {
   addCategory(name: string) { return this.post<{ id: number }>('/api/categories', { name }); }
   addWarehouse(name: string, location: string | null) { return this.post<{ id: number }>('/api/warehouses', { name, location }); }
   batches(q: M.PageQuery & { onlyLow?: boolean }) { return this.get<M.Paged<M.BatchRow>>('/api/inventory/batches', q); }
+  consolidatePreview() { return this.get<{ duplicateProductNames: number; productsToMerge: number; stockRowGroups: number; stockRowsToMerge: number; emptyRowsToRemove: number; examples: string[]; nothingToDo: boolean }>('/api/inventory/consolidate/preview'); }
+  consolidate() { return this.post<{ productsMerged: number; stockRowsMerged: number; stockOnHandBefore: number; stockOnHandAfter: number; databaseRefusesDuplicateNames: boolean }>('/api/inventory/consolidate', {}); }
   movements(q: M.PageQuery & { referenceType?: string; productId?: number }) { return this.get<M.Paged<M.MovementRow>>('/api/inventory/movements', q); }
   produce(r: { productId: number; warehouseId: number; quantity: number; producedOn?: string | null; batchNumber?: string | null; expiryDate?: string | null }) { return this.post<{ movementId: number }>('/api/stock/production', r); }
   transfer(r: { productId: number; fromWarehouseId: number; toWarehouseId: number; quantity: number }) { return this.post<void>('/api/stock/transfers', r); }
@@ -80,7 +82,7 @@ export class Api {
   createCustomer(input: M.CustomerInput) { return this.post<{ id: number }>('/api/customers', input); }
   updateCustomer(id: number, input: M.CustomerInput) { return this.put<void>(`/api/customers/${id}`, input); }
   deleteCustomer(id: number) { return this.del<void>(`/api/customers/${id}`); }
-  recordPayment(id: number, amount: number, method: string) { return this.post<{ applied: number }>(`/api/customers/${id}/payments`, { amount, method }); }
+  recordPayment(id: number, amount: number, method: string, accountNumber: string | null, payerName: string | null = null) { return this.post<{ applied: number }>(`/api/customers/${id}/payments`, { amount, method, accountNumber, payerName }); }
 
   // suppliers & purchases
   suppliers(q: M.PageQuery) { return this.get<M.Paged<M.Supplier>>('/api/suppliers', q); }
@@ -91,7 +93,7 @@ export class Api {
   purchase(id: number) { return this.get<M.PurchaseDetail>(`/api/purchases/${id}`); }
   createPurchase(req: M.PurchaseRequest, idempotencyKey: string) { return this.post<M.PurchaseResult>('/api/purchases', req, { 'Idempotency-Key': idempotencyKey }); }
   receivePurchase(id: number, warehouseId: number) { return this.post<void>(`/api/purchases/${id}/receive`, { warehouseId }); }
-  payPurchase(id: number) { return this.post<void>(`/api/purchases/${id}/pay`); }
+  payPurchase(id: number, method: string, accountNumber: string | null) { return this.post<void>(`/api/purchases/${id}/pay`, { method, accountNumber }); }
 
   // admin
   users() { return this.get<M.UserRow[]>('/api/users'); }

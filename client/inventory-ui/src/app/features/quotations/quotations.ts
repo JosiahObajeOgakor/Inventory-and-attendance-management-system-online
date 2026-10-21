@@ -5,7 +5,7 @@ import { Api, messageOf, problemOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Auth } from '../../core/auth.service';
 import { Warehouse } from '../../core/models';
-import { QuotationRow } from '../../core/models-more';
+import { Bank, QuotationRow } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Confirm, Toasts } from '../../shared/feedback';
@@ -64,13 +64,20 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
           <div class="field"><label for="cm">Paid by</label>
             <select id="cm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option><option>Credit</option></select></div>
           <div class="field"><label for="cpn">Amount received now</label><input id="cpn" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" /></div>
+          @if (form.controls.paymentMethod.value === 'Bank Transfer' && form.controls.paidNow.value > 0 && banks().length) {
+            <div class="field"><label for="quote-account">Company account received into</label>
+              <select id="quote-account" class="input" formControlName="accountNumber">
+                <option value="">Choose an account</option>
+                @for (b of banks(); track b.accountNumber) { <option [value]="b.accountNumber">{{ b.bankName }} · {{ b.accountName }} · {{ b.accountNumber }}</option> }
+              </select></div>
+          }
           <div class="field"><label for="cd">Payment due by</label><input id="cd" class="input" type="date" formControlName="dueDate" /></div>
         </form>
         @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
       }
       <ng-container modal-actions>
         <button type="button" class="btn" (click)="converting.set(null)">Cancel</button>
-        <button type="submit" form="conv" class="btn btn-primary" [disabled]="form.invalid || busy()">{{ busy() ? 'Saving…' : 'Save sale' }}</button>
+        <button type="submit" form="conv" class="btn btn-primary" [disabled]="form.invalid || busy() || (form.controls.paymentMethod.value === 'Bank Transfer' && form.controls.paidNow.value > 0 && banks().length > 0 && !form.controls.accountNumber.value)">{{ busy() ? 'Saving…' : 'Save sale' }}</button>
       </ng-container>
     </app-modal>`,
   styles: `.sm { font-size: .75rem; } .lede { margin: 0 0 1rem; max-width: 46rem; } .actions { white-space: nowrap; }`,
@@ -84,25 +91,28 @@ export class QuotationsPage implements OnInit {
   protected readonly auth = inject(Auth);
   protected readonly list = new PagedList<QuotationRow>(q => this.api2.quotations(q));
   protected readonly warehouses = signal<Warehouse[]>([]);
+  protected readonly banks = signal<Bank[]>([]);
   protected readonly converting = signal<QuotationRow | null>(null);
   protected readonly emailing = signal<QuotationRow | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
-  protected readonly form = this.fb.nonNullable.group({ warehouseId: [0, Validators.min(1)], paymentMethod: ['Cash'], paidNow: [0, Validators.min(0)], dueDate: [''] });
+  protected readonly form = this.fb.nonNullable.group({ warehouseId: [0, Validators.min(1)], paymentMethod: ['Cash'], accountNumber: [''], paidNow: [0, Validators.min(0)], dueDate: [''] });
 
   async ngOnInit() {
     void this.list.load();
-    try { const ws = await this.api.warehouses(); this.warehouses.set(ws); if (ws[0]) this.form.controls.warehouseId.setValue(ws[0].id); } catch { /* the convert dialog will show nothing to pick */ }
+    try { const ws = await this.api.warehouses(); this.warehouses.set(ws); if (ws[0]) this.form.controls.warehouseId.setValue(ws[0].id); } catch (e) { this.error.set(messageOf(e)); }
+    try { this.banks.set((await this.api2.companyProfile()).banks); } catch (e) { this.error.set(messageOf(e)); }
   }
 
-  protected openConvert(q: QuotationRow) { this.error.set(''); this.form.patchValue({ paidNow: 0, dueDate: '' }); this.converting.set(q); }
+  protected openConvert(q: QuotationRow) { this.error.set(''); this.form.patchValue({ paidNow: 0, dueDate: '', accountNumber: '' }); this.converting.set(q); }
 
   protected async convert() {
     const q = this.converting(); if (!q || this.form.invalid) return;
     const v = this.form.getRawValue();
     this.busy.set(true); this.error.set('');
     try {
-      const r = await this.api2.convertQuotation(q.id, { warehouseId: Number(v.warehouseId), paymentMethod: v.paymentMethod, paidNow: Number(v.paidNow) || 0, dueDate: v.dueDate || null });
+      const r = await this.api2.convertQuotation(q.id, { warehouseId: Number(v.warehouseId), paymentMethod: v.paymentMethod,
+        accountNumber: v.paymentMethod === 'Bank Transfer' ? v.accountNumber || null : null, paidNow: Number(v.paidNow) || 0, dueDate: v.dueDate || null });
       this.toasts.ok(`Sale ${r.invoiceNumber} saved from ${q.quotationNumber}.`);
       this.converting.set(null); await this.list.load();
     } catch (e) {

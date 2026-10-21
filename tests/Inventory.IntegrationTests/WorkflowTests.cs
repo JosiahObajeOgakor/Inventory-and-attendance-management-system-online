@@ -62,10 +62,12 @@ public class PurchaseTests(MySqlFixture mysql)
         Assert.Equal(180000m, r.Total);
         Assert.Equal(130000m, r.Outstanding);
         await using var check = NewContext(cs);
-        var batch = await check.StockBatches.SingleAsync(b => b.BatchNumber == r.PoNumber);   // batch named after the PO
+        var batch = await check.StockBatches.SingleAsync();   // the product's existing stock row is topped up: no new row is created for the purchase
         Assert.Equal(20, batch.QuantityOnHand);
-        var mv = await check.StockMovements.SingleAsync();
+        var mv = await check.StockMovements.SingleAsync();    // …and the history still says which order brought it in
         Assert.Equal(("IN", "PurchaseOrder", 20), (mv.MovementType, mv.ReferenceType, mv.Quantity));
+        Assert.Equal(r.PurchaseOrderId, mv.ReferenceId);
+        Assert.Contains(r.PoNumber, mv.Note);
         Assert.Equal(9000m, (await check.Products.SingleAsync()).CostPrice);
         Assert.Equal(130000m, (await check.Suppliers.SingleAsync()).Balance);
         var ledger = await check.Ledger.SingleAsync();

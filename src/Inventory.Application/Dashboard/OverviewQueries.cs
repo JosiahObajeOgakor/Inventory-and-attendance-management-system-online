@@ -82,11 +82,12 @@ public sealed class OverviewQueries(IBusinessDbContext db, IClock clock)
                              select new { b.WarehouseId, b.ProductId, b.QuantityOnHand, b.ExpiryDate, p.CostPrice, p.PriceRetail, p.ReorderLevel }).ToListAsync(ct);
         var whs = await db.Warehouses.AsNoTracking().OrderBy(w => w.Id).ToListAsync(ct);
         var soon = today.AddDays(30);
+        var productTotals = batches.GroupBy(b => b.ProductId).ToDictionary(g => g.Key, g => g.Sum(b => b.QuantityOnHand));
         var warehouses = whs.Select(w =>
         {
             var bs = batches.Where(b => b.WarehouseId == w.Id && b.QuantityOnHand > 0).ToList();
             return new WarehouseStock(w.Id, w.Name, bs.Sum(b => b.QuantityOnHand), bs.Sum(b => b.QuantityOnHand * b.CostPrice), bs.Sum(b => b.QuantityOnHand * b.PriceRetail),
-                bs.Select(b => b.ProductId).Distinct().Count(), batches.Count(b => b.WarehouseId == w.Id && b.QuantityOnHand <= b.ReorderLevel),
+                bs.Select(b => b.ProductId).Distinct().Count(), batches.Where(b => b.WarehouseId == w.Id && productTotals[b.ProductId] <= b.ReorderLevel).Select(b => b.ProductId).Distinct().Count(),
                 bs.Where(b => b.ExpiryDate < today).Sum(b => b.QuantityOnHand), bs.Where(b => b.ExpiryDate >= today && b.ExpiryDate <= soon).Sum(b => b.QuantityOnHand));
         }).ToList();
         var inventoryValue = warehouses.Sum(w => w.CostValue);

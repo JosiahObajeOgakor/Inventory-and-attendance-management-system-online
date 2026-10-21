@@ -10,7 +10,8 @@ import { PagedList } from '../../shared/paged-list';
 import { DayPipe, Pager, Stamp, StampTimePipe } from '../../shared/ui';
 
 type Tab = 'batches' | 'movements';
-type Dialog = 'production' | 'transfer' | 'adjust' | null;
+type Dialog = 'production' | 'transfer' | 'adjust' | 'tidy' | null;
+interface TidyPreview { duplicateProductNames: number; productsToMerge: number; stockRowGroups: number; stockRowsToMerge: number; emptyRowsToRemove: number; examples: string[]; nothingToDo: boolean; }
 
 @Component({
   selector: 'app-stock',
@@ -24,6 +25,7 @@ type Dialog = 'production' | 'transfer' | 'adjust' | null;
           <a class="btn" href="/api/exports/inventory" download><app-icon name="download" [size]="18" /> Excel</a>
           @if (auth.company() !== 'candid') { <button type="button" class="btn btn-primary" (click)="open('production')"><app-icon name="plus" [size]="18" /> Record production</button> }
           <button type="button" class="btn" (click)="open('transfer')"><app-icon name="swap" [size]="18" /> Move between warehouses</button>
+          @if (auth.isAdmin()) { <button type="button" class="btn" (click)="openTidy()">Tidy up duplicates</button> }
         </div>
       </div>
 
@@ -96,6 +98,25 @@ type Dialog = 'production' | 'transfer' | 'adjust' | null;
       <ng-container modal-actions><button type="button" class="btn" (click)="close()">Cancel</button><button type="submit" form="xfer" class="btn btn-primary" [disabled]="xferForm.invalid || busy()">Move stock</button></ng-container>
     </app-modal>
 
+    <!-- tidy up -->
+    <app-modal [open]="dialog() === 'tidy'" heading="Tidy up duplicates" (closed)="close()">
+      @if (tidy(); as t) {
+        @if (t.nothingToDo) { <p>Nothing to tidy: every product has one name and one stock row for each expiry date in each warehouse.</p> }
+        @else {
+          <p>This joins things that were entered more than once. <strong>No stock is lost</strong>: quantities are added together, every sale, purchase and stock-history record is kept and re-pointed, and if the total on hand would change by even one unit, nothing is saved.</p>
+          <ul>
+            @if (t.productsToMerge > 0) { <li><strong>{{ t.productsToMerge }}</strong> duplicate product(s) will be merged into the original of the same name.</li> }
+            @if (t.stockRowsToMerge > 0) { <li><strong>{{ t.stockRowsToMerge }}</strong> extra stock row(s) will be added into the row they duplicate.</li> }
+          </ul>
+          @if (t.examples.length) { <p class="muted sm">For example:</p><ul class="sm">@for (e of t.examples; track e) { <li>{{ e }}</li> }</ul> }
+        }
+      } @else { <p class="muted">Checking…</p> }
+      <ng-container modal-actions>
+        <button type="button" class="btn" (click)="close()">Close</button>
+        @if (tidy() && !tidy()!.nothingToDo) { <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="runTidy()">Tidy up now</button> }
+      </ng-container>
+    </app-modal>
+
     <!-- adjust -->
     <app-modal [open]="dialog() === 'adjust'" heading="Adjust stock" (closed)="close()">
       @if (adjusting(); as b) {
@@ -124,6 +145,7 @@ export class StockPage implements OnInit {
   protected readonly dialog = signal<Dialog>(null);
   protected readonly adjusting = signal<BatchRow | null>(null);
   protected readonly busy = signal(false);
+  protected readonly tidy = signal<TidyPreview | null>(null);
 
   protected readonly prodForm = this.fb.nonNullable.group({
     productId: [0, Validators.min(1)], warehouseId: [0, Validators.min(1)], quantity: [1, Validators.min(1)],
@@ -162,6 +184,18 @@ export class StockPage implements OnInit {
     if (d === 'production') this.prodForm.patchValue({ productId: p, warehouseId: w, quantity: 1, producedOn: '', batchNumber: '', expiryDate: '' });
     if (d === 'transfer') this.xferForm.patchValue({ productId: p, fromWarehouseId: w, toWarehouseId: this.warehouses()[1]?.id ?? 0, quantity: 1 });
     this.dialog.set(d);
+  }
+  protected async openTidy() {
+    this.tidy.set(null); this.dialog.set('tidy');
+    try { this.tidy.set(await this.api.consolidatePreview()); } catch (e) { this.toasts.error(messageOf(e)); this.close(); }
+  }
+  protected async runTidy() {
+    this.busy.set(true);
+    try {
+      const r = await this.api.consolidate();
+      this.toasts.ok(`Done: ${r.productsMerged} product(s) and ${r.stockRowsMerged} stock row(s) merged. Stock on hand is unchanged at ${r.stockOnHandAfter.toLocaleString()}.`);
+      this.close(); this.batches.page.set(1); await this.batches.load();
+    } catch (e) { this.toasts.error(messageOf(e)); } finally { this.busy.set(false); }
   }
   protected openAdjust(b: BatchRow) { this.adjusting.set(b); this.adjForm.reset({ delta: 0, reason: '' }); this.dialog.set('adjust'); }
   protected close() { this.dialog.set(null); }

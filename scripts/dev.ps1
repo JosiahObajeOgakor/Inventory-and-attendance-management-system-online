@@ -10,7 +10,7 @@ param([switch]$ImportLocal, [switch]$Stop, [switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $Work = Join-Path $Root '.dev'
-$Container = 'inv-db'; $DbPort = 3308; $ApiPort = 5000; $UiPort = 4200
+$Container = 'inv-db'; $DbPort = 3308; $ApiPort = 5041; $UiPort = 4200
 $DbPass = 'devpass'; $SetupToken = 'dev-setup-token'
 $AdminUser = 'admin'; $AdminPass = 'ChangeMe1234'
 New-Item -ItemType Directory -Force $Work | Out-Null
@@ -59,8 +59,9 @@ $env:ConnectionStrings__Default = "Server=127.0.0.1;Port=$DbPort;User=root;Passw
 $env:Setup__Token = $SetupToken
 $env:RateLimit__LoginPerMinute = '200'
 # Secrets (OpenAI key, Zoho password) live in .dev/secrets.env, which git ignores. One KEY=value per line, e.g. OpenAI__ApiKey=...
-$secretsFile = Join-Path $Work 'secrets.env'
-if (Test-Path $secretsFile) {
+# .dev/secrets.local.env (optional, read second, so it wins) holds values that only make sense on THIS machine, such as the temporary ngrok address for a WhatsApp test.
+foreach ($secretsFile in @((Join-Path $Work 'secrets.env'), (Join-Path $Work 'secrets.local.env'))) {
+    if (-not (Test-Path $secretsFile)) { continue }
     foreach ($line in Get-Content $secretsFile) {
         $t = $line.Trim()
         if ($t -eq '' -or $t.StartsWith('#')) { continue }
@@ -69,7 +70,7 @@ if (Test-Path $secretsFile) {
         $name = $t.Substring(0, $eq).Trim(); $val = $t.Substring($eq + 1).Trim()
         if ($name -match '^[A-Za-z_][A-Za-z0-9_]*$') { Set-Item -Path "env:$name" -Value $val }
     }
-    Write-Host '   loaded secrets from .dev/secrets.env' -ForegroundColor DarkGray
+    Write-Host "   loaded settings from .dev/$(Split-Path -Leaf $secretsFile)" -ForegroundColor DarkGray
 }
 $api = Start-Process dotnet -ArgumentList "run --project `"$(Join-Path $Root 'src/Inventory.Api')`" --no-build --no-launch-profile" `
     -RedirectStandardOutput (Join-Path $Work 'api.log') -RedirectStandardError (Join-Path $Work 'api.err.log') -WindowStyle Hidden -PassThru
@@ -120,7 +121,8 @@ try {
         $srv = Start-Process node -ArgumentList "`"$(Join-Path $Root 'scripts/static-proxy.js')`" `"$(Join-Path $uiWork 'dist/inventory-ui/browser')`" $UiPort $ApiPort" `
             -RedirectStandardOutput (Join-Path $Work 'ui.log') -RedirectStandardError (Join-Path $Work 'ui.err.log') -WindowStyle Hidden -PassThru
     } else {
-        $srv = Start-Process npx -ArgumentList "ng serve --port $UiPort" -WorkingDirectory $uiWork `
+        $ng = Join-Path $uiWork 'node_modules\@angular\cli\bin\ng.js'
+        $srv = Start-Process node -ArgumentList "`"$ng`" serve --port $UiPort" -WorkingDirectory $uiWork `
             -RedirectStandardOutput (Join-Path $Work 'ui.log') -RedirectStandardError (Join-Path $Work 'ui.err.log') -WindowStyle Hidden -PassThru
     }
     $srv.Id | Set-Content (Join-Path $Work 'ui.pid')

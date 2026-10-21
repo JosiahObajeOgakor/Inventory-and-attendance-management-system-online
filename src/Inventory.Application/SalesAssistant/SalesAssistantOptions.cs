@@ -10,4 +10,10 @@ public sealed class SalesAssistantOptions
     public int HistoryTurns { get; set; } = 16;
     public int MaxMessageChars { get; set; } = 1000;
     public int DailyMessagesPerConversation { get; set; } = 60;
+    /// <summary>Hard ceiling on AI calls for ONE sale (counted per conversation, reset when the sale completes or is cancelled). A normal sale uses none.</summary>
+    public int MaxAiCallsPerSale { get; set; } = 10;
+    /// <summary>How long stock is held for a customer who has been given a payment account but hasn't paid.</summary>
+    public int ReservationMinutes { get; set; } = 60;
+    /// <summary>Optional JSON file with native-speaker wording and recognition words (see ChatText). Igala lives here.</summary>
+    public string PhrasesFile { get; set; } = "";
 }

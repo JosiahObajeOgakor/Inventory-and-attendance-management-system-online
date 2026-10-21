@@ -156,3 +156,6 @@
     height: min(70vh, 560px);
   }
 }
+
+/* Payment details and order summaries arrive on several lines. */
+.chat__bubble p { white-space: pre-wrap; }

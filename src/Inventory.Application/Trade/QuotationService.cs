@@ -27,6 +27,7 @@ public sealed class ConvertQuoteRequest
 {
     public int WarehouseId { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
+    public string? AccountNumber { get; set; }
     public decimal PaidNow { get; set; }
     public DateOnly? DueDate { get; set; }
 }
@@ -113,7 +114,7 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
         var sale = new SaleRequest
         {
             CustomerId = q.CustomerId, PriceTier = q.PriceTier, WarehouseId = req.WarehouseId, PaymentMethod = req.PaymentMethod, DiscountPct = q.DiscountPct,
-            VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
+            AccountNumber = req.AccountNumber, VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
             Lines = q.Items.Select(i => new SaleLineDto { ProductId = i.ProductId, Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
         };
         var result = await sales.SaveWithinAsync(sale, user, null, ct);

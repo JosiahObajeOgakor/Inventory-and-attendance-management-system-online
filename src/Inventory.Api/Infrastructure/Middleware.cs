@@ -30,7 +30,12 @@ public sealed class CsrfHeaderMiddleware(RequestDelegate next)
         // These webhooks are called by Paystack's/Meta's own servers, which cannot send our header. Both are protected by an HMAC signature instead
         // (Paystack: asking it to confirm the payment too; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
         var webhook = ctx.Request.Path.Equals("/api/paystack/webhook", StringComparison.OrdinalIgnoreCase)
-                   || ctx.Request.Path.Equals("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase);
+                   || ctx.Request.Path.Equals("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase)
+                   // Twilio (HMAC-SHA1 over URL+fields with the auth token) and AlatPay (HMAC-SHA256 over the body, then confirmed with AlatPay itself).
+                   || ctx.Request.Path.Equals("/api/twilio/whatsapp", StringComparison.OrdinalIgnoreCase)
+                   || ctx.Request.Path.Equals("/api/alatpay/webhook", StringComparison.OrdinalIgnoreCase)
+                   // One-click unsubscribe (RFC 8058) is POSTed by the recipient's mail app, which cannot send our header; the signed link is the proof.
+                   || ctx.Request.Path.Equals("/api/marketing/unsubscribe", StringComparison.OrdinalIgnoreCase);
         if (unsafeMethod && !webhook && ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers[HeaderName] != HeaderValue)
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;

@@ -6,6 +6,7 @@ import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { AdviceLine, SuggestedLine } from '../../core/models-dash';
 import { Product, PurchaseRequest, Supplier, Warehouse } from '../../core/models';
+import { Bank } from '../../core/models-more';
 import { Icon } from '../../shared/icon';
 import { Toasts } from '../../shared/feedback';
 import { asNumber } from '../../shared/paged-list';
@@ -83,6 +84,13 @@ const VAT = 7.5;
           <div class="field"><label for="paid">Paid to the supplier now</label><input id="paid" class="input num" type="number" min="0" step="0.01" formControlName="paidNow" />
             <span class="hint">Covers this order first, then older orders, oldest first.</span></div>
           <div class="field"><label for="pm">Paid by</label><select id="pm" class="input" formControlName="paymentMethod"><option>Cash</option><option>Bank Transfer</option><option>Card</option></select></div>
+          @if (form.controls.paymentMethod.value === 'Bank Transfer' && form.controls.paidNow.value > 0 && banks().length) {
+            <div class="field"><label for="purchase-account">Company account paid from</label>
+              <select id="purchase-account" class="input" formControlName="accountNumber">
+                <option value="">Choose an account</option>
+                @for (b of banks(); track b.accountNumber) { <option [value]="b.accountNumber">{{ b.bankName }} · {{ b.accountName }} · {{ b.accountNumber }}</option> }
+              </select></div>
+          }
           <button class="btn btn-primary big" type="submit" [disabled]="busy() || !request()">{{ busy() ? 'Saving…' : 'Save purchase' }}</button>
         </aside>
       </form>
@@ -109,6 +117,7 @@ export class PurchaseNew implements OnInit {
 
   protected readonly suppliers = signal<Supplier[]>([]);
   protected readonly warehouses = signal<Warehouse[]>([]);
+  protected readonly banks = signal<Bank[]>([]);
   protected readonly lines = signal<Line[]>([]);
   protected readonly results = signal<Product[]>([]);
   protected readonly busy = signal(false);
@@ -128,7 +137,7 @@ export class PurchaseNew implements OnInit {
   protected readonly error = signal('');
 
   protected readonly form = this.fb.nonNullable.group({
-    supplierId: [0, Validators.min(1)], orderDate: [''], vat: [false], receiveNow: [false], warehouseId: [0], paidNow: [0, Validators.min(0)], paymentMethod: ['Cash'],
+    supplierId: [0, Validators.min(1)], orderDate: [''], vat: [false], receiveNow: [false], warehouseId: [0], paidNow: [0, Validators.min(0)], paymentMethod: ['Cash'], accountNumber: [''],
   });
   private readonly value = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
   protected readonly supplier = computed(() => this.suppliers().find(s => s.id === Number(this.value().supplierId)));
@@ -138,9 +147,11 @@ export class PurchaseNew implements OnInit {
   protected readonly request = computed<PurchaseRequest | null>(() => {
     const v = this.value(); const lines = this.lines();
     if (!(Number(v.supplierId) > 0) || !lines.length || lines.some(l => !(l.qty > 0))) return null;
+    if (v.paymentMethod === 'Bank Transfer' && asNumber(v.paidNow) > 0 && this.banks().length > 0 && !v.accountNumber) return null;
     return {
       supplierId: Number(v.supplierId), orderDate: v.orderDate || null, vatRate: v.vat ? VAT : 0, receiveNow: !!v.receiveNow, warehouseId: Number(v.warehouseId) || 0,
-      paidNow: asNumber(v.paidNow), paymentMethod: v.paymentMethod ?? 'Cash', lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitCost: l.cost })),
+      paidNow: asNumber(v.paidNow), paymentMethod: v.paymentMethod ?? 'Cash', accountNumber: v.paymentMethod === 'Bank Transfer' ? v.accountNumber || null : null,
+      lines: lines.map(l => ({ productId: l.productId, quantity: l.qty, unitCost: l.cost })),
     };
   });
 
@@ -153,6 +164,8 @@ export class PurchaseNew implements OnInit {
       this.suppliers.set(s.items); this.warehouses.set(w);
       if (w[0]) this.form.controls.warehouseId.setValue(w[0].id);
     } catch (e) { this.error.set(messageOf(e)); }
+    try { this.banks.set((await this.api2.companyProfile()).banks); }
+    catch (e) { this.error.set(messageOf(e)); }
   }
 
   protected whole(v: string) { return Math.max(0, Math.floor(asNumber(v))); }

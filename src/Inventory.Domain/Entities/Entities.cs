@@ -136,6 +136,13 @@ public class Customer
     public decimal CreditLimit { get; set; }
     /// <summary>What this customer owes (maintained running total).</summary>
     public decimal Balance { get; set; }
+    /// <summary>Consent to reminders and offers: see <see cref="MarketingStatuses"/>. Only OptedIn customers are ever messaged by a campaign.</summary>
+    public string MarketingStatus { get; set; } = MarketingStatuses.Unknown;
+    public DateTime? MarketingUpdatedAt { get; set; }
+    /// <summary>Where the consent came from ("chat", "email-link", "admin"), kept as evidence.</summary>
+    public string? MarketingSource { get; set; }
+    /// <summary>The language the customer chats in, so campaigns speak it too.</summary>
+    public string? PreferredLanguage { get; set; }
 }
 
 public class Invoice
@@ -188,6 +195,28 @@ public class Payment
     public decimal Amount { get; set; }
     public string Method { get; set; } = "Cash";
     public int ReceivedByUserId { get; set; }
+    // Where the money went, copied at the time (a company account can be edited or removed later; the record must still say what it said). Set for bank transfers.
+    public string? BankName { get; set; }
+    public string? AccountName { get; set; }
+    public string? AccountNumber { get; set; }
+    /// <summary>Who sent it (the name the customer paid under), when known.</summary>
+    public string? PayerName { get; set; }
+}
+
+/// <summary>Money paid OUT to a supplier against a purchase order, and which of the company's own accounts it was sent from.</summary>
+public class SupplierPayment
+{
+    public int Id { get; set; }
+    public int PurchaseOrderId { get; set; }
+    public int SupplierId { get; set; }
+    public DateTime PaymentDate { get; set; }
+    public decimal Amount { get; set; }
+    public string Method { get; set; } = "Cash";
+    /// <summary>The company account the money left (bank transfers).</summary>
+    public string? BankName { get; set; }
+    public string? AccountName { get; set; }
+    public string? AccountNumber { get; set; }
+    public int PaidByUserId { get; set; }
 }
 
 /// <summary>Kept denormalised on purpose: survives deletion of the document (S10).</summary>
