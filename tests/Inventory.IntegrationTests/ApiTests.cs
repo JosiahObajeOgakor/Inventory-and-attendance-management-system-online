@@ -125,6 +125,21 @@ public class AuthTests(ApiFixture api)
     }
 
     [Fact]
+    public async Task The_right_password_for_a_business_the_account_cannot_open_says_which_ones_it_can()
+    {
+        var r = await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("clerk", ApiFixture.Password, "k9cravings"));
+        Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
+        var body = await r.Content.ReadAsStringAsync();
+        Assert.Contains("can't open K9 Cravings", body);
+        Assert.Contains("Candid Purrfect", body);
+        Assert.Contains("ChewyPets Feed", body);
+        // a wrong password for the same business still says nothing about access
+        var wrong = await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("clerk", "nope-nope-1", "k9cravings"));
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+        Assert.DoesNotContain("K9", await wrong.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Wrong_password_and_unknown_user_get_the_same_message()
     {
         var a = await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("clerk", "nope-nope-1", "chewypets"));

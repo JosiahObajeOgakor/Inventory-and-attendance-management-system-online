@@ -51,7 +51,16 @@ public class AuthController(
         var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
         if (result.IsLockedOut) { await Audit(username, false, "locked after failures", ct); return StatusCode(423, Problem401("Too many wrong passwords. Try again in a few minutes.")); }
         if (!result.Succeeded) { await Audit(username, false, "bad password", ct); return Unauthorized(Problem401(BadCredentials)); }
-        if (!user.CanOpen(company.Key)) { await Audit(username, false, "no access to company", ct); return Unauthorized(Problem401(BadCredentials)); }
+        if (!user.CanOpen(company.Key))
+        {
+            // The password was right, so saying which businesses this account opens gives nothing away — and "incorrect password" here only confuses.
+            await Audit(username, false, "no access to company", ct);
+            var allowed = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => c.DisplayName).ToList();
+            return StatusCode(403, new ProblemDetails { Status = 403, Title = $"Your account can't open {company.DisplayName}.",
+                // The sign-in page shows the detail, so it carries the whole message.
+                Detail = $"Your account can't open {company.DisplayName}. " + (allowed.Count == 0 ? "It isn't linked to any business yet. Ask an administrator to give you access."
+                    : $"Choose {string.Join(" or ", allowed)}, or ask an administrator to give you access to {company.DisplayName}.") });
+        }
 
         user.LastLoginAt = DateTime.UtcNow;
         await users.UpdateAsync(user);
