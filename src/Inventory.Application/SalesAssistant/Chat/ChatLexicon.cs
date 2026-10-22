@@ -42,12 +42,17 @@ public static class ChatLexicon
     /// <summary>Words that give a language away. English is the default and has no list. Igala is empty until a native speaker fills it in (override file).</summary>
     public static readonly Dictionary<string, string[]> LanguageMarkers = new()
     {
-        [ChatLanguages.Pidgin] = ["abeg", "wetin", "dey", "oga", "madam", "una", "wahala", "sabi", "pikin", "wey", "dem", "comot", "chop", "sef", "abi", "oya", "jare", "shey", "how far", "no be", "i don", "e don", "make i", "make we", "sharp sharp", "i wan", "we wan", "una get", "you get"],
+        [ChatLanguages.Pidgin] = ["abeg", "wetin", "dey", "oga", "madam", "una", "wahala", "sabi", "pikin", "wey", "dem", "comot", "chop", "sef", "abi", "oya", "jare", "shey", "how far", "no be", "i don", "e don", "make i", "make we", "sharp sharp", "i wan", "we wan", "una get", "you get", "na"],
         [ChatLanguages.Igbo] = ["biko", "nna", "nne", "ndewo", "kedu", "daalu", "imeela", "achoro", "azuta", "zuta", "ugwo", "ihe", "ole", "nnoo", "mba", "ahia", "anyi", "unu", "enwere", "maka", "gwa m", "onu ahia", "ego", "ee"],
         [ChatLanguages.Hausa] = ["sannu", "nagode", "ina", "kwana", "yaya", "nawa", "kudi", "saya", "siya", "zan", "kuma", "abinci", "farashi", "akwai", "babu", "don allah", "barka", "yawa", "wallahi", "toh", "ina son", "ina so", "na biya", "na tura", "kaya", "fatan"],
         [ChatLanguages.Yoruba] = ["jowo", "mo fe", "mo nfe", "bawo ni", "e kaaro", "e kaasan", "e kaale", "kaaro", "kaasan", "melo", "beeni", "rara", "e se", "mo ti san", "awon oja", "owo re", "e jowo", "ewo ni", "oja yin"],
         [ChatLanguages.Igala] = [],
     };
+
+    private static readonly string[] EnglishWords = ["i want", "i would like", "i need", "what", "which", "please", "the", "your", "my", "is", "are", "do you", "can i", "can you", "how much", "give me", "send me", "have", "thanks", "thank you", "list", "price", "prices"];
+    /// <summary>General words for what the shop sells: "dog food" is a request to see the range, not a product name.</summary>
+    private static readonly string[] GenericWords = ["dog food", "cat food", "pet food", "puppy food", "kitten food", "food", "feed", "feeds", "dog", "dogs", "cat", "cats", "puppy", "kitten", "pet", "pets"];
+    public static bool IsGeneric(string n) => Has(n, GenericWords);
 
     /// <summary>Picks the language to answer in. Sticky: a single stray word doesn't flip a conversation, two clues do (or one clue when we've only assumed English so far).</summary>
     public static string DetectLanguage(string normalized, string current)
@@ -58,6 +63,9 @@ public static class ChatLexicon
             var score = words.Count(w => Has(normalized, w));
             if (score > bestScore) { best = lang; bestScore = score; }
         }
+        // English has no markers list (it is the default), but a message plainly in English ("what are your list?") switches back to it from a language
+        // picked up earlier; one English word in a longer message is enough when nothing else is there to say otherwise.
+        if (bestScore == 0 && current != ChatLanguages.English && Tokens(normalized).Length >= 2 && EnglishWords.Count(w => Has(normalized, w)) >= 1) return ChatLanguages.English;
         if (bestScore == 0 || best == current) return current;
         return bestScore >= 2 || current == ChatLanguages.English ? best : current;
     }

@@ -48,6 +48,26 @@ public class ChatUnderstandingTests
     }
 
     [Theory]
+    [InlineData("what are your list?")]
+    [InlineData("i want quotation")]
+    [InlineData("i want CHEWYPETS ALS 10KG")]
+    public void A_message_plainly_in_English_brings_the_conversation_back_to_English(string text) =>
+        Assert.Equal(ChatLanguages.English, ChatLexicon.DetectLanguage(N(text), ChatLanguages.Pidgin));
+
+    [Theory]
+    [InlineData("4")]
+    [InlineData("yes")]
+    [InlineData("abeg i wan buy dog food")]
+    public void Short_replies_and_pidgin_keep_pidgin(string text) =>
+        Assert.Equal(ChatLanguages.Pidgin, ChatLexicon.DetectLanguage(N(text), ChatLanguages.Pidgin));
+
+    [Theory]
+    [InlineData("i wan buy dog food", true)]
+    [InlineData("do you have cat food", true)]
+    [InlineData("2 chewypets als 10kg", false)]
+    public void General_words_ask_for_the_range(string text, bool generic) => Assert.Equal(generic, ChatLexicon.IsGeneric(N(text)));
+
+    [Theory]
     [InlineData("yes", true), InlineData("Ehen, do am", true), InlineData("no wahala", true), InlineData("ee", true), InlineData("toh", true), InlineData("ok", true)]
     [InlineData("no", false), InlineData("mba", false), InlineData("a'a", false), InlineData("cancel", false)]
     public void Yes_is_understood_in_each_language(string text, bool yes) => Assert.Equal(yes, ChatLexicon.IsYes(N(text)));

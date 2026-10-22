@@ -119,7 +119,7 @@ public class ChatSalesTests(MySqlFixture mysql)
         await r.Say(Ngozi, "2 adult dog food", "Ngozi");
         var reply = await r.Say(Ngozi, "yes");
         Assert.Contains("8880007001", reply);                          // the bank account, as before
-        Assert.Contains("https://checkout.paystack.com/", reply);      // and a link to pay by card, USSD or bank on one page
+        Assert.Contains("https://paystack.example/", reply);      // and a link to pay by card, USSD or bank on one page
         Assert.Equal(2, await r.Db.PaymentLinks.CountAsync());
 
         // she pays through the LINK; saying "paid" in the chat finds it (the bank account is checked too)

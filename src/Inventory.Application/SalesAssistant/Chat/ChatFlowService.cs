@@ -197,6 +197,7 @@ public sealed class ChatFlowService(
         var near = parsed.FirstOrDefault(p => p.Near.Count > 0);
         if (near is not null && !(near.Raw.Qty is null && ChatLexicon.StartsWithGreeting(t.Norm))) { AskWhich(t, near.Near.Select(n => n.Id).ToList(), near.Raw.Qty); return; }
         if (ChatLexicon.StartsWithGreeting(t.Norm)) { WelcomeReply(t, cat); return; }      // "Hi Chewy Pet! I'd like some dog food" is a hello, not a product called "chewy pet"
+        if (ChatLexicon.IsGeneric(t.Norm)) { CatalogueReply(t, cat); return; }              // "i wan buy dog food": show the range (no AI call needed)
 
         if (await TryAiAsync(t, cat, ct)) return;
         if (!ai.CanSpend(t.C) && t.C.AiCalls >= Opt.MaxAiCallsPerSale) { t.Say("handoff"); Track(t, ChatEventKinds.Handoff); }
@@ -507,8 +508,11 @@ public sealed class ChatFlowService(
         PayLink? card = null;
         if (pay.Enabled)
         {
-            try { card = await pay.GetOrCreateAsync(PaymentDocTypes.Quotation, quote.Id, quote.Number, quote.Total, customer.Email, customer.Name, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Could not make a payment link for {Number}", quote.Number); }
+            // At most a few seconds: WhatsApp gives up on the whole reply after 15, and the bank account above is already enough to pay.
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(TimeSpan.FromSeconds(5));
+            try { card = await pay.GetOrCreateAsync(PaymentDocTypes.Quotation, quote.Id, quote.Number, quote.Total, customer.Email, customer.Name, limit.Token); }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested) { log.LogWarning(ex, "Could not make a payment link for {Number}", quote.Number); }
         }
         if (account is null && card is null) { t.C.State = ChatStates.Idle; t.Say("pay_unavailable"); return; }
 
@@ -530,6 +534,12 @@ public sealed class ChatFlowService(
 
         var finished = links.FirstOrDefault(l => l.Status != PaymentLinkStatuses.Pending);
         if (finished is not null) { await SayFinalAsync(t, finished, null, ct); return; }
+        if (ChatLexicon.ExtractEmail(t.Text) is { } mail && quotationId is int qid)
+        {
+            var number = await db.Quotations.AsNoTracking().Where(x => x.Id == qid).Select(x => x.QuotationNumber).FirstOrDefaultAsync(ct) ?? "";
+            await EmailQuoteAsync(t, qid, number, mail, ct);
+            return;
+        }
 
         if (ChatLexicon.IsPaidClaim(t.Norm) || ChatLexicon.IsGreeting(t.Norm))
         {
@@ -603,8 +613,22 @@ public sealed class ChatFlowService(
     /// <summary>"Quote" / "quotation": the same item collecting as an order, but it ends in a quotation (on WhatsApp, and by email when we have an address) instead of a payment account.</summary>
     private async Task<bool> HandleQuoteIntentAsync(Turn t, CancellationToken ct)
     {
-        if (!ChatLexicon.IsQuote(t.Norm) || t.C.State is ChatStates.AwaitingPayment or ChatStates.AwaitingName or ChatStates.AwaitingConsent or ChatStates.AwaitingPhone) return false;
+        if (!ChatLexicon.IsQuote(t.Norm) || t.C.State is ChatStates.AwaitingName or ChatStates.AwaitingConsent or ChatStates.AwaitingPhone) return false;
         var cat = await CatAsync(t, ct);
+        if (t.C.State == ChatStates.AwaitingPayment)
+        {
+            if (ProductMatcher.Split(t.Norm).Select(r => ProductMatcher.Match(r, cat)).Any(p => p.Matches.Count > 0 || p.Near.Count > 0))
+            {   // "quote 10 puppy" while an account is open: start a fresh quotation; the open order keeps its quotation so a transfer on its way is still matched
+                var open = t.C.QuotationId;
+                ResetSale(t);
+                t.C.QuotationId = open;
+                t.D.Quote = true;
+                if (ChatLexicon.ExtractEmail(t.Text) is { } m) t.D.Email = m;
+                return false;
+            }
+            await QuoteOpenOrderAsync(t, cat, ct);     // "i want quotation": the order they are about to pay for
+            return true;
+        }
         t.D.Quote = true;
         if (ChatLexicon.ExtractEmail(t.Text) is { } mail) t.D.Email = mail;
         var parsed = ProductMatcher.Split(t.Norm).Select(r => ProductMatcher.Match(r, cat)).ToList();
@@ -613,6 +637,23 @@ public sealed class ChatFlowService(
         t.C.State = ChatStates.Collecting;
         t.Say("quote_start", ExampleProduct(t));
         return true;
+    }
+
+    /// <summary>The quotation behind the order awaiting payment: its lines and total, emailed as a PDF when the message carries an address.</summary>
+    private async Task QuoteOpenOrderAsync(Turn t, List<CatalogItem> cat, CancellationToken ct)
+    {
+        var q = t.C.QuotationId is int id ? await db.Quotations.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.Id, x.QuotationNumber, x.TotalAmount }).FirstOrDefaultAsync(ct) : null;
+        if (q is null) { t.C.State = ChatStates.Collecting; t.D.Quote = true; t.Say("quote_start", ExampleProduct(t)); return; }
+        Track(t, ChatEventKinds.Quote, q.TotalAmount, q.QuotationNumber);
+        t.Say("quote_current", q.QuotationNumber, await texts.ReceiptLinesAsync(q.Id, ct), ChatOrderText.Naira(q.TotalAmount), ExampleProduct(t));
+        if (ChatLexicon.ExtractEmail(t.Text) is { } to) await EmailQuoteAsync(t, q.Id, q.QuotationNumber, to, ct);
+    }
+
+    private async Task EmailQuoteAsync(Turn t, int quotationId, string number, string to, CancellationToken ct)
+    {
+        if (emails is null) { t.Say("quote_email_failed"); return; }
+        try { await emails.SendQuotationAsync(quotationId, to, null, SalesBot, ct); t.Say("quote_emailed", to); }
+        catch (Exception ex) when (ex is BusinessRuleException or System.Net.Mail.SmtpException or IOException) { log.LogWarning(ex, "Could not email quotation {Number}", number); t.Say("quote_email_failed"); }
     }
 
     private async Task PlaceQuoteAsync(Turn t, List<CatalogItem> cat, CancellationToken ct)
@@ -645,9 +686,7 @@ public sealed class ChatFlowService(
         var to = t.D.Email ?? customer.Email;
         if (!string.IsNullOrWhiteSpace(to))
         {
-            if (emails is null) { t.Say("quote_email_failed"); }
-            else try { await emails.SendQuotationAsync(quote.Id, to, null, SalesBot, ct); t.Say("quote_emailed", to!); }
-            catch (Exception ex) when (ex is BusinessRuleException or System.Net.Mail.SmtpException or IOException) { log.LogWarning(ex, "Could not email quotation {Number}", quote.Number); t.Say("quote_email_failed"); }
+            await EmailQuoteAsync(t, quote.Id, quote.Number, to, ct);
         }
         t.D.Quote = false;                       // back to an ordinary order: "yes" now buys these same items
         t.C.State = ChatStates.AwaitingConfirm;
