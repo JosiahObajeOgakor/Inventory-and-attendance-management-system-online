@@ -33,7 +33,7 @@
     </div>
   }
 
-  <dialog #write class="sheet" aria-labelledby="write-title" (click)="$event.target === $event.currentTarget && close()">
+  <dialog #write class="sheet" aria-labelledby="write-title" (click)="backdrop($event)">
     @if (sent()) {
       <div class="sheet__body">
         <h2 id="write-title" class="sheet__title">Thank you!</h2>

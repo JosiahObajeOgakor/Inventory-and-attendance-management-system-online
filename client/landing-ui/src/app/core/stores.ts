@@ -8,6 +8,8 @@ export interface SocialLink { platform: string; handle: string; url: string; }
 export interface ShopStore {
   key: string; name: string; legalName: string; whatsApp: string | null; phone: string | null; email: string | null; address: string | null; website: string | null;
   openingHours: string | null; replyPromise: string | null; delivery: ShopZone[] | null; socials: SocialLink[] | null;
+  /** VAT % added to the items (not to delivery), and whether this store can take a payment on the website. */
+  vatRate: number; payOnline: boolean;
 }
 
 /** Loaded once in the browser; the prerendered page never bakes in contact details or stock. */

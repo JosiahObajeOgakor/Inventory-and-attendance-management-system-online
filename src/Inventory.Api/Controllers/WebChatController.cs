@@ -23,7 +23,8 @@ public sealed record WebChatUpdates(IReadOnlyList<string> Messages, bool Awaitin
 public sealed record ShopItem(int Id, string Name, string Unit, decimal Price, bool Few, bool HasImage, string? Category = null);
 /// <summary>A store the website shows: who it is, the WhatsApp number its orders go to, and its public contact details.</summary>
 public sealed record ShopStore(string Key, string Name, string LegalName, string? WhatsApp, string? Phone, string? Email, string? Address, string? Website,
-    string? OpeningHours = null, string? ReplyPromise = null, IReadOnlyList<ShopZone>? Delivery = null, IReadOnlyList<Inventory.Application.Abstractions.SocialLink>? Socials = null);
+    string? OpeningHours = null, string? ReplyPromise = null, IReadOnlyList<ShopZone>? Delivery = null, IReadOnlyList<Inventory.Application.Abstractions.SocialLink>? Socials = null,
+    decimal VatRate = 0, bool PayOnline = false);
 public sealed record ShopZone(string Name, decimal Fee, string? Eta);
 /// <summary>A product's page on the website: what it is, who it is for, its analysis and feeding guide, and today's price.</summary>
 public sealed record ShopProduct(int Id, string Name, string Unit, decimal Price, bool InStock, bool Few, bool HasImage, string? Category, string? Species, string? LifeStage,
@@ -80,10 +81,17 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
                 var whatsapp = WhatsAppDigits() ?? mainPhone;
                 var delivery = await db.DeliveryZones.AsNoTracking().Where(z => z.IsActive).OrderBy(z => z.Fee).ThenBy(z => z.Name).Select(z => new ShopZone(z.Name, z.Fee, z.Eta)).ToListAsync(ct);
                 list.Add(new ShopStore(key, info.DisplayName, p?.LegalName ?? info.LegalName, whatsapp, p?.Phone, p?.Email, p?.Address, info.Website,
-                    p?.OpeningHours, p?.ReplyPromise, delivery, info.Socials));
+                    p?.OpeningHours, p?.ReplyPromise, delivery, info.Socials, p?.DefaultVatRate ?? 0, PayOnline(info)));
             }
             return list;
         }))!;
+    }
+
+    /// <summary>Whether the store can take a payment on the website (an online processor configured and allowed for it), so the button only shows where it works.</summary>
+    private bool PayOnline(Inventory.Infrastructure.Services.CompanyInfo info)
+    {
+        var configured = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentGateways>().Configured;
+        return configured.Any(p => info.PaymentProviders is not { } allowed || allowed.Contains(p, StringComparer.OrdinalIgnoreCase));
     }
 
     private static string? Digits(string? phone)

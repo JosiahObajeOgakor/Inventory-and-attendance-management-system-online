@@ -37,6 +37,8 @@ export class Testimonials {
   protected stars(n: number): string { return '★'.repeat(n) + '☆'.repeat(5 - n); }
   protected open(): void { this.sent.set(false); this.error.set(''); this.dialog()?.nativeElement.showModal(); }
   protected close(): void { this.dialog()?.nativeElement.close(); }
+  /** Closes on a click on the dark backdrop. Returns nothing: a handler returning false would cancel the click, and with it the form's submit. */
+  protected backdrop(e: MouseEvent): void { if (e.target === e.currentTarget) this.close(); }
   protected send(name: string, place: string, text: string, consent: boolean): void {
     if (this.sending()) return;
     this.sending.set(true); this.error.set('');

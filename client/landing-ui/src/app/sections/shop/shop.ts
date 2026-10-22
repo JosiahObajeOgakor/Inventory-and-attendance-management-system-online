@@ -68,15 +68,34 @@ export class Shop {
     return ([['Protein', p.proteinPct], ['Fat', p.fatPct], ['Fibre', p.fiberPct], ['Moisture', p.moisturePct]] as const).filter(([, v]) => v !== null && v !== undefined);
   });
 
-  // ---- pay online
+  // ---- checkout (pay online through AlatPay)
   private readonly payDialog = viewChild<ElementRef<HTMLDialogElement>>('payDialog');
   protected readonly zones = computed(() => this.store()?.delivery ?? []);
+  protected readonly canPayOnline = computed(() => this.store()?.payOnline ?? false);
+  protected readonly name = signal('');
+  protected readonly phone = signal('');
+  protected readonly email = signal('');
   protected readonly zone = signal('');
   protected readonly address = signal('');
-  protected readonly deliveryFee = computed(() => this.zones().find(z => z.name === this.zone())?.fee ?? 0);
+  protected readonly tried = signal(false);
   protected readonly paying = signal(false);
   protected readonly payError = signal('');
 
+  /** Exactly the server's sum (DocumentCalculator + delivery after VAT), so the amount on the button is the amount AlatPay asks for. */
+  protected readonly vatRate = computed(() => this.store()?.vatRate ?? 0);
+  protected readonly vat = computed(() => Math.round(this.total() * this.vatRate()) / 100);
+  protected readonly deliveryFee = computed(() => this.zones().find(z => z.name === this.zone())?.fee ?? 0);
+  protected readonly grandTotal = computed(() => this.total() + this.vat() + this.deliveryFee());
+  protected readonly errors = computed(() => {
+    const e: Record<string, string> = {};
+    if (this.name().trim().length < 2) e['name'] = 'Enter your name.';
+    const digits = this.phone().replace(/\D/g, '');
+    if (!(digits.length === 11 && digits.startsWith('0')) && !(digits.length === 13 && digits.startsWith('234')) && !(digits.length === 10 && !digits.startsWith('0'))) e['phone'] = 'Enter a Nigerian mobile number, e.g. 0803 123 4567.';
+    if (this.email().trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(this.email().trim())) e['email'] = 'Check the email address.';
+    if (this.zone() && this.address().trim().length < 5) e['address'] = 'Enter the delivery address.';
+    return e;
+  });
+  protected err(field: string): string | null { return this.tried() ? this.errors()[field] ?? null : null; }
   constructor() {
     // Prices and stock change during the day, so the prerendered page never bakes them in: the browser asks when the shelf is shown.
     effect(() => {
@@ -125,19 +144,29 @@ export class Shop {
   }
   protected closeProduct(): void { this.productDialog()?.nativeElement.close(); }
 
-  protected openPay(): void { this.payError.set(''); this.payDialog()?.nativeElement.showModal(); }
-  protected closePay(): void { this.payDialog()?.nativeElement.close(); }
-  protected pay(name: string, phone: string, email: string): void {
-    const address = this.zone() ? this.address().trim() : '';
-    if (this.paying()) return;
+  protected openPay(): void { this.payError.set(''); this.tried.set(false); this.payDialog()?.nativeElement.showModal(); }
+  protected closePay(): void { if (!this.paying()) this.payDialog()?.nativeElement.close(); }
+  /** Closes a dialog when its dark backdrop is clicked. Returns nothing on purpose: a handler that returns false cancels the click (and a form's submit). */
+  protected productBackdrop(e: MouseEvent): void { if (e.target === e.currentTarget) this.closeProduct(); }
+  protected payBackdrop(e: MouseEvent): void { if (e.target === e.currentTarget) this.closePay(); }
+
+  protected pay(): void {
+    this.tried.set(true);
+    if (this.paying() || Object.keys(this.errors()).length) return;
     this.paying.set(true); this.payError.set('');
-    const body = { name, phone, email: email || null, zone: this.zone() || null, address: address || null, lines: this.lines().map(l => ({ productId: l.item.id, quantity: l.qty })) };
+    const body = {
+      name: this.name().trim(), phone: this.phone().trim(), email: this.email().trim() || null, zone: this.zone() || null,
+      address: this.zone() ? this.address().trim() : null, lines: this.lines().map(l => ({ productId: l.item.id, quantity: l.qty })),
+    };
     this.http.post<{ url: string; number: string; total: number }>('/api/webchat/checkout', body, { params: { store: this.storeKey() } }).subscribe({
       next: r => { location.href = r.url; },
-      error: (e: HttpErrorResponse) => { this.paying.set(false); this.payError.set(e.error?.title ?? e.error?.detail ?? "We couldn't start the payment. Please try again, or send your basket on WhatsApp."); },
+      error: (e: HttpErrorResponse) => {
+        this.paying.set(false);
+        this.payError.set(e.status === 0 ? "We couldn't reach the payment service. Check your connection and try again."
+          : e.error?.title ?? e.error?.detail ?? "We couldn't start the payment. Please try again, or send your basket on WhatsApp.");
+      },
     });
   }
-
   protected forWhom(p: ShopProduct): string { return [p.species, p.lifeStage].filter(x => !!x).join(' · '); }
   protected label(c: string): string { return c.charAt(0).toUpperCase() + c.slice(1).toLowerCase(); }
   protected naira(n: number): string { return '₦' + n.toLocaleString('en-NG', { maximumFractionDigits: 2 }); }
