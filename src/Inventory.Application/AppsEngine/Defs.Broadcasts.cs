@@ -10,6 +10,7 @@ public static class BroadcastApps
         new(key, name, "admin", intro,
             [Kind("campaign", "campaign", "Campaigns",
                 [Title("Campaign"), .. (subject ? new[] { Text("subject", "Email subject", true, true) } : Array.Empty<FieldDef>()), Sel("audience", "Who gets it", BroadcastQueue.Audiences, true, true, BroadcastQueue.Audiences[0]),
+                 Customers("customers", "Selected customers", "Used when \"Who gets it\" is Selected customers. Only those who agreed to messages are sent to."),
                  Area("message", "Message", true, "Write {name} where the customer's name should go, e.g. \"Hello {name}, ...\"."),
                  Ro("recipients", "People it was queued for", "number", true), Ro("sentOn", "Sent on")],
                 [S("Draft", "info", "Sent"), S("Sent", "ok")],

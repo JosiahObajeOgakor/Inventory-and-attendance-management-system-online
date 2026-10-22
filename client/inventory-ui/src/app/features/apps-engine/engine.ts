@@ -80,7 +80,7 @@ interface Option { id: number; name: string; }
               @if (f.readOnly) {
                 @if (v.rec && shown(v.rec, f)) { <div class="field"><span class="lab">{{ f.label }}</span><div class="ro">{{ shown(v.rec, f) }}</div></div> }
               } @else {
-                <div class="field" [class.span-2]="f.type === 'textarea' || f.type === 'lines'">
+                <div class="field" [class.span-2]="f.type === 'textarea' || f.type === 'lines' || f.type === 'customers'">
                   <label [for]="'f-' + f.key">{{ f.label }}@if (f.required) { <span class="req"> *</span> }</label>
                   @switch (f.type) {
                     @case ('textarea') { <textarea class="input" rows="4" [id]="'f-' + f.key" [name]="f.key" [(ngModel)]="form[f.key]"></textarea> }
@@ -99,6 +99,16 @@ interface Option { id: number; name: string; }
                           <button type="button" class="btn btn-sm" (click)="removeLine(f.key, i)" aria-label="Remove line">×</button></div>
                       }
                       <button type="button" class="btn btn-sm" (click)="addLine(f.key)">Add a line</button>
+                    }
+                    @case ('customers') {
+                      <div class="pickbar"><input class="input" type="search" [id]="'f-' + f.key" placeholder="Search name or phone" [ngModel]="pickQ()" (ngModelChange)="pickQ.set($event)" [ngModelOptions]="{ standalone: true }" />
+                        <span class="muted sm"><strong>{{ picked(f.key).length }}</strong> selected</span>
+                        <button type="button" class="btn btn-sm" (click)="pickShown(f.key, true)">Tick all shown</button><button type="button" class="btn btn-sm" (click)="pickShown(f.key, false)">Clear shown</button></div>
+                      <div class="picklist" role="group" [attr.aria-label]="f.label">
+                        @for (o of customersShown(); track o.id) {
+                          <label class="chk pick"><input type="checkbox" [checked]="picked(f.key).includes(o.id)" (change)="toggle(f.key, o.id)" /> {{ o.name }}</label>
+                        } @empty { <p class="muted sm">No customer matches.</p> }
+                      </div>
                     }
                     @default { <input class="input" [id]="'f-' + f.key" [name]="f.key" [(ngModel)]="form[f.key]" /> }
                   }
@@ -144,7 +154,10 @@ interface Option { id: number; name: string; }
     .toolbar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; } .search { max-width: 14rem; } .chips { display: flex; gap: .25rem; flex-wrap: wrap; }
     tr.row { cursor: pointer; } .actions { white-space: nowrap; display: flex; gap: .25rem; } .flag { color: #b3261e; font-size: .78rem; font-weight: 600; }
     .meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-bottom: .8rem; } .back { margin-bottom: .6rem; } .req { color: #b3261e; }
-    .ro { padding: .45rem 0; } .chk { display: inline-flex; gap: .4rem; align-items: center; font-weight: 400; } .line { display: grid; grid-template-columns: 1fr 5rem 7rem auto; gap: .4rem; margin-bottom: .4rem; }
+    .ro { padding: .45rem 0; } .chk { display: inline-flex; gap: .4rem; align-items: center; font-weight: 400; } .pickbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; } .pickbar .input { flex: 1 1 14rem; }
+    .picklist { max-height: 16rem; overflow: auto; border: 1px solid var(--line, #ddd); border-radius: 8px; padding: .3rem .6rem; margin-top: .4rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+    .pick { padding: .15rem 0; }
+    .line { display: grid; grid-template-columns: 1fr 5rem 7rem auto; gap: .4rem; margin-bottom: .4rem; }
     .msg { white-space: pre-wrap; } .compact td, .compact th { padding: .3rem .5rem; } h3.sub { margin: 1.2rem 0 .4rem; }`,
 })
 export class EnginePage {
@@ -204,6 +217,7 @@ export class EnginePage {
     const v = this.raw(r, f.key);
     if (v === null || v === undefined || v === '') return '';
     if (f.type === 'bool') return v ? '✓' : '';
+    if (f.type === 'customers') return Array.isArray(v) && v.length ? `${v.length} customer(s)` : '';
     if (f.type === 'money') return '₦' + Number(v).toLocaleString('en-NG', { maximumFractionDigits: 2 });
     return String(v);
   }
@@ -217,16 +231,31 @@ export class EnginePage {
   protected removeLine(key: string, i: number) { this.lines(key).splice(i, 1); }
   protected options(f: FieldDef): Option[] { return this.lookups()[f.lookup ?? ''] ?? []; }
 
+  // ---- picking several customers (a broadcast's "Selected customers")
+  protected readonly pickQ = signal('');
+  protected readonly customersShown = computed(() => {
+    const words = this.pickQ().toLowerCase().split(/\s+/).filter(Boolean);
+    const all = this.lookups()['customer'] ?? [];
+    return words.length ? all.filter(o => words.every(w => o.name.toLowerCase().includes(w) || o.name.replace(/\D/g, '').includes(w.replace(/\D/g, '') || '\u0000'))) : all;
+  });
+  protected picked(key: string): number[] { return (this.form[key] ??= []) as number[]; }
+  protected toggle(key: string, id: number) { const p = this.picked(key); const i = p.indexOf(id); if (i >= 0) p.splice(i, 1); else p.push(id); }
+  protected pickShown(key: string, on: boolean) {
+    const p = this.picked(key); const shown = this.customersShown().map(o => o.id);
+    this.form[key] = on ? [...new Set([...p, ...shown])] : p.filter(id => !shown.includes(id));
+  }
+
   // ---- lookups for the open form
   private async ensureLookups(k: KindDef) {
     const wanted = new Set(k.fields.filter(f => f.type === 'lookup' && f.lookup).map(f => f.lookup!));
     if (k.fields.some(f => f.type === 'lines')) wanted.add('product');
+    if (k.fields.some(f => f.type === 'customers')) wanted.add('customer');
     const o = this.ov(); if (!o) return;
     for (const w of wanted) {
       if (w === 'product' && this.lookups()['product']) continue;
       try {
         let list: Option[] = [];
-        if (w === 'customer') list = (await this.core.customers({ pageSize: 200 })).items.map(c => ({ id: c.id, name: c.name }));
+        if (w === 'customer') list = await this.allCustomers();
         else if (w === 'employee') list = (await this.api2.employees()).filter(e => e.isActive).map(e => ({ id: e.id, name: e.fullName }));
         else if (w === 'product') list = (await this.core.products({ pageSize: 200 })).items.map(p => ({ id: p.id, name: `${p.name} (${p.sku})` }));
         else if (w.startsWith('record:')) list = (await this.api.list(o.def.key, w.slice(7))).map(r => ({ id: r.id, name: r.title }));
@@ -235,15 +264,26 @@ export class EnginePage {
     }
   }
 
+  /** Every customer (page by page), with the phone so two of the same name can be told apart. */
+  private async allCustomers(): Promise<Option[]> {
+    const out: Option[] = [];
+    for (let page = 1; page <= 50; page++) {
+      const r = await this.core.customers({ page, pageSize: 200 });
+      out.push(...r.items.map(c => ({ id: c.id, name: c.phone ? `${c.name} · ${c.phone}` : c.name })));
+      if (r.items.length < 200 || out.length >= r.total) break;
+    }
+    return out;
+  }
+
   // ---- opening, saving
   private blank(k: KindDef): Data {
     const f: Data = {};
-    for (const d of k.fields) f[d.key] = d.type === 'bool' ? false : d.type === 'lines' ? [] : d.default ?? null;
+    for (const d of k.fields) f[d.key] = d.type === 'bool' ? false : d.type === 'lines' || d.type === 'customers' ? [] : d.default ?? null;
     return f;
   }
   private fill(k: KindDef, r: RecordRow): Data {
     const f: Data = {};
-    for (const d of k.fields) { const v = this.raw(r, d.key); f[d.key] = d.type === 'bool' ? !!v : d.type === 'lines' ? ((v as unknown[]) ?? []).map(x => ({ ...(x as object) })) : v ?? null; }
+    for (const d of k.fields) { const v = this.raw(r, d.key); f[d.key] = d.type === 'bool' ? !!v : d.type === 'lines' ? ((v as unknown[]) ?? []).map(x => ({ ...(x as object) })) : d.type === 'customers' ? [...((v as number[]) ?? [])] : v ?? null; }
     return f;
   }
   protected async startNew(k: KindDef, parent: number | null) {

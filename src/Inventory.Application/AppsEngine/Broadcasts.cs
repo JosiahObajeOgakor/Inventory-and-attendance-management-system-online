@@ -23,7 +23,10 @@ public sealed record Target(int CustomerId, string Name, string? Phone, string? 
 public sealed class BroadcastQueue(IBusinessDbContext db, IClock clock, IChatSender chat, ICampaignEmailSender email, ISmsSender sms, ICompanyContext company)
 {
     public static readonly string[] Audiences =
-        ["All opted-in customers", "Opted-in customers who owe me", "Opted-in Gold customers", "Opted-in customers who haven't bought in 90 days"];
+        ["All opted-in customers", "Opted-in customers who owe me", "Opted-in Gold customers", "Opted-in customers who haven't bought in 90 days", Selected];
+
+    /// <summary>Only the customers ticked on the campaign (its "customers" field) — still only those who opted in.</summary>
+    public const string Selected = "Selected customers";
 
     /// <summary>Refuses early, in plain words, when the server can't send on this channel at all.</summary>
     public void EnsureChannel(string channel)
@@ -37,7 +40,7 @@ public sealed class BroadcastQueue(IBusinessDbContext db, IClock clock, IChatSen
         : string.IsNullOrWhiteSpace(t.Phone) ? null : CampaignRunner.ToWhatsAppDigits(t.Phone);
 
     /// <summary>Opted-in customers only (never "unknown" and never opted out), narrowed by the chosen audience.</summary>
-    public async Task<List<Target>> AudienceAsync(string audience, CancellationToken ct)
+    public async Task<List<Target>> AudienceAsync(string audience, CancellationToken ct, IReadOnlyCollection<int>? selected = null)
     {
         var today = clock.BusinessToday;
         var all = await db.Customers.AsNoTracking().Where(c => c.MarketingStatus == MarketingStatuses.OptedIn && c.CustomerType != CustomerTypes.WalkIn)
@@ -47,6 +50,7 @@ public sealed class BroadcastQueue(IBusinessDbContext db, IClock clock, IChatSen
             "Opted-in customers who owe me" => all.Where(c => c.Balance > 0).Select(c => c.Id).ToHashSet(),
             "Opted-in Gold customers" => await GoldAsync(today, ct),
             "Opted-in customers who haven't bought in 90 days" => await LapsedAsync(today, 90, ct),
+            Selected => (selected ?? []).ToHashSet(),
             _ => null,
         };
         return all.Where(c => keep is null || keep.Contains(c.Id)).Select(c => new Target(c.Id, c.Name, c.Phone, c.Email)).ToList();
@@ -191,10 +195,16 @@ public abstract class BroadcastHookBase(string app, string channel, BroadcastQue
                 + (why.Count > 0 ? "\n\nWhy some were not sent:\n" + string.Join("\n", why.GroupBy(w => w).OrderByDescending(g => g.Count()).Take(3).Select(g => $"{g.Count()} × {g.Key}")) : ""));
         }
         var audience = d.Str("audience") ?? BroadcastQueue.Audiences[0];
-        var targets = await queue.AudienceAsync(audience, ct);
+        var picked = (d["customers"] as JsonArray)?.Select(x => x is JsonValue v && v.TryGetValue<int>(out var i) ? i : 0).Where(x => x > 0).ToList() ?? [];
+        if (audience == BroadcastQueue.Selected && picked.Count == 0) throw new BusinessRuleException("Tick the customers who should get it (Selected customers), then save.");
+        var targets = await queue.AudienceAsync(audience, ct, picked);
         var reachable = targets.Where(t => BroadcastQueue.AddressFor(channel, t) is not null).ToList();
         if (action == "count")
-            return new ActionResultDto($"{reachable.Count} of {targets.Count} opted-in customer(s) in \"{audience}\" can be reached by {channel}. {targets.Count - reachable.Count} have no {(channel == "Email" ? "email address" : "phone number")} on their record. Customers who haven't opted in are never messaged.");
+        {
+            var notAsked = audience == BroadcastQueue.Selected ? picked.Count - targets.Count : 0;
+            return new ActionResultDto($"{reachable.Count} of {targets.Count} opted-in customer(s) in \"{audience}\" can be reached by {channel}. {targets.Count - reachable.Count} have no {(channel == "Email" ? "email address" : "phone number")} on their record."
+                + (notAsked > 0 ? $" {notAsked} of the {picked.Count} you ticked haven't agreed to messages, so they're left out." : "") + " Customers who haven't opted in are never messaged.");
+        }
 
         if (string.IsNullOrWhiteSpace(d.Str("message"))) throw new BusinessRuleException("Write the message first.");
         if (reachable.Count == 0) throw new BusinessRuleException($"No opted-in customer in \"{audience}\" can be reached by {channel}.");

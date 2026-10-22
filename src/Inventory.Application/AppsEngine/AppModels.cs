@@ -5,7 +5,7 @@ using Inventory.Domain.Entities;
 namespace Inventory.Application.AppsEngine;
 
 /// <summary>
-/// One field of a record. Type: text, textarea, number, money, date, select, bool, email, phone, lookup, lines. json holds structured data a custom screen edits (never shown in the standard form). ReadOnly fields are set by the app's own code (a signature, an invoice number) and survive edits.
+/// One field of a record. Type: text, textarea, number, money, date, select, bool, email, phone, lookup, lines, customers (several customer ids). json holds structured data a custom screen edits (never shown in the standard form). ReadOnly fields are set by the app's own code (a signature, an invoice number) and survive edits.
 /// Lookup: "customer", "employee", "product", or "record:{kind}" (a record of the same app). Lines: product lines (product, quantity, optional price).
 /// Fields named title, code, date and amount also fill the record's own columns, so lists can sort, search and total them.
 /// </summary>

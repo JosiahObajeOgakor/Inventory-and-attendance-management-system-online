@@ -33,7 +33,7 @@ public class AppsEngineTests
             Assert.All(k.Statuses, s => Assert.Contains(s.Tone, new[] { "ok", "warn", "bad", "info" }));
             foreach (var f in k.Fields)
             {
-                Assert.Contains(f.Type, new[] { "text", "textarea", "number", "money", "date", "select", "bool", "email", "phone", "lookup", "lines", "json" });
+                Assert.Contains(f.Type, new[] { "text", "textarea", "number", "money", "date", "select", "bool", "email", "phone", "lookup", "lines", "customers", "json" });
                 if (f.Type == "select") Assert.NotEmpty(f.Options ?? []);
                 if (f.Type == "lookup") Assert.True(f.Lookup is "customer" or "employee" or "product" || (f.Lookup?.StartsWith("record:") == true && app.Kinds.Any(x => x.Key == f.Lookup[7..])), $"{f.Key} has a bad lookup");
                 if (f.Type == "select" && f.Default is not null) Assert.Contains(f.Default, f.Options!);

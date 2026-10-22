@@ -195,6 +195,12 @@ public sealed class AppRecordService(IBusinessDbContext db, IClock clock, ICompa
                 var pids = clean.OfType<JsonObject>().Select(o => o.Int("productId")!.Value).Distinct().ToList();
                 if (await db.Products.CountAsync(p => pids.Contains(p.Id), ct) != pids.Count) throw new BusinessRuleException($"A product in {f.Label.ToLowerInvariant()} no longer exists.");
                 return clean;
+            case "customers":
+                if (raw is not JsonArray picked) throw new BusinessRuleException($"{f.Label} must be a list.");
+                var cids = picked.Select(x => x is JsonValue v && v.TryGetValue<int>(out var i) ? i : int.TryParse(x?.ToString(), out var j) ? j : 0).Where(x => x > 0).Distinct().ToList();
+                if (cids.Count > 2000) throw new BusinessRuleException($"Pick at most 2000 in {f.Label.ToLowerInvariant()}.");
+                var known = await db.Customers.Where(x => cids.Contains(x.Id)).Select(x => x.Id).ToListAsync(ct);
+                return new JsonArray(known.OrderBy(x => x).Select(x => (JsonNode)JsonValue.Create(x)).ToArray());
             case "textarea":
                 return JsonValue.Create(s!.Length > 4000 ? s[..4000] : s);
             case "json":

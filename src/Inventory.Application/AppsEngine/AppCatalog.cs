@@ -28,6 +28,8 @@ internal static class B
     public static FieldDef Tel(string key, string label, bool req = false, bool list = false) => new(key, label, "phone", req, InList: list);
     public static FieldDef Look(string key, string label, string lookup, bool req = false, bool list = false) => new(key, label, "lookup", req, Lookup: lookup, InList: list);
     public static FieldDef Lines(string key, string label, bool req = false, string? help = null) => new(key, label, "lines", req, Help: help);
+    /// <summary>Several customers, picked from a searchable list (stored as their ids).</summary>
+    public static FieldDef Customers(string key, string label, string? help = null) => new(key, label, "customers", Help: help);
     public static FieldDef Ro(string key, string label, string type = "text", bool list = false) => new(key, label, type, InList: list, ReadOnly: true);
     public static FieldDef Json(string key, string label) => new(key, label, "json");
     public static FieldDef Code(string label = "Web address", string? help = "Letters, numbers and dashes. Leave blank to make one from the title.") => new("code", label, "text", false, Help: help);
