@@ -75,6 +75,7 @@ public static class DependencyInjection
         s.AddScoped<AppsEngine.FiguresService>();
         s.AddScoped<TimeOff.TimeOffService>();
         s.AddScoped<Branches.BranchService>();
+        s.AddScoped<Queries.ChatInsightsQueries>();
         s.AddScoped<Ledger.GeneralLedger>();
         s.AddScoped<Ledger.LedgerSync>();
         s.AddScoped<Ledger.AccountingService>();

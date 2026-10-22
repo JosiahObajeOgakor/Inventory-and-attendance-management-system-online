@@ -1,3 +1,4 @@
+using Inventory.Application.Queries;
 using Inventory.Api.Infrastructure;
 using Inventory.Application.Abstractions;
 using Inventory.Application.Ai;
@@ -31,8 +32,12 @@ public class AiController(ICurrentUser cu, AssistantService assistant, InsightSe
 }
 
 [ApiController, Route("api/dashboard"), Authorize(Policy = Policies.Admin)]
-public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q) : AppController(cu)
+public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q, ChatInsightsQueries chat) : AppController(cu)
 {
+    /// <summary>What the WhatsApp / website sales assistant brought in over the last N days.</summary>
+    [HttpGet("chat")]
+    public Task<ChatSummary> Chat([FromQuery] int days = 30, CancellationToken ct = default) => chat.GetAsync(days, ct);
+
     [HttpGet("overview")]
     public Task<Overview> Overview([FromQuery] int days = 30, CancellationToken ct = default) => q.GetAsync(days, ct);
 
@@ -161,6 +166,8 @@ public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGa
         log.LogInformation("Paystack webhook: applied={Applied} already={Already}", result.Applied, result.AlreadySettled);
         if (result.Applied)
             await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentFollowUpService>().SendReceiptIfPossibleAsync(result, ct);
+        // An order started in a chat is confirmed in that chat, whichever way it was paid.
+        await HttpContext.RequestServices.GetRequiredService<Inventory.Application.SalesAssistant.Chat.ChatPaymentNotifier>().NotifyAsync(result, ct);
         return Ok();
     }
 }

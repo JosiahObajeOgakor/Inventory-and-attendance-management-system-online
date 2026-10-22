@@ -33,9 +33,9 @@ public class FinanceController(ICurrentUser cu, FinanceQueries q) : AppControlle
     public Task<PagedResult<LedgerRowDto>> Ledger([FromQuery] PageRequest paging, [FromQuery] string? accountType, CancellationToken ct) => q.LedgerAsync(paging, accountType, ct);
 }
 
-public sealed record UserRow(int Id, string Username, string FullName, string Role, bool IsActive, bool MustChangePassword, string CompanyAccess, DateTime? LastLoginAt);
-public sealed record CreateUserRequest(string FullName, string Username, string Password, string Role, string[] Companies);
-public sealed record UpdateUserRequest(string FullName, string Role, string[] Companies, bool IsActive);
+public sealed record UserRow(int Id, string Username, string FullName, string Role, bool IsActive, bool MustChangePassword, string CompanyAccess, DateTime? LastLoginAt, string? Email = null);
+public sealed record CreateUserRequest(string FullName, string Username, string Password, string Role, string[] Companies, string? Email = null);
+public sealed record UpdateUserRequest(string FullName, string Role, string[] Companies, bool IsActive, string? Email = null);
 public sealed record ResetPasswordRequest(string NewPassword);
 
 [ApiController, Route("api/users")]
@@ -44,13 +44,21 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
 {
     private static bool ValidRole(string r) => r is RoleNames.Admin or RoleNames.Clerk;
 
+    /// <summary>null when blank (no email), "" when it is not an email address, else the trimmed address. Clerks get the sale emails here.</summary>
+    private static string? CleanEmail(string? e)
+    {
+        if (string.IsNullOrWhiteSpace(e)) return null;
+        var s = e.Trim();
+        return s.Length <= 120 && s.Contains('@') && s.Contains('.') && !s.Any(char.IsWhiteSpace) ? s : "";
+    }
+
     [HttpGet]
     public async Task<List<UserRow>> List(CancellationToken ct)
     {
         var all = await users.Users.AsNoTracking().OrderBy(u => u.FullName).ToListAsync(ct);
         var rows = new List<UserRow>();
         foreach (var u in all)
-            rows.Add(new UserRow(u.Id, u.UserName!, u.FullName, (await users.GetRolesAsync(u)).FirstOrDefault() ?? "", u.IsActive, u.MustChangePassword, u.CompanyAccess, u.LastLoginAt));
+            rows.Add(new UserRow(u.Id, u.UserName!, u.FullName, (await users.GetRolesAsync(u)).FirstOrDefault() ?? "", u.IsActive, u.MustChangePassword, u.CompanyAccess, u.LastLoginAt, u.Email));
         return rows;
     }
 
@@ -62,7 +70,9 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
         if (access.Length == 0) return BadRequest(new ProblemDetails { Status = 400, Title = "Choose at least one company." });
         if (string.IsNullOrWhiteSpace(r.FullName) || string.IsNullOrWhiteSpace(r.Username)) return BadRequest(new ProblemDetails { Status = 400, Title = "Name and username are required." });
 
-        var user = new AppUser { UserName = r.Username.Trim(), FullName = r.FullName.Trim(), CompanyAccess = string.Join(',', access), IsActive = true, MustChangePassword = true };
+        var mail = CleanEmail(r.Email);
+        if (mail == "") return BadRequest(new ProblemDetails { Status = 400, Title = "That doesn't look like a valid email address." });
+        var user = new AppUser { UserName = r.Username.Trim(), FullName = r.FullName.Trim(), CompanyAccess = string.Join(',', access), IsActive = true, MustChangePassword = true, Email = mail };
         var res = await users.CreateAsync(user, r.Password);
         if (!res.Succeeded) return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]> { ["password"] = res.Errors.Select(e => e.Description).ToArray() }));
         await users.AddToRoleAsync(user, r.Role);
@@ -79,7 +89,10 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
         if (id == Me.Id && (!r.IsActive || r.Role != RoleNames.Admin))
             return Conflict(new ProblemDetails { Status = 409, Title = "You can't disable or demote your own account." });
 
+        var mail = CleanEmail(r.Email);
+        if (mail == "") return BadRequest(new ProblemDetails { Status = 400, Title = "That doesn't look like a valid email address." });
         user.FullName = r.FullName.Trim();
+        user.Email = mail;
         user.IsActive = r.IsActive;
         user.CompanyAccess = string.Join(',', r.Companies.Where(c => companies.Find(c) is not null));
         await users.UpdateAsync(user);

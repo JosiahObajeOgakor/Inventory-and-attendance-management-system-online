@@ -37,6 +37,7 @@ import { StampTimePipe } from '../../shared/ui';
     <app-modal [open]="formOpen()" [heading]="editing() ? 'Edit person' : 'Add person'" (closed)="formOpen.set(false)">
       <form id="uf" [formGroup]="form" (ngSubmit)="save()" class="form-grid" novalidate>
         <div class="field span-2"><label for="u-n">Full name</label><input id="u-n" class="input" formControlName="fullName" /></div>
+        <div class="field span-2"><label for="u-e">Email (optional)</label><input id="u-e" class="input" type="email" formControlName="email" autocomplete="off" /><span class="hint">Clerks get an email for every completed sale at this address. Only the admin's WhatsApp is notified.</span></div>
         @if (!editing()) {
           <div class="field"><label for="u-u">Username</label><input id="u-u" class="input" formControlName="username" autocapitalize="none" autocomplete="off" /></div>
           <div class="field"><label for="u-p">First password</label><input id="u-p" class="input" type="text" formControlName="password" autocomplete="off" /><span class="hint">They must change it when they first sign in.</span></div>
@@ -80,7 +81,7 @@ export class UsersPage implements OnInit {
   private access = new Set<string>();
 
   protected readonly form = this.fb.nonNullable.group({
-    fullName: ['', Validators.required], username: [''], password: [''], role: ['CLERK'], isActive: [true],
+    fullName: ['', Validators.required], username: [''], password: [''], role: ['CLERK'], isActive: [true], email: [''],
   });
   protected readonly resetForm = this.fb.nonNullable.group({ password: ['', [Validators.required, Validators.minLength(8)]] });
 
@@ -94,14 +95,14 @@ export class UsersPage implements OnInit {
 
   protected openNew() {
     this.editing.set(null); this.access = new Set(this.companyOptions().map(c => c.key));
-    this.form.reset({ fullName: '', username: '', password: '', role: 'CLERK', isActive: true });
+    this.form.reset({ fullName: '', username: '', password: '', role: 'CLERK', isActive: true, email: '' });
     this.form.controls.username.setValidators(Validators.required); this.form.controls.password.setValidators([Validators.required, Validators.minLength(8)]);
     this.form.controls.username.updateValueAndValidity(); this.form.controls.password.updateValueAndValidity();
     this.formOpen.set(true);
   }
   protected openEdit(u: UserRow) {
     this.editing.set(u); this.access = new Set(u.companyAccess.split(',').map(s => s.trim()).filter(Boolean));
-    this.form.reset({ fullName: u.fullName, username: u.username, password: '', role: u.role, isActive: u.isActive });
+    this.form.reset({ fullName: u.fullName, username: u.username, password: '', role: u.role, isActive: u.isActive, email: u.email ?? '' });
     this.form.controls.username.clearValidators(); this.form.controls.password.clearValidators();
     this.form.controls.username.updateValueAndValidity(); this.form.controls.password.updateValueAndValidity();
     this.formOpen.set(true);
@@ -115,8 +116,8 @@ export class UsersPage implements OnInit {
     this.busy.set(true);
     try {
       const e = this.editing();
-      if (e) await this.api.updateUser(e.id, { fullName: v.fullName.trim(), role: v.role, companies, isActive: v.isActive });
-      else await this.api.createUser({ fullName: v.fullName.trim(), username: v.username.trim(), password: v.password, role: v.role, companies });
+      if (e) await this.api.updateUser(e.id, { fullName: v.fullName.trim(), role: v.role, companies, isActive: v.isActive, email: v.email.trim() || null });
+      else await this.api.createUser({ fullName: v.fullName.trim(), username: v.username.trim(), password: v.password, role: v.role, companies, email: v.email.trim() || null });
       this.toasts.ok(e ? 'Changes saved.' : 'Person added. They’ll set their own password when they first sign in.');
       this.formOpen.set(false); await this.load();
     } catch (err) { this.toasts.error(messageOf(err)); } finally { this.busy.set(false); }

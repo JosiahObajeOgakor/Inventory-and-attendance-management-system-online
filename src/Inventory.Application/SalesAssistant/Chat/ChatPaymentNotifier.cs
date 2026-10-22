@@ -18,7 +18,7 @@ public sealed class ChatPaymentNotifier(IBusinessDbContext db, ChatOrderText tex
     {
         if (r.Reference is null) return;
         var link = await db.PaymentLinks.AsNoTracking().SingleOrDefaultAsync(l => l.Reference == r.Reference, ct);
-        if (link is null || link.Provider != PaymentLinkService.AlatProvider || link.DocType != PaymentDocTypes.Quotation) return;
+        if (link is null || link.DocType != PaymentDocTypes.Quotation) return;      // bank-account (AlatPay) and card / USSD link (Paystack) orders alike
         var customerId = await db.Quotations.AsNoTracking().Where(q => q.Id == link.DocId).Select(q => (int?)q.CustomerId).FirstOrDefaultAsync(ct);
         var rawPhone = customerId is null ? null : await db.Customers.AsNoTracking().Where(c => c.Id == customerId).Select(c => c.Phone).FirstOrDefaultAsync(ct);
         if (string.IsNullOrWhiteSpace(rawPhone)) return;

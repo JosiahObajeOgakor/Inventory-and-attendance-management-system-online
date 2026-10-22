@@ -45,6 +45,7 @@ public static class ChatLexicon
         [ChatLanguages.Pidgin] = ["abeg", "wetin", "dey", "oga", "madam", "una", "wahala", "sabi", "pikin", "wey", "dem", "comot", "chop", "sef", "abi", "oya", "jare", "shey", "how far", "no be", "i don", "e don", "make i", "make we", "sharp sharp", "i wan", "we wan", "una get", "you get"],
         [ChatLanguages.Igbo] = ["biko", "nna", "nne", "ndewo", "kedu", "daalu", "imeela", "achoro", "azuta", "zuta", "ugwo", "ihe", "ole", "nnoo", "mba", "ahia", "anyi", "unu", "enwere", "maka", "gwa m", "onu ahia", "ego", "ee"],
         [ChatLanguages.Hausa] = ["sannu", "nagode", "ina", "kwana", "yaya", "nawa", "kudi", "saya", "siya", "zan", "kuma", "abinci", "farashi", "akwai", "babu", "don allah", "barka", "yawa", "wallahi", "toh", "ina son", "ina so", "na biya", "na tura", "kaya", "fatan"],
+        [ChatLanguages.Yoruba] = ["jowo", "mo fe", "mo nfe", "bawo ni", "e kaaro", "e kaasan", "e kaale", "kaaro", "kaasan", "melo", "beeni", "rara", "e se", "mo ti san", "awon oja", "owo re", "e jowo", "ewo ni", "oja yin"],
         [ChatLanguages.Igala] = [],
     };
 
@@ -63,14 +64,14 @@ public static class ChatLexicon
 
     // ---------------------------------------------------------------- intents
 
-    private static readonly string[] YesWords = ["yes", "yeah", "yep", "yup", "ok", "okay", "sure", "confirm", "confirmed", "correct", "proceed", "continue", "oya", "sharp", "ehen", "eh", "ee", "eeh", "toh", "to", "tabbas", "yarda", "kwenye", "mee", "gaa"];
-    private static readonly string[] YesPhrases = ["do am", "go ahead", "make we go", "no wahala", "no problem", "o di mma", "mee ya", "ya yi", "ci gaba", "na yarda", "gaa n ihu", "e", "generate it", "send am", "give me the account", "send account"];
-    private static readonly string[] NoWords = ["no", "nope", "nah", "mba", "aa", "cancel", "stop", "reset", "soke", "kagbuo", "restart", "wrong", "change"];
-    private static readonly string[] CancelWords = ["cancel", "stop", "reset", "forget it", "forget am", "leave am", "leave it", "start over", "kagbuo", "hapu ya", "soke", "bar shi", "i no want again", "i dont want again", "i do not want again", "no want again", "abeg stop"];
-    private static readonly string[] PaidWords = ["paid", "i paid", "i have paid", "i dont pay", "i don pay", "i don send", "i have sent", "sent it", "payment done", "transfer done", "transfer don enter", "done", "its done", "money sent", "i sent", "akwuola m ugwo", "akwuola ugwo", "ezigala m", "emela m ego", "na biya", "na tura", "an biya", "na gama", "status", "any update", "confirm payment", "check payment", "did you get it", "you don see am", "you see am", "e don enter"];
-    private static readonly string[] ProductWords = ["products", "product", "catalogue", "catalog", "menu", "list", "prices", "price list", "what do you sell", "what do you have", "what you get", "wetin you get", "wetin una get", "wetin una sell", "wetin you sell", "wetin dey", "available", "ihe unu na ere", "ihe unu nwere", "kedu ihe unu nwere", "onu ahia", "ahia", "farashi", "menene kuke sayarwa", "me kuke da shi", "kaya", "show me"];
-    private static readonly string[] PriceWords = ["price", "cost", "how much", "much", "nawa", "ole ego", "ego ole", "onu ahia", "farashi", "nawa ne", "how much be"];
-    private static readonly string[] GreetingWords = ["hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening", "good day", "how far", "how you dey", "sup", "yo", "nnoo", "ndewo", "kedu", "sannu", "barka", "ina kwana", "ina wuni", "salam", "assalamu alaikum", "start", "begin", "start order", "order"];
+    private static readonly string[] YesWords = ["yes", "yeah", "yep", "yup", "ok", "okay", "sure", "confirm", "confirmed", "correct", "proceed", "continue", "oya", "sharp", "ehen", "eh", "ee", "eeh", "toh", "to", "tabbas", "yarda", "kwenye", "mee", "gaa", "beeni", "bee", "daju", "odara"];
+    private static readonly string[] YesPhrases = ["do am", "go ahead", "make we go", "no wahala", "no problem", "o di mma", "mee ya", "ya yi", "ci gaba", "na yarda", "gaa n ihu", "o da", "o dara", "e", "generate it", "send am", "give me the account", "send account"];
+    private static readonly string[] NoWords = ["no", "nope", "nah", "mba", "aa", "cancel", "stop", "reset", "soke", "kagbuo", "restart", "wrong", "change", "rara", "beeko"];
+    private static readonly string[] CancelWords = ["cancel", "stop", "reset", "forget it", "forget am", "leave am", "leave it", "start over", "kagbuo", "hapu ya", "soke", "bar shi", "i no want again", "i dont want again", "i do not want again", "no want again", "abeg stop", "fagile", "ma ra mo", "mi o fe mo", "emi ko fe mo"];
+    private static readonly string[] PaidWords = ["paid", "i paid", "i have paid", "i dont pay", "i don pay", "i don send", "i have sent", "sent it", "payment done", "transfer done", "transfer don enter", "done", "its done", "money sent", "i sent", "akwuola m ugwo", "akwuola ugwo", "ezigala m", "emela m ego", "na biya", "na tura", "an biya", "na gama", "status", "any update", "confirm payment", "check payment", "did you get it", "you don see am", "you see am", "e don enter", "mo ti san", "mo ti fi owo ranse", "mo san owo", "owo ti wole", "mo ti ranse"];
+    private static readonly string[] ProductWords = ["products", "product", "catalogue", "catalog", "menu", "list", "prices", "price list", "what do you sell", "what do you have", "what you get", "wetin you get", "wetin una get", "wetin una sell", "wetin you sell", "wetin dey", "available", "ihe unu na ere", "ihe unu nwere", "kedu ihe unu nwere", "onu ahia", "ahia", "farashi", "menene kuke sayarwa", "me kuke da shi", "kaya", "show me", "awon oja", "kini e ni", "ohun ti e ni", "oja yin", "kini e n ta"];
+    private static readonly string[] PriceWords = ["price", "cost", "how much", "much", "nawa", "ole ego", "ego ole", "onu ahia", "farashi", "nawa ne", "how much be", "melo", "owo melo", "elo"];
+    private static readonly string[] GreetingWords = ["hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening", "good day", "how far", "how you dey", "sup", "yo", "nnoo", "ndewo", "kedu", "sannu", "barka", "ina kwana", "ina wuni", "salam", "assalamu alaikum", "start", "begin", "start order", "order", "e kaaro", "e kaasan", "e kaale", "bawo ni", "pele"];
 
     public static bool IsYes(string n)
     {
@@ -99,9 +100,24 @@ public static class ChatLexicon
     public static bool IsPaidClaim(string n) => Has(n, PaidWords);
     public static bool IsProducts(string n) => Has(n, ProductWords);
     public static bool IsPriceQuestion(string n) => Has(n, PriceWords);
+
+    private static readonly string[] QuoteWords = ["quote", "quotes", "quotation", "quotations", "proforma", "pro forma", "price quote", "kwote", "give me quotation", "send me quotation", "request quotation"];
+    private static readonly string[] WaybillWords = ["waybill", "waybills", "way bill", "delivery status", "where is my order", "where my order dey", "track my order", "order status", "dispatch", "tracking", "delivery update", "isiro", "ibo"];
+    private static readonly string[] SendWords = ["send", "send it", "send am", "send quote", "send quotation", "yes send", "ok send", "tura", "zipu", "ran"];
+    private static readonly string[] PayWords = ["pay", "pay now", "pay am", "buy now", "i want to pay", "i wan pay", "biya", "kwuo ugwo", "san"];
+    /// <summary>The customer is asking for a quotation (a price document), not to pay.</summary>
+    public static bool IsQuote(string n) => Has(n, QuoteWords);
+    /// <summary>The customer is asking where their delivery is / for the waybill.</summary>
+    public static bool IsWaybill(string n) => Has(n, WaybillWords);
+    public static bool IsSend(string n) => Tokens(n).Length <= 5 && (Has(n, SendWords) || IsYes(n));
+    public static bool IsPay(string n) => Tokens(n).Length <= 5 && Has(n, PayWords);
+
+    private static readonly System.Text.RegularExpressions.Regex EmailShape = new(@"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>The first email address typed in the message, as typed (not normalised), or null.</summary>
+    public static string? ExtractEmail(string? text) { var m = EmailShape.Match(text ?? ""); return m.Success && m.Value.Length <= 120 ? m.Value : null; }
     public static bool IsGreeting(string n) => Tokens(n).Length <= 6 && Has(n, GreetingWords);
 
-    private static readonly string[] OpeningGreetings = ["hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening", "good day", "how far", "nnoo", "ndewo", "kedu", "sannu", "barka", "ina kwana", "salam", "assalamu alaikum"];
+    private static readonly string[] OpeningGreetings = ["hi", "hello", "hey", "hiya", "good morning", "good afternoon", "good evening", "good day", "how far", "nnoo", "ndewo", "kedu", "sannu", "barka", "ina kwana", "salam", "assalamu alaikum", "e kaaro", "e kaasan", "e kaale"];
     /// <summary>The message OPENS with a greeting ("Hi Chewy Pet! I'd like to order some dog food"), however long the rest is. Whole words only.</summary>
     public static bool StartsWithGreeting(string n) => OpeningGreetings.Any(g => n == g || n.StartsWith(g + " ", StringComparison.Ordinal));
 
@@ -115,6 +131,8 @@ public static class ChatLexicon
         ["otu"] = 1, ["abuo"] = 2, ["ato"] = 3, ["ano"] = 4, ["ise"] = 5, ["isii"] = 6, ["asaa"] = 7, ["asato"] = 8, ["itoolu"] = 9, ["iri"] = 10,
         // Hausa
         ["daya"] = 1, ["biyu"] = 2, ["uku"] = 3, ["hudu"] = 4, ["biyar"] = 5, ["shida"] = 6, ["bakwai"] = 7, ["takwas"] = 8, ["tara"] = 9, ["goma"] = 10,
+        // Yoruba
+        ["okan"] = 1, ["eji"] = 2, ["meji"] = 2, ["eta"] = 3, ["meta"] = 3, ["erin"] = 4, ["merin"] = 4, ["marun"] = 5, ["aarun"] = 5, ["mefa"] = 6, ["meje"] = 7, ["mejo"] = 8, ["mesan"] = 9, ["mewa"] = 10, ["ogun"] = 20,
     };
 
     /// <summary>Words around a product name that are not part of it. Matching ignores them so "abeg I wan buy 2 bags of rice" reduces to "rice".</summary>
@@ -126,8 +144,9 @@ public static class ChatLexicon
         "how", "much", "many", "price", "cost", "prices", "naira", "be", "wetin", "what", "which", "na", "am", "it", "this", "that", "kuma", "da", "and", "with", "plus", "ka", "m", "gi",
         "ya", "mu", "ku", "nke", "ihe", "ole", "nawa", "ne", "hi", "hello", "hey", "good", "morning", "afternoon", "evening", "thanks", "thank", "you", "pay", "take", "put", "send",
         "chose", "choro", "ugwo", "ego", "kudi", "yes", "no", "ok", "okay", "oya", "sharp",
+        "quote", "quotes", "quotation", "quotations", "proforma", "kwote", "email", "mail",
         // greetings and forms of address that often open an order ("Ndewo, achọrọ m 2 rice")
-        "ndewo", "nnoo", "kedu", "sannu", "barka", "salam", "assalamu", "alaikum", "imeela", "nagode", "daalu", "kwana", "wuni", "dear", "boss", "bros", "brother", "sister", "aunty", "uncle", "mama", "papa", "day", "sup", "yo", "hiya", "far", "afternoon",
+        "ndewo", "nnoo", "kedu", "sannu", "barka", "salam", "assalamu", "alaikum", "imeela", "nagode", "daalu", "kwana", "wuni", "jowo", "mo", "fe", "nfe", "ra", "kaaro", "kaasan", "kaale", "egbon", "baba", "iya", "e", "ni", "kan", "dear", "boss", "bros", "brother", "sister", "aunty", "uncle", "mama", "papa", "day", "sup", "yo", "hiya", "far", "afternoon",
     };
 
     /// <summary>Separators between two products in one message: "2 rice and 3 beans", "rice, beans", "2 rice na 3 beans", "shinkafa 2 da wake 3".</summary>

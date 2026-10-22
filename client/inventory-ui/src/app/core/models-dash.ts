@@ -27,3 +27,8 @@ export interface UnusualRow { movementId: number; at: string; product: string; w
 export interface AdviceLine { kind: string; text: string; }
 export interface SuggestedLine { productId: number; product: string; unit: string; quantity: number; onHand: number; weeklyDemand: number; runsOutOn: string | null; unitCost: number; basis: string; }
 
+
+export interface ChatCounts { started: number; orders: number; quotes: number; waybills: number; sales: number; handoffs: number; }
+export interface ChatDay { date: string; requests: number; sales: number; }
+/** What the WhatsApp / website sales assistant brought in. */
+export interface ChatSummary { days: number; total: ChatCounts; whatsApp: ChatCounts; website: ChatCounts; salesValue: number; conversionPct: number; byDay: ChatDay[]; }

@@ -26,7 +26,8 @@ public sealed record ChatFlowReply(IReadOnlyList<string> Messages, bool Limited 
 public sealed class ChatFlowService(
     IBusinessDbContext db, ChatConversationService conversations, CustomerLookupService customers, QuotationService quotations, PaymentLinkService pay,
     StockAvailabilityService stock, ChatAiInterpreter ai, ChatOrderText texts, CompanyProfileService profile, ICompanyContext company, IClock clock,
-    IOptions<SalesAssistantOptions> options, ILogger<ChatFlowService> log, Inventory.Application.Campaigns.ConsentService consent)
+    IOptions<SalesAssistantOptions> options, ILogger<ChatFlowService> log, Inventory.Application.Campaigns.ConsentService consent,
+    Inventory.Application.Email.DocumentEmailService? emails = null)
 {
     private static readonly CurrentUser SalesBot = new(0, "Sales Assistant", "SYSTEM");
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -45,6 +46,10 @@ public sealed class ChatFlowService(
         public string? Consent { get; set; }
         /// <summary>Web chat only: the WhatsApp number the customer typed (on WhatsApp the sender's number is already known). Digits with country code.</summary>
         public string? Phone { get; set; }
+        /// <summary>The customer asked for a quotation rather than to buy: the same lines, but they end in a document instead of a payment account.</summary>
+        public bool Quote { get; set; }
+        /// <summary>An email address the customer typed for the quotation.</summary>
+        public string? Email { get; set; }
     }
     private sealed class DraftLine { public int ProductId { get; set; } public int Qty { get; set; } }
     private sealed class Pending
@@ -64,6 +69,8 @@ public sealed class ChatFlowService(
         public List<string> Out = [];
         public List<CatalogItem>? Cat;
         public bool AiTried;
+        /// <summary>Price tier of this customer (their registered type); worked out once per message.</summary>
+        public string? Tier;
         public string Lang => C.Language;
         public void Say(string key, params object[] args) => Out.Add(ChatText.Get(Lang, key, args));
     }
@@ -80,6 +87,7 @@ public sealed class ChatFlowService(
         if (await conversations.MessagesLast24hAsync(c.Id, ct) >= Opt.DailyMessagesPerConversation)
             return new ChatFlowReply([ChatText.Get(c.Language, "limit")], true);
 
+        if (c.LastMessageAt == c.CreatedAt) Track(t, ChatEventKinds.Started);          // a brand-new conversation
         c.Language = ChatLexicon.DetectLanguage(t.Norm, c.Language);
         if (string.IsNullOrWhiteSpace(t.D.Name) && UsableName(t.ProfileName)) t.D.Name = ExtractName(t.ProfileName);   // WhatsApp sends the customer's profile name with every message
         await conversations.AppendAsync(c.Id, ChatRoles.User, message, ct);
@@ -109,6 +117,8 @@ public sealed class ChatFlowService(
     {
         if (await HandleMarketingCommandAsync(t, ct)) return;
         if (t.C.State != ChatStates.Idle && ChatLexicon.IsCancel(t.Norm)) { Cancel(t); return; }
+        if (await HandleWaybillAsync(t, ct)) return;
+        if (await HandleQuoteIntentAsync(t, ct)) return;
         switch (t.C.State)
         {
             case ChatStates.AwaitingPayment: await PaymentStepAsync(t, ct); break;
@@ -121,7 +131,19 @@ public sealed class ChatFlowService(
     }
 
     private async Task<List<CatalogItem>> CatAsync(Turn t, CancellationToken ct) =>
-        t.Cat ??= await stock.CatalogueAsync(t.C.State is ChatStates.AwaitingConfirm or ChatStates.AwaitingPayment ? t.C.QuotationId : null, ct);
+        t.Cat ??= await stock.CatalogueAsync(t.C.State is ChatStates.AwaitingConfirm or ChatStates.AwaitingPayment ? t.C.QuotationId : null, await TierAsync(t, ct), ct);
+
+    /// <summary>A registered wholesaler or distributor is quoted and charged their own tier price; anyone else (including every new number) the retail price.</summary>
+    private async Task<string> TierAsync(Turn t, CancellationToken ct)
+    {
+        if (t.Tier is not null) return t.Tier;
+        var phone = PhoneOf(t);
+        var type = phone is null ? null : await db.Customers.AsNoTracking().Where(c => c.Phone == phone).Select(c => c.CustomerType).FirstOrDefaultAsync(ct);
+        return t.Tier = type switch { CustomerTypes.Distributor => PriceTiers.Distributor, CustomerTypes.Wholesaler => PriceTiers.Wholesaler, _ => PriceTiers.Retailer };
+    }
+
+    private void Track(Turn t, string kind, decimal? amount = null, string? reference = null) =>
+        db.ChatEvents.Add(new ChatEvent { At = clock.UtcNow, Channel = t.C.Channel, Kind = kind, ConversationId = t.C.Id, CustomerId = t.C.CustomerId, Amount = amount, Reference = reference });
 
     private static string ExampleProduct(Turn t) => (t.Cat?.FirstOrDefault(p => p.Available > 0)?.Name ?? "rice").ToLowerInvariant();
 
@@ -177,7 +199,7 @@ public sealed class ChatFlowService(
         if (ChatLexicon.StartsWithGreeting(t.Norm)) { WelcomeReply(t, cat); return; }      // "Hi Chewy Pet! I'd like some dog food" is a hello, not a product called "chewy pet"
 
         if (await TryAiAsync(t, cat, ct)) return;
-        if (!ai.CanSpend(t.C) && t.C.AiCalls >= Opt.MaxAiCallsPerSale) t.Say("handoff");
+        if (!ai.CanSpend(t.C) && t.C.AiCalls >= Opt.MaxAiCallsPerSale) { t.Say("handoff"); Track(t, ChatEventKinds.Handoff); }
         else t.Say("not_found", raws[0].Text);
     }
 
@@ -289,7 +311,7 @@ public sealed class ChatFlowService(
         var rows = t.D.Lines.Select(l => (Item: cat.First(c => c.Id == l.ProductId), l.Qty)).ToList();
         var totals = DocumentCalculator.Sale(rows.Select(r => new SaleLineInput(r.Item.Id, r.Qty, r.Item.Price)), 0, vat);
         t.C.State = ChatStates.AwaitingConfirm;
-        t.Say("summary", string.Join('\n', rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price))), ChatOrderText.Naira(totals.Total));
+        t.Say(t.D.Quote ? "quote_summary" : "summary", string.Join('\n', rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price))), ChatOrderText.Naira(totals.Total));
     }
 
     // ------------------------------------------------------------------ who the customer is: their WhatsApp number
@@ -417,6 +439,12 @@ public sealed class ChatFlowService(
     private async Task ConfirmStepAsync(Turn t, CancellationToken ct)
     {
         var cat = await CatAsync(t, ct);
+        if (ChatLexicon.ExtractEmail(t.Text) is { } typedEmail) { t.D.Email = typedEmail; if (t.D.Quote) { await PlaceQuoteAsync(t, cat, ct); return; } }
+        if (t.D.Quote)
+        {
+            if (ChatLexicon.IsPay(t.Norm)) { t.D.Quote = false; await ShowSummaryAsync(t, ct); return; }
+            if (ChatLexicon.IsSend(t.Norm)) { await PlaceQuoteAsync(t, cat, ct); return; }
+        }
         if (ChatLexicon.IsYes(t.Norm)) { await PlaceOrderAsync(t, cat, ct); return; }
         if (ChatLexicon.IsNo(t.Norm)) { t.D.Lines.Clear(); t.C.State = ChatStates.Collecting; t.Say("order_changed"); return; }
 
@@ -464,7 +492,7 @@ public sealed class ChatFlowService(
         {
             quote = await quotations.CreateAsync(new QuoteRequest
             {
-                CustomerId = customer.Id, PriceTier = PriceTiers.Retailer, DiscountPct = 0, VatRate = vat,
+                CustomerId = customer.Id, PriceTier = await TierAsync(t, ct), DiscountPct = 0, VatRate = vat,
                 // The price is always read from the product record here, never from anything the customer or the AI said.
                 Lines = t.D.Lines.Select(l => new SaleLineDto { ProductId = l.ProductId, Quantity = l.Qty, UnitPrice = cat.First(c => c.Id == l.ProductId).Price }).ToList(),
             }, SalesBot, ct);
@@ -475,10 +503,19 @@ public sealed class ChatFlowService(
         PayAccount? account;
         try { account = await pay.GetOrCreateVirtualAccountAsync(quote.Id, quote.Number, quote.Total, customer.Name, phone, customer.Email, ct); }
         catch (BusinessRuleException) { t.Say("error"); return; }     // stay on the summary: the customer can say yes again to retry
-        if (account is null) { t.C.State = ChatStates.Idle; t.Say("pay_unavailable"); return; }
+        // A secure card / USSD / bank-transfer page as well, when the card processor is set up: one tap instead of typing an account number.
+        PayLink? card = null;
+        if (pay.Enabled)
+        {
+            try { card = await pay.GetOrCreateAsync(PaymentDocTypes.Quotation, quote.Id, quote.Number, quote.Total, customer.Email, customer.Name, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Could not make a payment link for {Number}", quote.Number); }
+        }
+        if (account is null && card is null) { t.C.State = ChatStates.Idle; t.Say("pay_unavailable"); return; }
 
         t.C.State = ChatStates.AwaitingPayment;
-        t.Out.Add(ChatOrderText.PayInstructions(t.Lang, account));
+        Track(t, ChatEventKinds.Order, quote.Total, quote.Number);
+        if (account is not null) t.Out.Add(ChatOrderText.PayInstructions(t.Lang, account));
+        if (card is not null) t.Out.Add(ChatText.Get(t.Lang, account is null ? "pay_link_only" : "pay_link_also", ChatOrderText.Naira(quote.Total), card.Url));
     }
 
     // ------------------------------------------------------------------ waiting for the transfer
@@ -486,25 +523,29 @@ public sealed class ChatFlowService(
     private async Task PaymentStepAsync(Turn t, CancellationToken ct)
     {
         var quotationId = t.C.QuotationId;
-        var link = quotationId is null ? null : await db.PaymentLinks.AsNoTracking()
-            .Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == quotationId && l.Provider == PaymentLinkService.AlatProvider).OrderByDescending(l => l.Id).FirstOrDefaultAsync(ct);
+        var links = quotationId is null ? [] : await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == quotationId).OrderByDescending(l => l.Id).ToListAsync(ct);
+        // The bank account is the primary link (what the customer was first shown); a card / USSD link, if there is one, is the other way to pay the same order.
+        var link = links.FirstOrDefault(l => l.Provider == PaymentLinkService.AlatProvider) ?? links.FirstOrDefault();
         if (link is null) { t.C.State = ChatStates.Idle; await CollectAsync(t, ct); return; }
 
-        if (link.Status != PaymentLinkStatuses.Pending) { await SayFinalAsync(t, link, null, ct); return; }
+        var finished = links.FirstOrDefault(l => l.Status != PaymentLinkStatuses.Pending);
+        if (finished is not null) { await SayFinalAsync(t, finished, null, ct); return; }
 
         if (ChatLexicon.IsPaidClaim(t.Norm) || ChatLexicon.IsGreeting(t.Norm))
         {
-            var r = await pay.SettleAsync(link.Reference, ct);
-            if (r.Applied) { await SayFinalAsync(t, link, r, ct); return; }
-            if (r.Unfulfilled) { await SayFinalAsync(t, link, r, ct); return; }
-            if (r.Shortfall is decimal) { t.Out.Add(ChatOrderText.Underpaid(t.Lang, r.Paid ?? 0, link.Amount, link.BankName ?? "", link.AccountNumber ?? "")); return; }
-            if (r.AlreadySettled)
+            foreach (var l in links)                      // they may have paid by either route: ask each processor
             {
-                var fresh = await db.PaymentLinks.AsNoTracking().SingleAsync(l => l.Id == link.Id, ct);
-                if (fresh.Status != PaymentLinkStatuses.Pending) { await SayFinalAsync(t, fresh, null, ct); return; }
+                var r = await pay.SettleAsync(l.Reference, ct);
+                if (r.Applied || r.Unfulfilled) { await SayFinalAsync(t, l, r, ct); return; }
+                if (r.Shortfall is decimal) { t.Out.Add(ChatOrderText.Underpaid(t.Lang, r.Paid ?? 0, l.Amount, l.BankName ?? "", l.AccountNumber ?? "")); return; }
+                if (r.AlreadySettled)
+                {
+                    var fresh = await db.PaymentLinks.AsNoTracking().SingleAsync(x => x.Id == l.Id, ct);
+                    if (fresh.Status != PaymentLinkStatuses.Pending) { await SayFinalAsync(t, fresh, null, ct); return; }
+                }
             }
             if (link.ExpiresAt < clock.UtcNow) { ResetSale(t); t.Say("expired"); return; }
-            t.Say("pay_wait", ChatOrderText.Naira(link.Amount), link.BankName ?? "", link.AccountNumber ?? "");
+            SayStillWaiting(t, link, links);
             return;
         }
 
@@ -513,7 +554,13 @@ public sealed class ChatFlowService(
         if (ChatLexicon.IsProducts(t.Norm)) { CatalogueReply(t, cat); return; }
         if (link.ExpiresAt < clock.UtcNow) { ResetSale(t); t.Say("expired"); return; }
         if (await TryAiAsync(t, cat, ct)) return;
-        t.Say("pay_wait", ChatOrderText.Naira(link.Amount), link.BankName ?? "", link.AccountNumber ?? "");
+        SayStillWaiting(t, link, links);
+    }
+
+    private static void SayStillWaiting(Turn t, PaymentLink primary, IReadOnlyList<PaymentLink> all)
+    {
+        if (primary.Provider == PaymentLinkService.AlatProvider) t.Say("pay_wait", ChatOrderText.Naira(primary.Amount), primary.BankName ?? "", primary.AccountNumber ?? "");
+        else t.Say("pay_wait_link", ChatOrderText.Naira(primary.Amount), primary.Url);
     }
 
     private async Task SayFinalAsync(Turn t, PaymentLink link, SettleResult? r, CancellationToken ct)
@@ -525,6 +572,86 @@ public sealed class ChatFlowService(
         ResetSale(t);
     }
 
+    // ------------------------------------------------------------------ delivery information and quotations (anyone can ask)
+
+    /// <summary>"Where is my order?" / "waybill": answered from the customer's own recent sales and waybills, matched by the number they are writing from.</summary>
+    private async Task<bool> HandleWaybillAsync(Turn t, CancellationToken ct)
+    {
+        if (!ChatLexicon.IsWaybill(t.Norm) || t.C.State is ChatStates.AwaitingPayment or ChatStates.AwaitingName or ChatStates.AwaitingConsent or ChatStates.AwaitingPhone) return false;
+        var cat = await CatAsync(t, ct);
+        if (ProductMatcher.Split(t.Norm).Select(r => ProductMatcher.Match(r, cat)).Any(p => p.Matches.Count > 0)) return false;     // "2 rice with delivery" is an order, not a question
+        Track(t, ChatEventKinds.Waybill);
+        var phone = PhoneOf(t);
+        var customerId = phone is null ? null : await db.Customers.AsNoTracking().Where(c => c.Phone == phone).Select(c => (int?)c.Id).FirstOrDefaultAsync(ct);
+        var invoices = customerId is null ? [] : await db.Invoices.AsNoTracking().Where(i => i.CustomerId == customerId && i.VoidedAt == null && !i.IsSample)
+            .OrderByDescending(i => i.InvoiceDate).ThenByDescending(i => i.Id).Take(3).Select(i => new { i.Id, i.InvoiceNumber, i.InvoiceDate }).ToListAsync(ct);
+        if (invoices.Count == 0) { t.Say("waybill_none"); return true; }
+        var ids = invoices.Select(i => i.Id).ToList();
+        var ways = await db.Waybills.AsNoTracking().Where(w => ids.Contains(w.InvoiceId)).OrderByDescending(w => w.Id).ToListAsync(ct);
+        var lines = invoices.Select(i =>
+        {
+            var w = ways.FirstOrDefault(x => x.InvoiceId == i.Id);
+            var day = i.InvoiceDate.ToString("d MMM", System.Globalization.CultureInfo.InvariantCulture);
+            if (w is null) return ChatText.Get(t.Lang, "waybill_without", i.InvoiceNumber, day);
+            var driver = string.IsNullOrWhiteSpace(w.DriverName) ? "" : ChatText.Get(t.Lang, "waybill_driver", (w.DriverName + " " + w.DriverPhone).Trim());
+            return ChatText.Get(t.Lang, "waybill_with", i.InvoiceNumber, day, w.WaybillNumber, w.IssueDate.ToString("d MMM", System.Globalization.CultureInfo.InvariantCulture), driver);
+        });
+        t.Out.Add(ChatText.Get(t.Lang, "waybill_head") + "\n" + string.Join('\n', lines));
+        return true;
+    }
+
+    /// <summary>"Quote" / "quotation": the same item collecting as an order, but it ends in a quotation (on WhatsApp, and by email when we have an address) instead of a payment account.</summary>
+    private async Task<bool> HandleQuoteIntentAsync(Turn t, CancellationToken ct)
+    {
+        if (!ChatLexicon.IsQuote(t.Norm) || t.C.State is ChatStates.AwaitingPayment or ChatStates.AwaitingName or ChatStates.AwaitingConsent or ChatStates.AwaitingPhone) return false;
+        var cat = await CatAsync(t, ct);
+        t.D.Quote = true;
+        if (ChatLexicon.ExtractEmail(t.Text) is { } mail) t.D.Email = mail;
+        var parsed = ProductMatcher.Split(t.Norm).Select(r => ProductMatcher.Match(r, cat)).ToList();
+        if (parsed.Any(p => p.Matches.Count > 0 || p.Near.Count > 0)) return false;       // "quote 50 adult dog food": the normal flow collects the lines, then the summary offers the quotation
+        if (t.D.Lines.Count > 0) { await ShowSummaryAsync(t, ct); return true; }          // quote the order already being built
+        t.C.State = ChatStates.Collecting;
+        t.Say("quote_start", ExampleProduct(t));
+        return true;
+    }
+
+    private async Task PlaceQuoteAsync(Turn t, List<CatalogItem> cat, CancellationToken ct)
+    {
+        t.D.Lines.RemoveAll(l => cat.All(c => c.Id != l.ProductId));
+        if (t.D.Lines.Count == 0) { t.C.State = ChatStates.Collecting; return; }
+        var phone = PhoneOf(t);
+        if (phone is null) { t.C.State = ChatStates.AwaitingPhone; t.Say("ask_phone"); return; }
+        var customer = await customers.FindOrCreateAsync(phone, t.D.Name, ct);
+        if (!string.IsNullOrWhiteSpace(t.D.Name) && customer.Name == phone) customer.Name = t.D.Name!;
+        if (!string.IsNullOrWhiteSpace(t.D.Email) && string.IsNullOrWhiteSpace(customer.Email)) customer.Email = t.D.Email;
+        await db.SaveChangesAsync(ct);
+
+        var vat = (await profile.GetAsync(ct)).DefaultVatRate;
+        QuoteResult quote;
+        try
+        {
+            quote = await quotations.CreateAsync(new QuoteRequest
+            {
+                CustomerId = customer.Id, PriceTier = await TierAsync(t, ct), DiscountPct = 0, VatRate = vat,
+                Lines = t.D.Lines.Select(l => new SaleLineDto { ProductId = l.ProductId, Quantity = l.Qty, UnitPrice = cat.First(c => c.Id == l.ProductId).Price }).ToList(),
+            }, SalesBot, ct);
+        }
+        catch (BusinessRuleException) { t.Say("error"); return; }
+        t.C.CustomerId = customer.Id;
+        Track(t, ChatEventKinds.Quote, quote.Total, quote.Number);
+        var rows = t.D.Lines.Select(l => (Item: cat.First(c => c.Id == l.ProductId), l.Qty)).ToList();
+        t.Say("quote_ready", quote.Number, string.Join('\n', rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price))), ChatOrderText.Naira(quote.Total));
+
+        var to = t.D.Email ?? customer.Email;
+        if (!string.IsNullOrWhiteSpace(to))
+        {
+            if (emails is null) { t.Say("quote_email_failed"); }
+            else try { await emails.SendQuotationAsync(quote.Id, to, null, SalesBot, ct); t.Say("quote_emailed", to!); }
+            catch (Exception ex) when (ex is BusinessRuleException or System.Net.Mail.SmtpException or IOException) { log.LogWarning(ex, "Could not email quotation {Number}", quote.Number); t.Say("quote_email_failed"); }
+        }
+        t.D.Quote = false;                       // back to an ordinary order: "yes" now buys these same items
+        t.C.State = ChatStates.AwaitingConfirm;
+    }
     // ------------------------------------------------------------------ replies
 
     private void WelcomeReply(Turn t, List<CatalogItem> cat) => t.Out.Add(ChatText.Get(t.Lang, "welcome", company.LegalName, cat.FirstOrDefault(p => p.Available > 0)?.Name.ToLowerInvariant() ?? "rice"));

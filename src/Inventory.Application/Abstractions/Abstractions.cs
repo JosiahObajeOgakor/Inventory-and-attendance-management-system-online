@@ -10,6 +10,7 @@ public interface IBusinessDbContext
     DbSet<Category> Categories { get; }
     DbSet<Warehouse> Warehouses { get; }
     DbSet<Branch> Branches { get; }
+    DbSet<ChatEvent> ChatEvents { get; }
     DbSet<GlAccount> GlAccounts { get; }
     DbSet<GlPeriod> GlPeriods { get; }
     DbSet<GlJournal> GlJournals { get; }

@@ -112,7 +112,7 @@ export interface MonthlyIncome { year: number; month: number; invoices: number; 
 export interface LedgerRow { id: number; entryDate: string; accountName: string; accountType: string; entryType: 'Debit' | 'Credit'; amount: number; reference: string | null; }
 
 export interface UserRow {
-  id: number; username: string; fullName: string; role: Role; isActive: boolean; mustChangePassword: boolean; companyAccess: string; lastLoginAt: string | null;
+  id: number; username: string; fullName: string; role: Role; isActive: boolean; mustChangePassword: boolean; companyAccess: string; lastLoginAt: string | null; email?: string | null;
 }
 export interface AuditRow { id: number; at: string; user: string; action: string; entity: string; entityId: string | null; detail: string | null; }
 

@@ -15,13 +15,16 @@ namespace Inventory.Application.SalesAssistant.Chat;
 public sealed class StockAvailabilityService(IBusinessDbContext db, ICompanyContext company, IClock clock, IOptions<SalesAssistantOptions> options)
 {
     /// <summary>Active, non-serial products with their price and reservation-adjusted stock. <paramref name="ownQuotationId"/> is the shopper's own open order, which must not count against them.</summary>
-    public async Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, CancellationToken ct)
+    public Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, CancellationToken ct) => CatalogueAsync(ownQuotationId, PriceTiers.Retailer, ct);
+
+    /// <summary>The same catalogue priced for one customer's tier: a registered wholesaler or distributor sees their own prices, anyone else the retail price.</summary>
+    public async Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, string tier, CancellationToken ct)
     {
         var products = await db.Products.AsNoTracking().Where(p => p.IsActive && !p.TracksSerial).OrderBy(p => p.Name).ToListAsync(ct);
         if (products.Count == 0) return [];
         var ids = products.Select(p => p.Id).ToList();
         var available = await AvailableAsync(ids, ownQuotationId, ct);
-        return products.Select(p => new CatalogItem(p.Id, p.Name, p.Unit, p.PriceFor(PriceTiers.Retailer), available.GetValueOrDefault(p.Id))).ToList();
+        return products.Select(p => new CatalogItem(p.Id, p.Name, p.Unit, p.PriceFor(tier), available.GetValueOrDefault(p.Id))).ToList();
     }
 
     public async Task<Dictionary<int, int>> AvailableAsync(IReadOnlyCollection<int> productIds, int? ownQuotationId, CancellationToken ct)

@@ -208,7 +208,7 @@ public class PaymentLinkTests(MySqlFixture mysql)
     }
 
     [Fact]
-    public async Task A_quotation_payment_is_refused_when_no_warehouse_is_configured()
+    public async Task A_quotation_payment_with_no_default_warehouse_is_booked_to_a_warehouse_that_has_the_stock()
     {
         var cs = await mysql.NewSchemaAsync();
         var seed = await SeedAsync(cs, stock: 10);
@@ -223,10 +223,12 @@ public class PaymentLinkTests(MySqlFixture mysql)
         string reference;
         await using (var db = NewContext(cs)) reference = (await Svc(db, gw, note).GetOrCreateAsync("Quotation", quotationId, "Q-2", total, null, "PetMart", default))!.Reference;
         gw.Verification = new GatewayVerification(true, (long)Math.Round(total * 100m), "NGN", "ussd");
-        await using (var db = NewContext(cs)) await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db, gw, note).SettleAsync(reference, default));
+        // Online orders no longer need a default warehouse: the sale is booked to one that holds the goods, so the customer's payment is never stranded.
+        await using (var db = NewContext(cs)) Assert.True((await Svc(db, gw, note).SettleAsync(reference, default)).Applied);
         await using var check = NewContext(cs);
-        Assert.Equal(QuotationStatuses.Open, (await check.Quotations.SingleAsync()).Status);
-        Assert.Equal(10, await check.StockBatches.SumAsync(b => b.QuantityOnHand));
+        Assert.Equal(QuotationStatuses.Converted, (await check.Quotations.SingleAsync()).Status);
+        Assert.Equal(9, await check.StockBatches.SumAsync(b => b.QuantityOnHand));
+        Assert.Equal(seed.WarehouseId, (await check.Invoices.SingleAsync()).WarehouseId);
     }
 
     [Fact]

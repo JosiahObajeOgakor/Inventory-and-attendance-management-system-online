@@ -15,7 +15,8 @@ public sealed class ChatConversationService(IBusinessDbContext db, IClock clock)
         var existing = await db.ChatConversations.FirstOrDefaultAsync(c => c.Channel == channel && c.ExternalId == externalId, ct);
         if (existing is not null) return existing;
 
-        var conversation = new ChatConversation { Channel = channel, ExternalId = externalId, CreatedAt = clock.UtcNow, LastMessageAt = clock.UtcNow };
+        var now = clock.UtcNow;      // one instant: a conversation nobody has spoken in yet has LastMessageAt == CreatedAt
+        var conversation = new ChatConversation { Channel = channel, ExternalId = externalId, CreatedAt = now, LastMessageAt = now };
         db.ChatConversations.Add(conversation);
         await db.SaveChangesAsync(ct);
         return conversation;

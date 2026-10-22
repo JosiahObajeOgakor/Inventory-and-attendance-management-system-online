@@ -52,8 +52,9 @@ public static class ChatLanguages
     public const string Pidgin = "pcm";
     public const string Igbo = "ig";
     public const string Hausa = "ha";
+    public const string Yoruba = "yo";
     public const string Igala = "igl";
-    public static readonly string[] All = [English, Pidgin, Igbo, Hausa, Igala];
+    public static readonly string[] All = [English, Pidgin, Igbo, Hausa, Yoruba, Igala];
 }
 
 public static class ChatRoles

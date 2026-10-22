@@ -856,6 +856,49 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("chat_conversations", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.ChatEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("Amount")
+                        .HasPrecision(16, 2)
+                        .HasColumnType("decimal(16,2)");
+
+                    b.Property<DateTime>("At")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<int?>("ConversationId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId");
+
+                    b.HasIndex("At", "Kind");
+
+                    b.ToTable("chat_events", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.ChatLogMessage", b =>
                 {
                     b.Property<long>("Id")

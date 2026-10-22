@@ -97,8 +97,8 @@ export class Api {
 
   // admin
   users() { return this.get<M.UserRow[]>('/api/users'); }
-  createUser(r: { fullName: string; username: string; password: string; role: string; companies: string[] }) { return this.post<{ id: number }>('/api/users', r); }
-  updateUser(id: number, r: { fullName: string; role: string; companies: string[]; isActive: boolean }) { return this.put<void>(`/api/users/${id}`, r); }
+  createUser(r: { fullName: string; username: string; password: string; role: string; companies: string[]; email?: string | null }) { return this.post<{ id: number }>('/api/users', r); }
+  updateUser(id: number, r: { fullName: string; role: string; companies: string[]; isActive: boolean; email?: string | null }) { return this.put<void>(`/api/users/${id}`, r); }
   resetPassword(id: number, newPassword: string) { return this.post<void>(`/api/users/${id}/reset-password`, { newPassword }); }
   audit(q: M.PageQuery) { return this.get<M.Paged<M.AuditRow>>('/api/audit', q); }
   loginAudit(q: M.PageQuery) { return this.get<M.Paged<M.LoginAuditRow>>('/api/audit/logins', q); }

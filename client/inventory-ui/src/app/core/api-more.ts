@@ -90,6 +90,7 @@ export class Api2 {
   // admin dashboard, assistant, email
   overview(days = 30) { return this.get<D.Overview>('/api/dashboard/overview', { days }); }
   calendar(year: number, month: number) { return this.get<D.CalendarData>('/api/dashboard/calendar', { year, month }); }
+  chatSummary(days = 30) { return this.get<D.ChatSummary>('/api/dashboard/chat', { days }); }
   insights(refresh = false) { return this.get<D.InsightSet>('/api/ai/insights', { refresh }); }
   aiStatus() { return this.get<D.AiStatus>('/api/ai/status'); }
   aiAsk(question: string, history: D.ChatTurn[]) { return this.post<D.AssistantAnswer>('/api/ai/ask', { question, history }); }

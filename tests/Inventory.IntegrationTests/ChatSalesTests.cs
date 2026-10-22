@@ -41,6 +41,12 @@ internal sealed class CountingModel(string json = "{\"intent\":\"other\",\"items
     { Calls++; return Task.FromResult(new ChatReply(Json, [], 0, 0)); }
 }
 
+internal sealed class RecordingAlerts : ISaleAlerts
+{
+    public List<SaleAlert> Sales { get; } = [];
+    public Task SaleCompletedAsync(SaleAlert alert, CancellationToken ct) { Sales.Add(alert); return Task.CompletedTask; }
+}
+
 internal sealed class RecordingSender : IChatSender
 {
     public List<(string To, string Text)> Sent { get; } = [];
@@ -65,7 +71,7 @@ public class ChatSalesTests(MySqlFixture mysql)
     private sealed class Rig
     {
         public required string Cs; public required BusinessDbContext Db; public required ChatFlowService Flow; public required PaymentLinkService Pay; public required ChatPaymentNotifier Notifier;
-        public required FakeVirtualAccounts Va; public required CountingModel Ai; public required RecordingSender Sender; public required RecordingNotifier Admin; public required Seed Seed;
+        public required RecordingAlerts Alerts; public required FakeVirtualAccounts Va; public required CountingModel Ai; public required RecordingSender Sender; public required RecordingNotifier Admin; public required Seed Seed;
         public async Task<string> Say(string phone, string text, string name = "")
         {
             var r = await Flow.HandleAsync(ChatChannels.WhatsApp, phone, name, text, default);
@@ -73,7 +79,7 @@ public class ChatSalesTests(MySqlFixture mysql)
         }
     }
 
-    private async Task<Rig> BuildAsync(int stock, string aiJson = "{\"intent\":\"other\",\"items\":[]}")
+    private async Task<Rig> BuildAsync(int stock, string aiJson = "{\"intent\":\"other\",\"items\":[]}", bool withAlerts = false, FakeGateway? gateway = null)
     {
         var cs = await mysql.NewSchemaAsync();
         var seed = await SeedAsync(cs, stock);
@@ -87,12 +93,13 @@ public class ChatSalesTests(MySqlFixture mysql)
         var tx = Wire.Tx(db);
         var quotes = new QuotationService(db, tx, clock, co, SalesFor(db), new NoUsers());
         var admin = new RecordingNotifier(); var va = new FakeVirtualAccounts(); var ai = new CountingModel(aiJson); var sender = new RecordingSender();
-        var pay = new PaymentLinkService(db, tx, clock, co, new FakeGateway(false), admin, new CustomerPaymentService(db, tx, clock), quotes, va);
+        var alerts = new RecordingAlerts();
+        var pay = new PaymentLinkService(db, tx, clock, co, gateway ?? new FakeGateway(false), admin, new CustomerPaymentService(db, tx, clock), quotes, va, withAlerts ? alerts : null);
         var opts = Options.Create(new SalesAssistantOptions());
         var texts = new ChatOrderText(db, co);
         var flow = new ChatFlowService(db, new ChatConversationService(db, clock), new CustomerLookupService(db), quotes, pay, new StockAvailabilityService(db, co, clock, opts),
             new ChatAiInterpreter(ai, db, opts, NullLogger<ChatAiInterpreter>.Instance), texts, new CompanyProfileService(db, co, clock), co, clock, opts, NullLogger<ChatFlowService>.Instance, new Inventory.Application.Campaigns.ConsentService(db, clock));
-        return new Rig { Cs = cs, Db = db, Flow = flow, Pay = pay, Va = va, Ai = ai, Sender = sender, Admin = admin, Seed = seed, Notifier = new ChatPaymentNotifier(db, texts, sender, co, clock, NullLogger<ChatPaymentNotifier>.Instance) };
+        return new Rig { Cs = cs, Db = db, Flow = flow, Pay = pay, Alerts = alerts, Va = va, Ai = ai, Sender = sender, Admin = admin, Seed = seed, Notifier = new ChatPaymentNotifier(db, texts, sender, co, clock, NullLogger<ChatPaymentNotifier>.Instance) };
     }
 
     private static async Task<(PaymentLink Link, Quotation Quote)> OpenOrder(Rig r)
@@ -103,6 +110,123 @@ public class ChatSalesTests(MySqlFixture mysql)
     }
 
     private static async Task<int> OnHand(Rig r) { r.Db.ChangeTracker.Clear(); return await r.Db.StockBatches.AsNoTracking().SumAsync(b => b.QuantityOnHand); }
+
+    [Fact]
+    public async Task When_the_card_processor_is_set_up_the_customer_also_gets_a_payment_link_and_can_pay_either_way()
+    {
+        var gateway = new FakeGateway(true);
+        var r = await BuildAsync(stock: 10, gateway: gateway);
+        await r.Say(Ngozi, "2 adult dog food", "Ngozi");
+        var reply = await r.Say(Ngozi, "yes");
+        Assert.Contains("8880007001", reply);                          // the bank account, as before
+        Assert.Contains("https://checkout.paystack.com/", reply);      // and a link to pay by card, USSD or bank on one page
+        Assert.Equal(2, await r.Db.PaymentLinks.CountAsync());
+
+        // she pays through the LINK; saying "paid" in the chat finds it (the bank account is checked too)
+        var link = await r.Db.PaymentLinks.AsNoTracking().SingleAsync(l => l.Provider == "Paystack");
+        gateway.Verification = new GatewayVerification(true, (long)(link.Amount * 100), "NGN", "card");
+        var done = await r.Say(Ngozi, "i have paid");
+        Assert.Contains("Adult Dog Food 20kg", done);
+        Assert.Equal(8, await OnHand(r));
+        Assert.Equal(1, await r.Db.Invoices.CountAsync());
+    }
+    [Fact]
+    public async Task A_completed_whatsapp_sale_alerts_the_admin_with_who_bought_what_and_where_the_stock_came_from_and_counts_on_the_dashboard()
+    {
+        var r = await BuildAsync(stock: 10, withAlerts: true);
+        await r.Say(Ngozi, "abeg i wan buy 2 adult dog food", "Ngozi");
+        await r.Say(Ngozi, "yes");
+        var (link, _) = await OpenOrder(r);
+        r.Va.Status[link.ExternalId!] = new TransferStatus(true, link.Amount, link.Amount, "completed");
+        var settled = await r.Pay.SettleAsync(link.Reference, default);
+        Assert.True(settled.Applied);
+
+        var alert = Assert.Single(r.Alerts.Sales);
+        Assert.Equal("WhatsApp", alert.Channel);
+        Assert.Equal("Ngozi", alert.CustomerName);
+        Assert.Equal(Ngozi, alert.CustomerPhone);
+        Assert.Equal(settled.InvoiceNumber, alert.InvoiceNumber);
+        var line = Assert.Single(alert.Lines);
+        Assert.Equal((2, "Adult Dog Food 20kg"), (line.Quantity, line.Product));
+        Assert.Equal(link.Amount, alert.Paid);
+        Assert.Contains("(2)", Assert.Single(alert.StockFrom));                      // the warehouse the two bags really left, with the quantity
+        Assert.Empty(r.Admin.Sent);                                                   // the old plain notifier is replaced by the richer alert
+        var text = SaleAlertText.Admin(alert);
+        Assert.Contains("SALE COMPLETED", text);
+        Assert.Contains("Ngozi", text);
+        Assert.Contains("2 × Adult Dog Food 20kg", text);
+        Assert.Contains("WhatsApp", text);
+
+        r.Db.ChangeTracker.Clear();
+        Assert.True(await r.Db.ChatEvents.AnyAsync(e => e.Kind == ChatEventKinds.Sale && e.Reference == settled.InvoiceNumber));
+        var summary = await new Inventory.Application.Queries.ChatInsightsQueries(r.Db, new SystemClock()).GetAsync(30, default);
+        Assert.Equal((1, 1, 1), (summary.Total.Started, summary.Total.Orders, summary.Total.Sales));
+        Assert.Equal(100m, summary.ConversionPct);
+    }
+    [Fact]
+    public async Task A_yoruba_customer_is_answered_in_yoruba_from_the_first_message()
+    {
+        var r = await BuildAsync(stock: 10);
+        var summary = await r.Say(Ngozi, "jowo mo fe ra 2 adult dog food", "Ngozi");
+        Assert.Contains("Àṣẹ rẹ", summary);                 // Yoruba summary, not English
+        Assert.Contains("2 × Adult Dog Food 20kg", summary);
+        var account = await r.Say(Ngozi, "beeni");           // "yes" in Yoruba
+        Assert.Contains("8880007001", account);
+        Assert.Contains("Jọ̀wọ́ fi", account);
+        Assert.Equal(0, r.Ai.Calls);
+    }
+
+    [Fact]
+    public async Task A_registered_wholesaler_is_quoted_and_charged_their_own_price_and_a_stranger_the_retail_price()
+    {
+        var r = await BuildAsync(stock: 40);
+        var musa = await r.Db.Customers.SingleAsync(c => c.Phone == Musa);
+        musa.CustomerType = "Wholesaler"; await r.Db.SaveChangesAsync();
+        var retail = await r.Db.Products.AsNoTracking().Where(p => p.Id == r.Seed.ProductId).Select(p => new { p.PriceRetail, p.PriceWholesaler }).SingleAsync();
+        Assert.True(retail.PriceWholesaler < retail.PriceRetail);
+
+        Assert.Contains(ChatOrderText.Naira(retail.PriceWholesaler * 3), await r.Say(Musa, "3 adult dog food", "Musa"));
+        Assert.Contains(ChatOrderText.Naira(retail.PriceRetail * 3), await r.Say(Ngozi, "3 adult dog food", "Ngozi"));
+    }
+
+    [Fact]
+    public async Task Anyone_can_ask_for_a_quotation_on_whatsapp_and_then_buy_the_same_items()
+    {
+        var r = await BuildAsync(stock: 20);
+        var ask = await r.Say(Ngozi, "quote 3 adult dog food", "Ngozi");
+        Assert.Contains("Your quotation", ask);
+        Assert.Contains("3 × Adult Dog Food 20kg", ask);
+        var ready = await r.Say(Ngozi, "send");
+        Assert.Contains("Quotation ", ready);
+        Assert.Contains("reply \"yes\"", ready);
+        Assert.Equal(1, await r.Db.Quotations.CountAsync());
+        Assert.Equal(0, await r.Db.PaymentLinks.CountAsync());                   // a quotation asks nothing of the customer yet
+        Assert.Equal(20, await OnHand(r));
+        Assert.True(await r.Db.ChatEvents.AnyAsync(e => e.Kind == ChatEventKinds.Quote));
+
+        var account = await r.Say(Ngozi, "yes");                                  // now buy those same items
+        Assert.Contains("8880007001", account);
+        Assert.True(await r.Db.ChatEvents.AnyAsync(e => e.Kind == ChatEventKinds.Order));
+    }
+
+    [Fact]
+    public async Task Asking_where_an_order_is_gives_the_waybill_of_that_customers_own_recent_sales_only()
+    {
+        var r = await BuildAsync(stock: 10);
+        var ngozi = await r.Db.Customers.SingleAsync(c => c.Phone == Ngozi);
+        var inv = new Invoice { InvoiceNumber = "TestCo-0001", CustomerId = ngozi.Id, InvoiceDate = DateOnly.FromDateTime(DateTime.UtcNow), TotalAmount = 23000, WarehouseId = r.Seed.WarehouseId, CreatedAt = DateTime.UtcNow };
+        r.Db.Invoices.Add(inv); await r.Db.SaveChangesAsync();
+        r.Db.Waybills.Add(new Waybill { WaybillNumber = "WB-777", InvoiceId = inv.Id, IssueDate = inv.InvoiceDate, DriverName = "Sule", DriverPhone = "08030000000" });
+        await r.Db.SaveChangesAsync();
+
+        var mine = await r.Say(Ngozi, "where is my waybill");
+        Assert.Contains("WB-777", mine);
+        Assert.Contains("Sule", mine);
+        var stranger = await r.Say(Musa, "waybill please");
+        Assert.DoesNotContain("WB-777", stranger);
+        Assert.Equal(2, await r.Db.ChatEvents.CountAsync(e => e.Kind == ChatEventKinds.Waybill));
+        Assert.Equal(0, r.Ai.Calls);
+    }
 
     [Fact]
     public async Task A_pidgin_customer_buys_pays_and_is_confirmed_in_the_chat_with_zero_ai_calls()

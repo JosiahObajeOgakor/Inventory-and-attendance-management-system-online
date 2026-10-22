@@ -61,7 +61,7 @@ public static class PaymentDocTypes
 /// The chat assistant uses the same table with <see cref="AlatProvider"/>: instead of a URL the customer gets a single-use bank account number inside WhatsApp.
 /// </summary>
 public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, IPaymentGateway gateway,
-    IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations, IVirtualAccountGateway? virtualAccounts = null)
+    IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations, IVirtualAccountGateway? virtualAccounts = null, ISaleAlerts? alerts = null)
 {
     public const string AlatProvider = "AlatPay";
     private static readonly TimeSpan Reuse = TimeSpan.FromHours(12);
@@ -114,6 +114,31 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         });
         await db.SaveChangesAsync(ct);
         return new PayAccount(account.AccountNumber, account.BankName, amount, account.ExpiresAt, reference);
+    }
+
+    /// <summary>Works out who bought what and where the stock came from, then lets <see cref="ISaleAlerts"/> tell the people who need to know. Also counts the completed sale for the dashboard.</summary>
+    private async Task AlertAsync(PaymentLink link, int invoiceId, decimal paid, string? channel, CancellationToken ct)
+    {
+        var inv = await db.Invoices.AsNoTracking().Include(i => i.Items).SingleAsync(i => i.Id == invoiceId, ct);
+        var customer = await db.Customers.AsNoTracking().SingleAsync(c => c.Id == inv.CustomerId, ct);
+        var names = await db.Products.AsNoTracking().Where(p => inv.Items.Select(i => i.ProductId).Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+        var fromWarehouses = await (from m in db.StockMovements.AsNoTracking() join w in db.Warehouses.AsNoTracking() on m.WarehouseId equals w.Id
+                                    where m.ReferenceType == MovementReferences.Invoice && m.ReferenceId == invoiceId && m.MovementType == MovementTypes.Out
+                                    group m by w.Name into g select new { g.Key, Qty = g.Sum(x => x.Quantity) }).ToListAsync(ct);
+        var branch = inv.WarehouseId is int wid ? await (from w in db.Warehouses.AsNoTracking() join b in db.Branches.AsNoTracking() on w.BranchId equals b.Id where w.Id == wid select b.Name).FirstOrDefaultAsync(ct) : null;
+        var conv = link.DocType == PaymentDocTypes.Quotation ? await db.ChatConversations.AsNoTracking().FirstOrDefaultAsync(c => c.QuotationId == link.DocId, ct) : null;
+        var via = conv is null ? "Payment link" : conv.Channel == ChatChannels.WhatsApp ? "WhatsApp" : "Website chat";
+        var into = link.Provider == AlatProvider && !string.IsNullOrEmpty(link.AccountNumber) ? $"{link.BankName} {link.AccountNumber}" : link.Provider;
+        if (conv is not null)
+        {
+            db.ChatEvents.Add(new ChatEvent { At = clock.UtcNow, Channel = conv.Channel, Kind = ChatEventKinds.Sale, ConversationId = conv.Id, CustomerId = customer.Id, Amount = inv.TotalAmount, Reference = inv.InvoiceNumber });
+            await db.SaveChangesAsync(ct);
+        }
+        var alert = new SaleAlert(company.LegalName, inv.Id, inv.InvoiceNumber, via, customer.Name, customer.Phone, customer.Email, customer.CustomerType,
+            inv.Items.Select(i => new SaleAlertLine(names.GetValueOrDefault(i.ProductId, "Item"), i.Quantity, i.UnitPrice, i.LineTotal)).ToList(), inv.TotalAmount, paid,
+            channel switch { "bank_transfer" => "bank transfer", null or "" => link.Provider, var c => c.Replace('_', ' ') }, into,
+            fromWarehouses.Select(f => $"{f.Key} ({f.Qty})").ToList(), branch, clock.UtcNow);
+        await alerts!.SaleCompletedAsync(alert, ct);
     }
 
     /// <summary>For a bank transfer into an AlatPay virtual account: that account (bank, account name, number) is the one the money arrived in. Paystack card/link payments have none.</summary>
@@ -209,7 +234,8 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         if (already || summary is null) return new SettleResult(false, true, "Already recorded.", Reference: reference);
         try
         {
-            await notifier.NotifyAsync($"{company.LegalName}: payment received", summary, ct);
+            if (alerts is not null && invoiceId is int soldInvoice) await AlertAsync(link, soldInvoice, paid, v.Channel, ct);   // admin WhatsApp + email, clerk and customer email
+            else await notifier.NotifyAsync($"{company.LegalName}: payment received", summary, ct);
             await db.PaymentLinks.Where(l => l.Reference == reference).ExecuteUpdateAsync(u => u.SetProperty(l => l.NotifiedAt, clock.UtcNow), ct);
         }
         catch (Exception) { /* the payment is recorded; a failed message is retried by nobody, so it stays visible as NotifiedAt = null */ }

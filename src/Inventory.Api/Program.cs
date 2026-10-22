@@ -71,6 +71,7 @@ builder.Services.Configure<Inventory.Infrastructure.Email.SendGridOptions>(build
 builder.Services.AddHttpClient<Inventory.Application.Messaging.ICampaignEmailSender, Inventory.Infrastructure.Email.CampaignEmailSender>(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.CampaignScheduler>();
 builder.Services.AddScoped<Inventory.Application.Payments.IAdminNotifier, Inventory.Infrastructure.Payments.AdminNotifier>();
+builder.Services.AddScoped<Inventory.Application.Payments.ISaleAlerts, Inventory.Infrastructure.Payments.SaleAlertService>();
 builder.Services.Configure<Inventory.Infrastructure.Localization.LocalizationOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Localization.LocalizationOptions.Section));
 builder.Services.AddSingleton<Inventory.Infrastructure.Localization.LanguageCatalogue>();
 builder.Services.Configure<Inventory.Infrastructure.Maintenance.ArchiveOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Maintenance.ArchiveOptions.Section));
@@ -135,7 +136,7 @@ builder.Services.AddRateLimiter(o =>
     // Meta's webhook calls all arrive from its own servers, not the customer's IP, so this only guards against a flood/misconfiguration —
     // the real per-customer limit is SalesAssistantOptions.DailyMessagesPerConversation, enforced inside SalesAssistantService.
     o.AddPolicy(Policies.WhatsAppRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("whatsapp",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:WhatsAppPerMinute", 1200), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));   // 20 messages a second across all customers; was 2 a second
     o.AddPolicy(Policies.WebChatRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

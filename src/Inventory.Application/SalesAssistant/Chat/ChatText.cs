@@ -6,7 +6,7 @@ namespace Inventory.Application.SalesAssistant.Chat;
 /// <summary>
 /// Every sentence the bot can say, per language. Replies are fixed text with {0}, {1}… placeholders — no AI writes a customer-facing sentence,
 /// so wording, prices and stock numbers can never drift from the database.
-/// English, Nigerian Pidgin, Igbo and Hausa are written out. IGALA IS NOT: a missing key falls back Igala → Pidgin → English, and the Igala
+/// English, Nigerian Pidgin, Igbo, Hausa and Yoruba are written out. IGALA IS NOT: a missing key falls back Igala → Pidgin → English, and the Igala
 /// strings and recognition words are meant to be supplied by a native speaker through the override file (SalesAssistant:PhrasesFile), format:
 /// <code>{ "igl": { "welcome": "…" }, "markers": { "igl": ["word", "phrase"] } }</code>
 /// Same file can correct any other language. Placeholders must be kept as they are.
@@ -135,6 +135,7 @@ public static partial class ChatText
             ["limit"] = "Ka kai iyakar saƙonnin yau a wannan chat. Don Allah ka sake gwadawa gobe.",
             ["text_only"] = "Zan iya karanta saƙon rubutu kawai. Don Allah ka rubuta abin da kake so ka saya.",
         },
+        [ChatLanguages.Yoruba] = new(),
         // Igala: intentionally empty. Falls back to Pidgin, then English, until a native speaker supplies the strings via the override file.
         [ChatLanguages.Igala] = new(),
     };

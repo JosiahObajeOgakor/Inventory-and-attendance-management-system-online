@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
 import { Auth } from '../../core/auth.service';
-import { CalendarData, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
+import { CalendarData, ChatSummary, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
 import { Icon } from '../../shared/icon';
 import { DueCalendar } from './due-calendar';
 import { Bubbles, Dots, LineChart, Series, compact, naira } from './widgets';
@@ -107,6 +107,22 @@ const POLL_MS = 30_000;
           </section>
         </div>
 
+        <!-- what the chat assistant (WhatsApp and website) brought in -->
+        @if (chat(); as ch) {
+          <section class="card">
+            <div class="c-head"><app-icon name="spark" [size]="18" /><h2>Chat requests · last {{ ch.days }} days</h2></div>
+            <div class="chatkpis">
+              <div><span>Chats started</span><b>{{ ch.total.started }}</b></div>
+              <div><span>Orders placed</span><b>{{ ch.total.orders }}</b></div>
+              <div><span>Quotations asked</span><b>{{ ch.total.quotes }}</b></div>
+              <div><span>Delivery / waybill asks</span><b>{{ ch.total.waybills }}</b></div>
+              <div class="hi"><span>Sales completed</span><b>{{ ch.total.sales }}</b><small>{{ full(ch.salesValue) }} · {{ ch.conversionPct }}% of chats</small></div>
+              <div><span>Handed to a person</span><b>{{ ch.total.handoffs }}</b></div>
+            </div>
+            <p class="muted sm">WhatsApp: {{ ch.whatsApp.started }} chats, {{ ch.whatsApp.sales }} sales · Website: {{ ch.website.started }} chats, {{ ch.website.sales }} sales.</p>
+          </section>
+        }
+
         <!-- calendar + warehouses -->
         <div class="row two-one">
           <section class="card">
@@ -157,6 +173,8 @@ const POLL_MS = 30_000;
       }
     </div>`,
   styles: `
+    .chatkpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; margin-bottom: .5rem; } .chatkpis div { display: grid; gap: .1rem; padding: .65rem .85rem; border: 1px solid #edf0f5; border-radius: 10px; }
+    .chatkpis span { font-size: .72rem; color: #7a8497; } .chatkpis b { font-size: 1.35rem; } .chatkpis small { color: #5b6579; font-size: .72rem; } .chatkpis .hi { border-color: #1c2130; } .sm { font-size: .78rem; }
     :host { display: block; margin: -1.5rem; padding: 1.5rem; background: #eef2f8; min-height: 100%; }
     .dash { max-width: 90rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; --blue: #3db4ff; --dark: #1c2130; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; } h1 { font: 700 1.6rem/1.1 var(--font-body); color: var(--dark); margin: 0; text-transform: none; letter-spacing: 0; }
@@ -245,6 +263,8 @@ export class AdminDashboard implements OnInit {
   protected readonly maxProfit = computed(() => Math.max(1, ...(this.o()?.topCustomers ?? []).flatMap(c => c.months.map(m => m.grossProfit))));
   protected readonly maxBalance = computed(() => Math.max(1, ...(this.o()?.topCustomers ?? []).map(c => c.openBalance)));
 
+  protected readonly chat = signal<ChatSummary | null>(null);
+
   ngOnInit() {
     void this.loadOverview(true);
     void this.reloadInsights(false);
@@ -262,6 +282,7 @@ export class AdminDashboard implements OnInit {
       this.updated.set(new Date().toLocaleTimeString('en-GB'));
       if (first) { this.mi.set(o.months.length - 1); const [y, m] = [+o.asOf.slice(0, 4), +o.asOf.slice(5, 7)]; this.calYear = y; this.calMonth = m; }
       await this.loadCalendar();
+      try { this.chat.set(await this.api.chatSummary(30)); } catch { /* the rest of the dashboard still works */ }
     } catch (e) { this.stale.set(true); if (!this.o()) this.error.set(messageOf(e)); }
   }
 
