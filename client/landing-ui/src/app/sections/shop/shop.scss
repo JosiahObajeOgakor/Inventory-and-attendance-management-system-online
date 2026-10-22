@@ -78,9 +78,9 @@
   padding: 0.22rem 0.6rem;
   border-radius: 999px;
   background: var(--orange);
-  color: #fff;
+  color: var(--ink);   // dark on orange: 7:1 (white on orange was below the AA minimum)
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 .card__body { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.95rem 1rem 1.05rem; flex: 1; }
 .card__cat { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
@@ -146,4 +146,58 @@
   .card__body { padding: 0.8rem; }
   .basket { bottom: 0.5rem; }
   .basket__actions { width: 100%; justify-content: space-between; }
+}
+
+// ---------- product page and pay dialogs ----------
+.card__media { border: 0; padding: 0; cursor: pointer; width: 100%; }
+.card__link { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.card__link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.sheet {
+  width: min(56rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  border: 0;
+  border-radius: 20px;
+  padding: 0;
+  color: var(--ink);
+  box-shadow: 0 40px 80px -30px rgba(23, 11, 34, 0.6);
+}
+.sheet--narrow { width: min(30rem, calc(100vw - 2rem)); }
+.sheet::backdrop { background: rgba(23, 11, 34, 0.55); backdrop-filter: blur(2px); }
+.sheet__body { position: relative; padding: clamp(1.1rem, 3vw, 2rem); }
+.sheet__close {
+  position: absolute; right: 0.75rem; top: 0.75rem; width: 2.5rem; height: 2.5rem; border-radius: 50%;
+  border: 1px solid var(--line); background: #fff; font-size: 1.4rem; line-height: 1; color: var(--ink);
+}
+.pd { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: clamp(1rem, 3vw, 2rem); }
+.pd__media { aspect-ratio: 1; border-radius: 14px; background: var(--paper-warm); display: grid; place-items: center; overflow: hidden; }
+.pd__media img { width: 100%; height: 100%; object-fit: cover; }
+.pd__name { font-family: var(--font-body); font-size: clamp(1.3rem, 2.4vw, 1.7rem); font-weight: 700; line-height: 1.25; padding-right: 2.5rem; }
+.pd__price { margin-top: 0.4rem; font-size: 1.3rem; font-weight: 700; }
+.pd__price span { font-size: 0.85rem; font-weight: 400; color: var(--ink-dim); }
+.pd__for { margin-top: 0.5rem; color: var(--ink-dim); }
+.pd__desc { margin-top: 0.75rem; line-height: 1.6; }
+.pd__h { margin-top: 1.1rem; font-family: var(--font-body); font-size: 0.95rem; font-weight: 700; }
+.pd__table { margin-top: 0.4rem; border-collapse: collapse; min-width: 14rem; }
+.pd__table th, .pd__table td { padding: 0.35rem 0.75rem 0.35rem 0; border-bottom: 1px solid var(--line); text-align: left; font-weight: 400; }
+.pd__table td { font-weight: 700; }
+.pd__feed { margin: 0.4rem 0 0; padding-left: 1.1rem; line-height: 1.6; }
+.pd__buy { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.4rem; }
+.pd__buy .stepper { width: 10rem; margin: 0; }
+.muted { color: var(--ink-dim); }
+
+.pay { display: flex; flex-direction: column; gap: 0.85rem; }
+.pay .f { display: flex; flex-direction: column; gap: 0.3rem; font-weight: 600; font-size: 0.9rem; }
+.pay input, .pay select, .pay textarea {
+  font: 400 1rem var(--font-body); padding: 0.7rem 0.85rem; border: 1px solid rgba(23, 11, 34, 0.25); border-radius: 10px; background: #fff; color: var(--ink);
+}
+.pay input:focus, .pay select:focus, .pay textarea:focus { outline: 3px solid rgba(168, 85, 247, 0.35); border-color: var(--violet-bright); }
+.pay__total { font-weight: 700; }
+.pay__total span { display: block; font-weight: 400; font-size: 0.82rem; color: var(--ink-dim); }
+.pay__error { color: #b42318; font-weight: 600; }
+.pay__go { justify-content: center; }
+
+@media (max-width: 680px) {
+  .pd { grid-template-columns: 1fr; }
+  .pd__media { aspect-ratio: 4 / 3; }
 }

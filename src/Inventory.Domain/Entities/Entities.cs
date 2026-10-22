@@ -46,6 +46,10 @@ public class Product
     public decimal? FiberPct { get; set; }
     public decimal? MoisturePct { get; set; }
     public string? NutritionSummary { get; set; }
+    /// <summary>What the product is, for its page on the website (a few sentences).</summary>
+    public string? Description { get; set; }
+    /// <summary>How much to feed, e.g. one line per weight band ("5–10 kg: 120–200 g a day"), for the website.</summary>
+    public string? FeedingGuide { get; set; }
 
     public decimal PriceFor(string tier) => tier switch
     {

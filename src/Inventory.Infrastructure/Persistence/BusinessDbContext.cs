@@ -105,6 +105,8 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Species).HasMaxLength(20);
             e.Property(x => x.LifeStage).HasMaxLength(30);
             e.Property(x => x.NutritionSummary).HasMaxLength(300);
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.Property(x => x.FeedingGuide).HasMaxLength(2000);
             foreach (var n in new[] { nameof(Product.ProteinPct), nameof(Product.FatPct), nameof(Product.FiberPct), nameof(Product.MoisturePct) })
                 e.Property(n).HasPrecision(5, 2);
             e.HasIndex(x => x.Sku).IsUnique();

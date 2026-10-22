@@ -1,3 +1,4 @@
+import { I18n } from '../../core/i18n';
 import { Component, afterNextRender, computed, inject, signal } from '@angular/core';
 import { RevealDirective } from '../../core/reveal.directive';
 import { Stores as StoreList, waLink } from '../../core/stores';
@@ -16,8 +17,11 @@ import { Shop } from '../shop/shop';
   styleUrl: './stores.scss',
 })
 export class StoresSection {
+  protected readonly t = inject(I18n).t;
   protected readonly stores = inject(StoreList);
   protected readonly mainOpen = signal(false);
+  /** Back from the AlatPay page (?paid=1). */
+  protected readonly backFromPayment = signal(false);
   protected readonly sisterOpen = signal(false);
   /** The landing brand goes by its brand name on the website, whatever the business is called inside the stock system. */
   protected readonly main = computed(() => { const s = this.stores.find('chewypets'); return s ? { ...s, name: 'Chewy Pet' } : null; });
@@ -37,6 +41,7 @@ export class StoresSection {
       };
       follow();
       window.addEventListener('hashchange', follow);
+      if (new URLSearchParams(location.search).get('paid') === '1') { this.backFromPayment.set(true); this.openMain(); }
     });
   }
 

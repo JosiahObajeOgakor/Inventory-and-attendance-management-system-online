@@ -11,6 +11,8 @@ public interface IBusinessDbContext
     DbSet<Warehouse> Warehouses { get; }
     DbSet<Branch> Branches { get; }
     DbSet<ChatEvent> ChatEvents { get; }
+    DbSet<SiteReview> SiteReviews { get; }
+    DbSet<SitePartner> SitePartners { get; }
     DbSet<GlAccount> GlAccounts { get; }
     DbSet<GlPeriod> GlPeriods { get; }
     DbSet<GlJournal> GlJournals { get; }

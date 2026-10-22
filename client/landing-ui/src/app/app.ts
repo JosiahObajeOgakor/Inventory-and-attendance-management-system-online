@@ -1,8 +1,12 @@
-import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
 import { ChatWidget } from './chat/chat-widget';
 import { Nutrition } from './sections/nutrition/nutrition';
 import { ProductList } from './sections/product-list/product-list';
 import { StoresSection } from './sections/stores/stores';
+import { ServiceInfo } from './sections/service-info/service-info';
+import { Articles } from './sections/articles/articles';
+import { Track } from './core/track';
+import { I18n, LANGS } from './core/i18n';
 import { Stores } from './core/stores';
 import { Team } from './sections/team/team';
 import { Testimonials } from './sections/testimonials/testimonials';
@@ -13,7 +17,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 
 @Component({
   selector: 'app-root',
-  imports: [ChatWidget, Nutrition, ProductList, StoresSection, Team, Testimonials, RevealDirective],
+  imports: [ChatWidget, Nutrition, ProductList, StoresSection, ServiceInfo, Articles, Team, Testimonials, RevealDirective],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -23,16 +27,23 @@ export class App {
   protected readonly whatsappDisplay = whatsappDisplay();
   protected readonly year = new Date().getFullYear();
   private readonly stores = inject(Stores);
+  protected readonly i18n = inject(I18n);
+  protected readonly t = this.i18n.t;
+  protected readonly langs = LANGS;
   protected readonly main = computed(() => this.stores.find('chewypets') ?? null);
-  protected readonly candid = computed(() => this.stores.find('candid') ?? null);
 
   private readonly heroVideo = viewChild.required<ElementRef<HTMLVideoElement>>('heroVideo');
   private readonly backyard = viewChild.required<ElementRef<HTMLVideoElement>>('backyard');
   private heroInView = true;
+  /** WCAG 2.2.2: moving background video can be paused (and stays paused for both clips). */
+  protected readonly videoPaused = signal(false);
+  protected toggleVideo(): void { this.videoPaused.update(p => !p); this.sync(); }
   private readonly openWindows = new Set<Element>();
 
   constructor() {
+    const track = inject(Track);
     afterNextRender(() => {
+      track.event('site_view', 'chewypets', undefined, true);
       this.sync();
       if (!('IntersectionObserver' in window)) return;
 
@@ -66,9 +77,10 @@ export class App {
 
   // Both videos autoplay; each is only decoded while it's actually on screen.
   private sync(): void {
-    this.setPlaying(this.heroVideo().nativeElement, this.heroInView);
+    const on = !this.videoPaused();
+    this.setPlaying(this.heroVideo().nativeElement, on && this.heroInView);
     const backyard = this.backyard().nativeElement;
-    this.setPlaying(backyard, this.openWindows.size > 0 && !!backyard.getAttribute('src'));
+    this.setPlaying(backyard, on && this.openWindows.size > 0 && !!backyard.getAttribute('src'));
   }
 
   private setPlaying(video: HTMLVideoElement, shouldPlay: boolean): void {

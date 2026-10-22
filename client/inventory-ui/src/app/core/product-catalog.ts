@@ -33,4 +33,4 @@ export const APPS: AppEntry[] = [
 ];
 
 /** The apps a business with only Marketing switched on may use (the server's AppAccess.Marketing). */
-export const MARKETING_APPS: string[] = APPS.filter(a => a.group === 'Marketing').map(a => a.key);
+export const MARKETING_APPS: string[] = [...APPS.filter(a => a.group === 'Marketing').map(a => a.key), 'blog'];   // the Blog feeds the website's articles

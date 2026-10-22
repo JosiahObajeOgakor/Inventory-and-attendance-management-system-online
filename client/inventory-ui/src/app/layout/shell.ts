@@ -34,6 +34,7 @@ const BUILT: NavGroup[] = [
     { label: 'Customers', path: '/customers', icon: 'customer', adminOnly: true },
       { label: 'Debtors', path: '/debtors', icon: 'cash', adminOnly: true },
     { label: 'Campaigns', path: '/campaigns', icon: 'spark', adminOnly: true, preview: true },
+      { label: 'Website', path: '/website', icon: 'file', adminOnly: true, preview: true },
     { label: 'Suppliers', path: '/suppliers', icon: 'supplier', adminOnly: true },
     { label: 'Purchases', path: '/purchases', icon: 'purchase', adminOnly: true },
   ] },
@@ -101,7 +102,7 @@ export class Shell {
   /** True for a newer feature in a business that doesn't have it yet. Campaigns and the Marketing apps open with Marketing alone. */
   protected locked(i: NavItem): boolean {
     const f = this.auth.flags();
-    const marketing = i.path === '/campaigns' || (!!i.app && MARKETING_APPS.includes(i.app));
+    const marketing = i.path === '/campaigns' || i.path === '/website' || (!!i.app && MARKETING_APPS.includes(i.app));
     return !!i.preview && !f.hasNewFeatures && !(marketing && f.hasMarketing);
   }
   protected readonly initials = computed(() => (this.auth.me()?.fullName ?? '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());

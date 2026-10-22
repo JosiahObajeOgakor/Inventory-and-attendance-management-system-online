@@ -19,6 +19,10 @@ const UNITS = [
   { value: 'Pcs', label: 'Pieces (Pcs)' },
 ];
 
+/** A percentage field: empty means unknown. */
+const pct = (v: unknown): number | null => (v === '' || v === null || v === undefined || isNaN(Number(v)) ? null : Number(v));
+const num = (v: number | null | undefined): string => (v === null || v === undefined ? '' : String(v));
+
 @Component({
   selector: 'app-products',
   imports: [ReactiveFormsModule, Icon, Modal, NairaPipe, Pager, CatalogDialog],
@@ -93,6 +97,20 @@ const UNITS = [
               }
             </div><span class="hint">Tick who supplies this. It appears on their item list, ready to pick when you record a purchase from them.</span></div>
         }
+        <details class="span-2 web" [open]="!!form.controls.description.value">
+          <summary class="label">Website &amp; nutrition (shown on the product's page)</summary>
+          <div class="form-grid">
+            <div class="field span-2"><label for="f-desc">Description</label><textarea id="f-desc" class="input" rows="3" maxlength="2000" formControlName="description" placeholder="What it is and who it is for, in two or three sentences."></textarea></div>
+            <div class="field"><label for="f-sp">For</label><select id="f-sp" class="input" formControlName="species"><option value="">—</option><option>Dog</option><option>Cat</option><option>Dog and cat</option><option>Other</option></select></div>
+            <div class="field"><label for="f-ls">Life stage</label><select id="f-ls" class="input" formControlName="lifeStage"><option value="">—</option><option>Puppy / kitten</option><option>Adult</option><option>Senior</option><option>All life stages</option></select></div>
+            <div class="field"><label for="f-pp">Protein %</label><input id="f-pp" class="input num" type="number" min="0" max="100" step="0.1" formControlName="proteinPct" /></div>
+            <div class="field"><label for="f-fp">Fat %</label><input id="f-fp" class="input num" type="number" min="0" max="100" step="0.1" formControlName="fatPct" /></div>
+            <div class="field"><label for="f-fi">Fibre %</label><input id="f-fi" class="input num" type="number" min="0" max="100" step="0.1" formControlName="fiberPct" /></div>
+            <div class="field"><label for="f-mo">Moisture %</label><input id="f-mo" class="input num" type="number" min="0" max="100" step="0.1" formControlName="moisturePct" /></div>
+            <div class="field span-2"><label for="f-ns">Key benefits (one line)</label><input id="f-ns" class="input" maxlength="300" formControlName="nutritionSummary" placeholder="High protein for active dogs; supports healthy skin and coat" /></div>
+            <div class="field span-2"><label for="f-fg">Feeding guide</label><textarea id="f-fg" class="input" rows="4" maxlength="2000" formControlName="feedingGuide" placeholder="One line per weight, e.g.&#10;5–10 kg: 120–200 g a day&#10;10–20 kg: 200–320 g a day"></textarea></div>
+          </div>
+        </details>
         @if (editing(); as e) {
           <div class="field span-2 photo"><span class="label">Photo (shown on the catalog)</span>
             <div class="photo-row">
@@ -131,7 +149,8 @@ const UNITS = [
     </app-modal>
 
     <app-catalog-dialog [open]="catalogOpen()" [preselected]="picked()" (closed)="catalogOpen.set(false)" />`,
-  styles: `.sm { font-size: .75rem; } th.tick, td.tick { width: 2rem; padding-right: 0; }
+  styles: `
+    .web { margin-top: .4rem; border-top: 1px solid var(--line); padding-top: .6rem; } .web summary { cursor: pointer; font-weight: 600; margin-bottom: .6rem; }.sm { font-size: .75rem; } th.tick, td.tick { width: 2rem; padding-right: 0; }
     .sup { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; max-height: 8.5rem; overflow: auto; }
     .chip-pick { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .6rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .8125rem; cursor: pointer; }
     .chip-pick.on { background: var(--brand-tint); border-color: var(--brand); }
@@ -184,6 +203,7 @@ export class ProductsPage implements OnInit {
     categoryId: [0, Validators.min(1)], unit: ['Bag', Validators.required], reorderLevel: [0, Validators.min(0)],
     costPrice: [0, Validators.min(0)], priceRetail: [0, Validators.min(0)], priceWholesaler: [0, Validators.min(0)], priceDistributor: [0, Validators.min(0)],
     barcode: [''], openingQuantity: [0, Validators.min(0)], warehouseId: [0], batchNumber: [''], expiryDate: [''],
+    description: [''], species: [''], lifeStage: [''], proteinPct: [''], fatPct: [''], fiberPct: [''], moisturePct: [''], nutritionSummary: [''], feedingGuide: [''],
   });
 
   ngOnInit() {
@@ -204,7 +224,8 @@ export class ProductsPage implements OnInit {
     this.supplierIds.set([]); this.suppliersKnown = true;
     this.editing.set(null);
     this.form.reset({ sku: '', name: '', categoryId: this.categories()[0]?.id ?? 0, unit: 'Bag', reorderLevel: 0, costPrice: 0, priceRetail: 0, priceWholesaler: 0, priceDistributor: 0,
-      barcode: '', openingQuantity: 0, warehouseId: this.warehouses()[0]?.id ?? 0, batchNumber: '', expiryDate: '' });
+      barcode: '', openingQuantity: 0, warehouseId: this.warehouses()[0]?.id ?? 0, batchNumber: '', expiryDate: '',
+      description: '', species: '', lifeStage: '', proteinPct: '', fatPct: '', fiberPct: '', moisturePct: '', nutritionSummary: '', feedingGuide: '' });
     this.dialogOpen.set(true);
   }
 
@@ -215,7 +236,9 @@ export class ProductsPage implements OnInit {
       if (this.editing()?.id === p.id) { this.supplierIds.set(xs.map(x => x.supplierId)); this.suppliersKnown = true; }
     }, () => { /* links stay as they are */ });
     this.form.patchValue({ sku: p.sku, name: p.name, categoryId: p.categoryId, unit: p.unit, reorderLevel: p.reorderLevel, costPrice: p.costPrice ?? 0,
-      priceRetail: p.priceRetail, priceWholesaler: p.priceWholesaler, priceDistributor: p.priceDistributor, barcode: p.barcode ?? '' });
+      priceRetail: p.priceRetail, priceWholesaler: p.priceWholesaler, priceDistributor: p.priceDistributor, barcode: p.barcode ?? '',
+      description: p.description ?? '', species: p.species ?? '', lifeStage: p.lifeStage ?? '', proteinPct: num(p.proteinPct), fatPct: num(p.fatPct), fiberPct: num(p.fiberPct),
+      moisturePct: num(p.moisturePct), nutritionSummary: p.nutritionSummary ?? '', feedingGuide: p.feedingGuide ?? '' });
     this.dialogOpen.set(true);
   }
 
@@ -247,6 +270,8 @@ export class ProductsPage implements OnInit {
       sku: v.sku.trim(), name: v.name.trim(), categoryId: v.categoryId, unit: v.unit, reorderLevel: v.reorderLevel, costPrice: v.costPrice,
       priceDistributor: v.priceDistributor, priceWholesaler: v.priceWholesaler, priceRetail: v.priceRetail, barcode: v.barcode.trim() || null,
       tracksSerial: this.editing()?.tracksSerial ?? false,
+      description: v.description.trim() || null, species: v.species || null, lifeStage: v.lifeStage || null, proteinPct: pct(v.proteinPct), fatPct: pct(v.fatPct),
+      fiberPct: pct(v.fiberPct), moisturePct: pct(v.moisturePct), nutritionSummary: v.nutritionSummary.trim() || null, feedingGuide: v.feedingGuide.trim() || null,
       supplierIds: this.auth.isAdmin() && this.suppliersKnown && this.suppliers().length ? this.supplierIds() : null,
     };
     this.busy.set(true);

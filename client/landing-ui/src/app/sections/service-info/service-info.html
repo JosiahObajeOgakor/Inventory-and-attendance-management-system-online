@@ -1,0 +1,31 @@
+<section id="delivery" class="info" aria-labelledby="info-title">
+  <div class="info__head reveal" appReveal>
+    <p class="eyebrow">{{ t('info.eyebrow') }}</p>
+    <h2 id="info-title">{{ t('info.title') }}</h2>
+  </div>
+
+  <div class="info__grid">
+    <article class="panel reveal" appReveal>
+      <h3>{{ t('info.where') }}</h3>
+      @if (zones().length) {
+        <table class="zones">
+          <thead><tr><th scope="col">Area</th><th scope="col">Fee</th><th scope="col">Usual time</th></tr></thead>
+          <tbody>
+            @for (z of zones(); track z.name) { <tr><td>{{ z.name }}</td><td>{{ naira(z.fee) }}</td><td>{{ z.eta ?? 'Confirmed in the chat' }}</td></tr> }
+          </tbody>
+        </table>
+        <p class="note">Not listed? <a [href]="askHref" target="_blank" rel="noopener">Ask us on WhatsApp</a> and we'll arrange it.</p>
+      } @else {
+        <p><a [href]="askHref" target="_blank" rel="noopener">Tell us your area on WhatsApp</a> and we'll confirm the delivery fee and time.</p>
+      }
+    </article>
+
+    <article class="panel reveal" appReveal>
+      <h3>{{ t('info.when') }}</h3>
+      <p class="big">{{ main()?.openingHours || 'Ask us on WhatsApp any time' }}</p>
+      @if (main()?.replyPromise; as promise) { <p class="promise">{{ promise }}</p> }
+      @if (main()?.address; as a) { <p class="where"><strong>Store:</strong> {{ a }}, Lagos</p> }
+      <p class="where">Pay by card, bank transfer or USSD online, or by transfer to the account we give you on WhatsApp.</p>
+    </article>
+  </div>
+</section>

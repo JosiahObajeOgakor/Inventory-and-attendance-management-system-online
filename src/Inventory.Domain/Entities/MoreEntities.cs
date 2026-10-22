@@ -17,6 +17,10 @@ public class CompanyProfile
     public decimal DefaultRebateRatePct { get; set; } = 1.0m;
     /// <summary>Default rebate in naira per unit bought, for new customers.</summary>
     public decimal DefaultRebatePerUnit { get; set; }
+    /// <summary>Shown on the website, e.g. "Mon–Sat 8:00–18:00, closed Sunday".</summary>
+    public string? OpeningHours { get; set; }
+    /// <summary>The promise shown beside the WhatsApp buttons, e.g. "We reply within 15 minutes during opening hours".</summary>
+    public string? ReplyPromise { get; set; }
     public List<CompanyBank> Banks { get; set; } = [];
 }
 
@@ -345,6 +349,8 @@ public class DeliveryZone
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public decimal Fee { get; set; }
+    /// <summary>Usual delivery time for this zone, shown on the website, e.g. "Same day" or "1–2 days".</summary>
+    public string? Eta { get; set; }
     public bool IsActive { get; set; } = true;
 }
 

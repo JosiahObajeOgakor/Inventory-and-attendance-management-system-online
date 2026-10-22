@@ -60,6 +60,39 @@ public class DebtorsAndShopTests(ApiFixture api)
     }
 
     [Fact]
+    public async Task A_review_appears_on_the_website_only_after_staff_approve_it_and_shows_only_the_first_name()
+    {
+        var anon = api.Client();
+        var text = "Lovely kibble, my dog finished the bowl " + Guid.NewGuid().ToString("N")[..6];
+        Assert.False((await anon.PostAsJsonAsync("/api/webchat/reviews", new { name = "Ada Obi", rating = 5, text, consentToPublish = false })).IsSuccessStatusCode);   // no consent, no review
+        Assert.Equal(HttpStatusCode.NoContent, (await anon.PostAsJsonAsync("/api/webchat/reviews", new { name = "Ada Obi", place = "Ikeja", rating = 5, text, consentToPublish = true })).StatusCode);
+        Assert.DoesNotContain(text, await anon.GetStringAsync("/api/webchat/reviews"));
+
+        var admin = await api.LoginAsync("admin", "chewypets");
+        var pending = (await admin.GetFromJsonAsync<JsonElement>("/api/website/reviews?status=Pending")).EnumerateArray().Single(r => r.GetProperty("text").GetString() == text);
+        (await admin.PostAsync($"/api/website/reviews/{pending.GetProperty("id").GetInt32()}/approve", null)).EnsureSuccessStatusCode();
+
+        var shown = (await anon.GetFromJsonAsync<JsonElement>("/api/webchat/reviews")).EnumerateArray().Single(r => r.GetProperty("text").GetString() == text);
+        Assert.Equal("Ada", shown.GetProperty("name").GetString());                                  // first name only
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anon.GetAsync("/api/website/reviews")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_product_page_and_the_visit_counter_work_without_signing_in()
+    {
+        var anon = api.Client();
+        var list = (await anon.GetFromJsonAsync<JsonElement>("/api/webchat/products")).EnumerateArray().ToList();
+        var id = list.First().GetProperty("id").GetInt32();
+        var page = await anon.GetFromJsonAsync<JsonElement>($"/api/webchat/products/{id}");
+        Assert.True(page.GetProperty("inStock").GetBoolean());
+        Assert.Equal(HttpStatusCode.NotFound, (await anon.GetAsync("/api/webchat/products/999999")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await anon.PostAsJsonAsync("/api/webchat/track", new { @event = "site_view", store = "chewypets" })).StatusCode);
+        // online payment needs a payment provider; without one the visitor is told plainly to use WhatsApp
+        var pay = await anon.PostAsJsonAsync("/api/webchat/checkout", new { name = "Ada", phone = "08031234567", lines = new[] { new { productId = id, quantity = 1 } } });
+        Assert.Contains("WhatsApp", await pay.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task The_website_knows_both_stores_and_where_each_takes_orders()
     {
         var stores = (await api.Client().GetFromJsonAsync<JsonElement>("/api/webchat/stores")).EnumerateArray().ToList();

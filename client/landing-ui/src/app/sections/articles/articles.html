@@ -1,0 +1,20 @@
+@if (articles().length) {
+  <section id="guides" class="guides" aria-labelledby="guides-title">
+    <div class="reveal" appReveal>
+      <p class="eyebrow">Feeding guides &amp; pet care</p>
+      <h2 id="guides-title">Know what goes in the bowl.</h2>
+    </div>
+    <ul class="list">
+      @for (a of articles(); track a.url) {
+        <li class="post">
+          <a [href]="a.url">
+            @if (a.date) { <time class="post__date">{{ day(a.date) }}</time> }
+            <h3>{{ a.title }}</h3>
+            <p>{{ a.excerpt }}</p>
+            <span class="post__more">Read the guide &rarr;</span>
+          </a>
+        </li>
+      }
+    </ul>
+  </section>
+}

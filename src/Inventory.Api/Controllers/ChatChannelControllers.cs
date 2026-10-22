@@ -31,11 +31,13 @@ public class TwilioWhatsAppController(TwilioWhatsAppClient twilio, CompanyRegist
 
         var cfg = twilio.ForToNumber(form["To"]);
         if (cfg is null || registry.Find(cfg.CompanyKey) is null) { log.LogWarning("Twilio message for an unmapped WhatsApp number"); return Twiml([]); }
-        HttpContext.Items[RequestCompany.OverrideItem] = cfg.CompanyKey;
 
         var from = TwilioWhatsAppClient.Digits(form["From"]);
         var body = form["Body"].ToString();
         if (from.Length == 0) return Twiml([]);
+        // One line sells for every store: the message goes to the store whose stock it is about (see ChatStoreRouter).
+        var store = await HttpContext.RequestServices.GetRequiredService<ChatStoreRouter>().RouteAsync(cfg.CompanyKey, ChatChannels.WhatsApp, from, body, ct);
+        HttpContext.Items[RequestCompany.OverrideItem] = store;
 
         var dedup = HttpContext.RequestServices.GetRequiredService<WebhookDedupService>();
         if (await dedup.SeenAsync("twilio-in", form["MessageSid"].ToString(), ct)) return Twiml([]);   // Twilio redelivered; already answered

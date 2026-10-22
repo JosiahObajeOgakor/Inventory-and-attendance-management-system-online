@@ -155,6 +155,8 @@ public static class ChatLexicon
         "quote", "quotes", "quotation", "quotations", "proforma", "kwote", "email", "mail",
         // English contractions lose their apostrophe when normalised ("I'd like" -> "id like"), and the website shop's own words
         "id", "im", "ill", "ive", "wanna", "gonna", "lemme", "kindly", "from", "website", "site", "shop", "following", "items", "these", "those",
+        // store names: the one line sells for every store, and a message may open by naming one ("Hi Candid Purrfect! …")
+        "candid", "purrfect", "store",
         // greetings and forms of address that often open an order ("Ndewo, achọrọ m 2 rice")
         "ndewo", "nnoo", "kedu", "sannu", "barka", "salam", "assalamu", "alaikum", "imeela", "nagode", "daalu", "kwana", "wuni", "jowo", "mo", "fe", "nfe", "ra", "kaaro", "kaasan", "kaale", "egbon", "baba", "iya", "e", "ni", "kan", "dear", "boss", "bros", "brother", "sister", "aunty", "uncle", "mama", "papa", "day", "sup", "yo", "hiya", "far", "afternoon",
     };

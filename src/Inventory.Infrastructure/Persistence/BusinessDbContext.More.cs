@@ -13,6 +13,8 @@ public partial class BusinessDbContext
             e.ToTable("company_profile");
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.LegalName).HasMaxLength(150).IsRequired();
+            e.Property(x => x.OpeningHours).HasMaxLength(200);
+            e.Property(x => x.ReplyPromise).HasMaxLength(200);
             e.Property(x => x.Address).HasMaxLength(250).IsRequired();
             e.Property(x => x.Phone).HasMaxLength(60).IsRequired();
             e.Property(x => x.Email).HasMaxLength(100).IsRequired();
@@ -174,6 +176,7 @@ public partial class BusinessDbContext
             e.ToTable("delivery_zones");
             e.Property(x => x.Name).HasMaxLength(60).IsRequired();
             e.Property(x => x.Fee).HasPrecision(12, 2);
+            e.Property(x => x.Eta).HasMaxLength(60);
             e.HasIndex(x => x.Name).IsUnique();
             e.HasData(new DeliveryZone { Id = 1, Name = "Lagos", Fee = 3000m, IsActive = true });
         });

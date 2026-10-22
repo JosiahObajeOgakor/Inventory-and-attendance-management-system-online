@@ -11,9 +11,11 @@ public sealed class DeliveryZoneInput
     public string Name { get; set; } = "";
     public decimal Fee { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>Usual delivery time, e.g. "Same day" (shown on the website).</summary>
+    public string? Eta { get; set; }
 }
 
-public sealed record DeliveryZoneDto(int Id, string Name, decimal Fee, bool IsActive);
+public sealed record DeliveryZoneDto(int Id, string Name, decimal Fee, bool IsActive, string? Eta = null);
 
 public sealed class DeliveryZoneInputValidator : AbstractValidator<DeliveryZoneInput>
 {
@@ -21,6 +23,7 @@ public sealed class DeliveryZoneInputValidator : AbstractValidator<DeliveryZoneI
     {
         RuleFor(x => x.Name).Must(n => !string.IsNullOrWhiteSpace(n) && n.Trim().Length is >= 2 and <= 60).WithMessage("Give the area a name of 2 to 60 characters.");
         RuleFor(x => x.Fee).InclusiveBetween(0, 10_000_000).WithMessage("The delivery fee must be between ₦0 and ₦10,000,000.");
+        RuleFor(x => x.Eta).MaximumLength(60);
     }
 }
 
@@ -29,7 +32,7 @@ public sealed class DeliveryZoneService(IBusinessDbContext db, IClock clock)
 {
     public async Task<IReadOnlyList<DeliveryZoneDto>> ListAsync(bool activeOnly, CancellationToken ct = default) =>
         await db.DeliveryZones.AsNoTracking().Where(z => !activeOnly || z.IsActive).OrderBy(z => z.Name)
-            .Select(z => new DeliveryZoneDto(z.Id, z.Name, z.Fee, z.IsActive)).ToListAsync(ct);
+            .Select(z => new DeliveryZoneDto(z.Id, z.Name, z.Fee, z.IsActive, z.Eta)).ToListAsync(ct);
 
     /// <summary>An active zone by name, ignoring case and surrounding spaces. Null when there's no such active zone.</summary>
     public async Task<DeliveryZoneDto?> FindActiveAsync(string? name, CancellationToken ct = default)
@@ -37,7 +40,7 @@ public sealed class DeliveryZoneService(IBusinessDbContext db, IClock clock)
         if (string.IsNullOrWhiteSpace(name)) return null;
         var n = name.Trim().ToLower();
         return await db.DeliveryZones.AsNoTracking().Where(z => z.IsActive && z.Name.ToLower() == n)
-            .Select(z => new DeliveryZoneDto(z.Id, z.Name, z.Fee, z.IsActive)).FirstOrDefaultAsync(ct);
+            .Select(z => new DeliveryZoneDto(z.Id, z.Name, z.Fee, z.IsActive, z.Eta)).FirstOrDefaultAsync(ct);
     }
 
     public async Task<int> CreateAsync(DeliveryZoneInput input, CurrentUser user, CancellationToken ct = default)
@@ -45,7 +48,7 @@ public sealed class DeliveryZoneService(IBusinessDbContext db, IClock clock)
         await new DeliveryZoneInputValidator().ValidateAndThrowAsync(input, ct);
         var name = input.Name.Trim();
         await EnsureUniqueAsync(name, null, ct);
-        var z = new DeliveryZone { Name = name, Fee = input.Fee, IsActive = input.IsActive };
+        var z = new DeliveryZone { Name = name, Fee = input.Fee, IsActive = input.IsActive, Eta = string.IsNullOrWhiteSpace(input.Eta) ? null : input.Eta.Trim() };
         db.DeliveryZones.Add(z);
         Audit(user, "DELIVERY_ZONE_ADDED", z, $"{name}: ₦{input.Fee:N2}");
         await db.SaveChangesAsync(ct);
@@ -59,7 +62,7 @@ public sealed class DeliveryZoneService(IBusinessDbContext db, IClock clock)
         var name = input.Name.Trim();
         await EnsureUniqueAsync(name, id, ct);
         var before = $"{z.Name}: ₦{z.Fee:N2}{(z.IsActive ? "" : " (off)")}";
-        z.Name = name; z.Fee = input.Fee; z.IsActive = input.IsActive;
+        z.Name = name; z.Fee = input.Fee; z.IsActive = input.IsActive; z.Eta = string.IsNullOrWhiteSpace(input.Eta) ? null : input.Eta.Trim();
         Audit(user, "DELIVERY_ZONE_CHANGED", z, $"{before} → {name}: ₦{input.Fee:N2}{(input.IsActive ? "" : " (off)")}");
         await db.SaveChangesAsync(ct);
     }

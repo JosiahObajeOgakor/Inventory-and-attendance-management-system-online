@@ -26,7 +26,7 @@ public sealed class AppAccess
     }
 
     /// <summary>The Marketing apps: the ones a business with only Marketing switched on (<c>HasMarketing</c>) may use.</summary>
-    public static readonly IReadOnlyList<string> Marketing = ["social-marketing", "surveys", "email-marketing", "sms-marketing", "whatsapp", "marketing-automation"];
+    public static readonly IReadOnlyList<string> Marketing = ["social-marketing", "surveys", "email-marketing", "sms-marketing", "whatsapp", "marketing-automation", "blog"];
 
     /// <summary>What one business may use: everything this installation has for a business that has the new features, the Marketing apps for one with
     /// only Marketing switched on, nothing for one that has neither yet.</summary>

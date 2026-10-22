@@ -92,6 +92,8 @@ public static class DependencyInjection
         s.AddScoped<Queries.ChatInsightsQueries>();
         s.AddScoped<Queries.ChatFunnelQueries>();
         s.AddScoped<Queries.DebtorQueries>();
+        s.AddScoped<Website.WebsiteService>();
+        s.AddScoped<Website.WebCheckoutService>();
         s.AddScoped<Ledger.GeneralLedger>();
         s.AddScoped<Ledger.LedgerSync>();
         s.AddScoped<Ledger.AccountingService>();

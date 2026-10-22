@@ -18,6 +18,7 @@ interface DropOff { stage: string; whatsApp: number; website: number; reachable:
 interface Slice { name: string; count: number; }
 interface Insights {
   days: number; conversations: number; customerMessages: number; messagesPerConversation: number; aiCalls: number; quotes: number; quotesRefused: number; handoffs: number;
+  website?: { views: number; basketsStarted: number; basketsSent: number; checkouts: number; checkoutValue: number } | null;
   sales: number; salesValue: number; conversionPct: number; funnel: FunnelStep[]; dropOffs: DropOff[]; languages: Slice[]; countries: Slice[]; networks: Slice[]; webRegions: Slice[]; messagesByHour: number[];
 }
 const STEP: Record<string, string> = { started: 'Started a chat', browsed: 'Looked at products', selected: 'Picked products', summary: 'Saw the total', order: 'Got a payment account', sale: 'Paid' };
@@ -55,6 +56,10 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
           <p class="stats sm"><strong>{{ s.conversations }}</strong> chats · <strong>{{ s.customerMessages }}</strong> customer messages ({{ s.messagesPerConversation }} per chat) ·
             <strong>{{ s.sales }}</strong> paid ({{ s.conversionPct }}%) · <strong>{{ s.quotes }}</strong> quotations, {{ s.quotesRefused }} refused by the once-a-day limit ·
             {{ s.handoffs }} handed to a person · <strong>{{ s.aiCalls }}</strong> AI calls on open chats</p>
+          @if (s.website; as w) {
+            <p class="stats sm">Website: <strong>{{ w.views }}</strong> visits · <strong>{{ w.basketsStarted }}</strong> baskets started ({{ pct(w.basketsStarted, w.views) || '0%' }} of visits) ·
+              <strong>{{ w.basketsSent }}</strong> sent to WhatsApp · <strong>{{ w.checkouts }}</strong> online checkouts opened (₦{{ w.checkoutValue.toLocaleString('en-NG') }})</p>
+          }
 
           <div class="cols">
             <div>

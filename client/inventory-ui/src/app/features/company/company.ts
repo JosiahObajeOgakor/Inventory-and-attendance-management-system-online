@@ -33,6 +33,12 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
           <div class="field"><label for="c-v">Default VAT %</label><input id="c-v" class="input num" type="number" min="0" max="100" step="0.5" formControlName="defaultVatRate" /></div>
         </div>
 
+        <h2 class="display sub">On the website</h2>
+        <div class="form-grid">
+          <div class="field"><label for="c-h">Opening hours</label><input id="c-h" class="input" formControlName="openingHours" maxlength="200" placeholder="Mon–Sat 8:00–18:00, closed Sunday" /></div>
+          <div class="field"><label for="c-r">WhatsApp reply promise</label><input id="c-r" class="input" formControlName="replyPromise" maxlength="200" placeholder="We reply within 15 minutes during opening hours" /></div>
+        </div>
+
         <h2 class="display sub">Bank accounts <span class="muted">(up to three, printed on invoices)</span></h2>
         <div formArrayName="banks" class="banks">
           @for (b of banks.controls; track $index; let i = $index) {
@@ -87,14 +93,15 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
 
       <section class="card card-pad zones">
         <h2 class="display sub">Delivery zones</h2>
-        <p class="muted">The delivery fee added to online and WhatsApp orders, by state or area. Switch a zone off to stop offering it without losing its price.</p>
+        <p class="muted">The delivery fee added to online and WhatsApp orders, by state or area, with the usual delivery time. Active zones are listed on the website. Switch a zone off to stop offering it without losing its price.</p>
         <div class="table-wrap"><table class="table">
-          <thead><tr><th>Zone</th><th class="num">Delivery fee (₦)</th><th>Offered</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th>Zone</th><th class="num">Delivery fee (₦)</th><th>Usual time</th><th>Offered</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             @for (z of zones(); track z.id) {
               <tr>
                 <td><input class="input" [value]="z.name" maxlength="60" [attr.aria-label]="'Name of ' + z.name" (input)="patchZone(z.id, { name: $any($event.target).value })" /></td>
                 <td class="num"><input class="input num w-fee" type="number" min="0" step="100" [value]="z.fee" [attr.aria-label]="'Delivery fee for ' + z.name" (input)="patchZone(z.id, { fee: +$any($event.target).value })" /></td>
+                <td><input class="input" [value]="z.eta ?? ''" maxlength="60" placeholder="Same day" [attr.aria-label]="'Usual delivery time for ' + z.name" (input)="patchZone(z.id, { eta: $any($event.target).value })" /></td>
                 <td><label class="check"><input type="checkbox" [checked]="z.isActive" (change)="patchZone(z.id, { isActive: $any($event.target).checked })" /> {{ z.isActive ? 'Yes' : 'No' }}</label></td>
                 <td class="actions">
                   @if (dirty().includes(z.id)) { <button type="button" class="btn btn-sm btn-primary" (click)="saveZone(z)">Save</button> }
@@ -139,7 +146,7 @@ export class CompanyPage implements OnInit {
   protected readonly dirty = signal<number[]>([]);
   protected readonly form = this.fb.nonNullable.group({
     legalName: ['', [Validators.required, Validators.maxLength(150)]], address: [''], phone: [''], email: ['', Validators.email], taxId: [''],
-    defaultVatRate: [7.5, [Validators.min(0), Validators.max(100)]], defaultRebatePerUnit: [0],
+    defaultVatRate: [7.5, [Validators.min(0), Validators.max(100)]], defaultRebatePerUnit: [0], openingHours: [''], replyPromise: [''],
     banks: this.fb.array([] as ReturnType<CompanyPage['bankGroup']>[]),
   });
   protected get banks() { return this.form.controls.banks as FormArray; }
@@ -154,7 +161,8 @@ export class CompanyPage implements OnInit {
   async ngOnInit() {
     try {
       const p = await this.api.companyProfile();
-      this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebatePerUnit: p.defaultRebatePerUnit });
+      this.form.patchValue({ legalName: p.legalName, address: p.address, phone: p.phone, email: p.email, taxId: p.taxId, defaultVatRate: p.defaultVatRate, defaultRebatePerUnit: p.defaultRebatePerUnit,
+        openingHours: p.openingHours ?? '', replyPromise: p.replyPromise ?? '' });
       this.banks.clear(); p.banks.forEach(b => this.banks.push(this.bankGroup(b))); this.have.set(p.assets);
     } catch (e) { this.toasts.error(messageOf(e)); }
     await Promise.all([this.loadZones(), this.loadWarehouses()]);
@@ -182,7 +190,7 @@ export class CompanyPage implements OnInit {
   }
   protected async saveZone(z: DeliveryZone) {
     try {
-      await this.api.updateDeliveryZone(z.id, { name: z.name.trim(), fee: Number(z.fee) || 0, isActive: z.isActive });
+      await this.api.updateDeliveryZone(z.id, { name: z.name.trim(), fee: Number(z.fee) || 0, isActive: z.isActive, eta: z.eta?.trim() || null });
       this.toasts.ok(`${z.name.trim()} saved.`); await this.loadZones();
     } catch (e) { this.toasts.error(messageOf(e)); }
   }

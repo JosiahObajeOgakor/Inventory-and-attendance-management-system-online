@@ -13,10 +13,13 @@ public sealed record FunnelStep(string Stage, int WhatsApp, int Website);
 /// <param name="Campaign">The campaign that follows these people up, if one does.</param>
 public sealed record DropOff(string Stage, int WhatsApp, int Website, int Reachable, string? Campaign);
 public sealed record Slice(string Name, int Count);
+/// <summary>The public website: visits, baskets started, baskets sent to WhatsApp, and online checkouts opened (with their value).</summary>
+public sealed record SiteStats(int Views, int BasketsStarted, int BasketsSent, int Checkouts, decimal CheckoutValue);
 /// <summary>How the chat performs for marketing: who comes, from where, in what language, when, how far they get, and who can be followed up.</summary>
 public sealed record ChatFunnel(int Days, int Conversations, int CustomerMessages, decimal MessagesPerConversation, int AiCalls, int Quotes, int QuotesRefused,
     int Handoffs, int Sales, decimal SalesValue, decimal ConversionPct, IReadOnlyList<FunnelStep> Funnel, IReadOnlyList<DropOff> DropOffs,
-    IReadOnlyList<Slice> Languages, IReadOnlyList<Slice> Countries, IReadOnlyList<Slice> Networks, IReadOnlyList<Slice> WebRegions, IReadOnlyList<int> MessagesByHour);
+    IReadOnlyList<Slice> Languages, IReadOnlyList<Slice> Countries, IReadOnlyList<Slice> Networks, IReadOnlyList<Slice> WebRegions, IReadOnlyList<int> MessagesByHour,
+    SiteStats? Website = null);
 
 public sealed class ChatFunnelQueries(IBusinessDbContext db, IClock clock)
 {
@@ -29,6 +32,7 @@ public sealed class ChatFunnelQueries(IBusinessDbContext db, IClock clock)
             .Select(c => new { c.Id, c.Channel, c.Language, c.Country, c.Network, c.Region, c.AiCalls, c.CustomerId }).ToListAsync(ct);
         var ids = convs.Select(c => c.Id).ToList();
         var events = await db.ChatEvents.AsNoTracking().Where(e => e.At >= since).Select(e => new { e.Kind, e.ConversationId, e.Amount, e.Channel }).ToListAsync(ct);
+        // (the website's own events carry no conversation, so they never enter the chat funnel below)
         var messages = await db.ChatMessages.AsNoTracking().Where(m => m.CreatedAt >= since && m.Role == ChatRoles.User).Select(m => m.CreatedAt).ToListAsync(ct);
 
         // Furthest step per conversation: everyone active in the period at least "started", then the furthest event they produced.
@@ -71,6 +75,8 @@ public sealed class ChatFunnelQueries(IBusinessDbContext db, IClock clock)
             N(ChatEventKinds.Quote), N(ChatEventKinds.QuoteLimited), N(ChatEventKinds.Handoff), sales,
             events.Where(e => e.Kind == ChatEventKinds.Sale).Sum(e => e.Amount ?? 0), convs.Count == 0 ? 0 : Math.Round(100m * sales / convs.Count, 1),
             funnel, drops, Top(convs.Select(c => c.Language)), Top(convs.Where(c => !Web(c.Channel)).Select(c => c.Country)),
-            Top(convs.Where(c => !Web(c.Channel) && c.Country == "Nigeria").Select(c => c.Network)), Top(convs.Where(c => Web(c.Channel)).Select(c => c.Region)), byHour);
+            Top(convs.Where(c => !Web(c.Channel) && c.Country == "Nigeria").Select(c => c.Network)), Top(convs.Where(c => Web(c.Channel)).Select(c => c.Region)), byHour,
+            new SiteStats(N(Website.SiteEvents.View), N(Website.SiteEvents.BasketStart), N(Website.SiteEvents.BasketSent), N(Website.SiteEvents.Checkout),
+                events.Where(e => e.Kind == Website.SiteEvents.Checkout).Sum(e => e.Amount ?? 0)));
     }
 }

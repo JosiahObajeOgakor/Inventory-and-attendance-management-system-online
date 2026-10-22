@@ -42,7 +42,8 @@ export const routes: Routes = [
       { path: 'expenses', canActivate: [adminGuard], loadComponent: () => import('./features/money/expenses').then(m => m.ExpensesPage), title: 'Expenses' },
       { path: 'rebates', canActivate: [adminGuard], loadComponent: () => import('./features/money/rebates').then(m => m.RebatesPage), title: 'Rebates' },
       { path: 'company', canActivate: [adminGuard], loadComponent: () => import('./features/company/company').then(m => m.CompanyPage), title: 'Company & documents' },
-      { path: 'campaigns', canActivate: [adminGuard, marketingGuard], loadComponent: () => import('./features/campaigns/campaigns').then(m => m.CampaignsPage), title: 'Campaigns' },
+      { path: 'website', canActivate: [adminGuard, marketingGuard], loadComponent: () => import('./features/website/website').then(m => m.WebsitePage), title: 'Website' },
+  { path: 'campaigns', canActivate: [adminGuard, marketingGuard], loadComponent: () => import('./features/campaigns/campaigns').then(m => m.CampaignsPage), title: 'Campaigns' },
       { path: 'analytics', canActivate: [adminGuard], loadComponent: () => import('./features/analytics/analytics').then(m => m.AnalyticsPage), title: 'Analytics' },
       { path: 'storage', canActivate: [ceoGuard], loadComponent: () => import('./features/system/storage').then(m => m.StoragePage), title: 'Database storage' },
       // The record-keeping apps: Spreadsheet and Time Off have screens of their own; every other app uses the shared records screen (its definition comes from the server).

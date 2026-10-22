@@ -2,9 +2,12 @@
   <span id="shop" class="anchor" aria-hidden="true"></span>
   <span id="candid" class="anchor" aria-hidden="true"></span>
 
+  @if (backFromPayment()) {
+    <p class="paid" role="status">{{ t('stores.paid') }}</p>
+  }
   <div class="stores__head reveal" appReveal>
-    <p class="eyebrow">Shop with us</p>
-    <h2 id="stores-title">Everything in stock, at today's prices.</h2>
+    <p class="eyebrow">{{ t('stores.eyebrow') }}</p>
+    <h2 id="stores-title">{{ t('stores.title') }}</h2>
   </div>
 
   <!-- Question 1: our own inventory -->
@@ -13,17 +16,17 @@
       <span class="step__num" aria-hidden="true">1</span>
       <div class="step__text">
         @if (!mainOpen()) {
-          <h3>Would you like to see our inventory, to buy or to ask about a product?</h3>
-          <p>See what {{ main()?.name ?? 'Chewy Pet' }} has in stock right now, choose your quantities, and send your order on WhatsApp in one tap.</p>
+          <h3>{{ t('stores.q1') }}</h3>
+          <p>{{ t('stores.q1.desc', { name: main()?.name ?? 'Chewy Pet' }) }}</p>
         } @else {
-          <h3>{{ main()?.name ?? 'Chewy Pet' }} · in stock today</h3>
-          <p>Add what you need. Your basket goes to us on WhatsApp, and we reply with your total and how to pay.</p>
+          <h3>{{ main()?.name ?? 'Chewy Pet' }} · {{ t('stores.instock') }}</h3>
+          <p>{{ t('stores.q1.open') }}</p>
         }
       </div>
       @if (!mainOpen()) {
         <div class="step__actions">
-          <button type="button" class="btn btn--primary" (click)="openMain()" aria-controls="main-shelf">Yes, show me what's in stock</button>
-          <a class="btn btn--ghost" [href]="enquiryHref" target="_blank" rel="noopener">I have a question</a>
+          <button type="button" class="btn btn--primary" (click)="openMain()" aria-controls="main-shelf">{{ t('stores.q1.yes') }}</button>
+          <a class="btn btn--ghost" [href]="enquiryHref" target="_blank" rel="noopener">{{ t('stores.q1.ask') }}</a>
         </div>
       }
     </div>
@@ -39,17 +42,17 @@
         <span class="step__num" aria-hidden="true">2</span>
         <div class="step__text">
           @if (!sisterOpen()) {
-            <h3>Looking for a wider range of foods and accessories?</h3>
-            <p>Visit our sister store, <strong>{{ sister()?.name ?? 'Candid Purrfect' }}</strong>: dog and cat food from leading brands such as Booster, Optimax, Dekra and Balance, plus treats, cages and accessories.</p>
+            <h3>{{ t('stores.q2') }}</h3>
+            <p>{{ t('stores.q2.desc', { name: sister()?.name ?? 'Candid Purrfect' }) }}</p>
           } @else {
-            <h3>{{ sister()?.name ?? 'Candid Purrfect' }} · in stock today</h3>
-            <p>Our sister store. Orders and questions go straight to the {{ sister()?.name ?? 'Candid Purrfect' }} team on WhatsApp.</p>
+            <h3>{{ sister()?.name ?? 'Candid Purrfect' }} · {{ t('stores.instock') }}</h3>
+            <p>{{ t('stores.q2.open') }}</p>
           }
         </div>
         @if (!sisterOpen()) {
           <div class="step__actions">
-            <button type="button" class="btn btn--primary" (click)="openSister()">Yes, show me {{ sister()?.name ?? 'Candid Purrfect' }}</button>
-            <a class="btn btn--ghost" [href]="sisterEnquiryHref()" target="_blank" rel="noopener">Ask them a question</a>
+            <button type="button" class="btn btn--primary" (click)="openSister()">{{ t('stores.q2.yes', { name: sister()?.name ?? 'Candid Purrfect' }) }}</button>
+            <a class="btn btn--ghost" [href]="sisterEnquiryHref()" target="_blank" rel="noopener">{{ t('stores.q2.ask', { name: sister()?.name ?? 'Candid Purrfect' }) }}</a>
           </div>
         }
       </div>

@@ -8,9 +8,10 @@ namespace Inventory.Application.Company;
 
 public sealed record BankDto(string BankName, string AccountName, string AccountNumber);
 public sealed record CompanyProfileDto(string LegalName, string Address, string Phone, string Email, string TaxId, decimal DefaultVatRate,
-    decimal DefaultRebatePerUnit, IReadOnlyList<BankDto> Banks, IReadOnlyList<string> Assets, bool HasPriceLists, bool BuysGoods);
+    decimal DefaultRebatePerUnit, IReadOnlyList<BankDto> Banks, IReadOnlyList<string> Assets, bool HasPriceLists, bool BuysGoods,
+    string? OpeningHours = null, string? ReplyPromise = null);
 public sealed record CompanyProfileInput(string LegalName, string Address, string Phone, string Email, string TaxId, decimal DefaultVatRate,
-    decimal DefaultRebatePerUnit, List<BankDto> Banks);
+    decimal DefaultRebatePerUnit, List<BankDto> Banks, string? OpeningHours = null, string? ReplyPromise = null);
 public sealed record AssetFile(string ContentType, byte[] Data);
 
 public sealed class CompanyProfileValidator : AbstractValidator<CompanyProfileInput>
@@ -24,6 +25,8 @@ public sealed class CompanyProfileValidator : AbstractValidator<CompanyProfileIn
         RuleFor(x => x.TaxId).MaximumLength(60);
         RuleFor(x => x.DefaultVatRate).InclusiveBetween(0, 100);
         RuleFor(x => x.DefaultRebatePerUnit).InclusiveBetween(0, 1_000_000);
+        RuleFor(x => x.OpeningHours).MaximumLength(200);
+        RuleFor(x => x.ReplyPromise).MaximumLength(200);
         RuleFor(x => x.Banks).Must(b => b.Count <= 3).WithMessage("At most three bank accounts are printed on documents.");
         RuleForEach(x => x.Banks).ChildRules(b =>
         {
@@ -71,7 +74,7 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
         var kinds = await db.CompanyAssets.AsNoTracking().Select(a => a.Kind).ToListAsync(ct);
         return new CompanyProfileDto(p.LegalName, p.Address, p.Phone, p.Email, p.TaxId, p.DefaultVatRate, p.DefaultRebatePerUnit,
             p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankDto(b.BankName, b.AccountName, b.AccountNumber)).ToList(), kinds,
-            company.HasPriceLists, company.BuysGoods);
+            company.HasPriceLists, company.BuysGoods, p.OpeningHours, p.ReplyPromise);
     }
 
     public async Task UpdateAsync(CompanyProfileInput input, CurrentUser user, CancellationToken ct)
@@ -80,6 +83,8 @@ public sealed class CompanyProfileService(IBusinessDbContext db, ICompanyContext
         var p = await EnsureAsync(ct);
         p.LegalName = input.LegalName.Trim(); p.Address = input.Address.Trim(); p.Phone = input.Phone.Trim(); p.Email = input.Email.Trim(); p.TaxId = input.TaxId.Trim();
         p.DefaultVatRate = input.DefaultVatRate; p.DefaultRebatePerUnit = input.DefaultRebatePerUnit;
+        p.OpeningHours = string.IsNullOrWhiteSpace(input.OpeningHours) ? null : input.OpeningHours.Trim();
+        p.ReplyPromise = string.IsNullOrWhiteSpace(input.ReplyPromise) ? null : input.ReplyPromise.Trim();
         db.CompanyBanks.RemoveRange(p.Banks);
         p.Banks = input.Banks.Select((b, i) => new CompanyBank { SortOrder = i, BankName = b.BankName.Trim(), AccountName = b.AccountName.Trim(), AccountNumber = b.AccountNumber.Trim() }).ToList();
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "COMPANY_PROFILE_UPDATED", Entity = "CompanyProfile", EntityId = "1", At = clock.UtcNow });

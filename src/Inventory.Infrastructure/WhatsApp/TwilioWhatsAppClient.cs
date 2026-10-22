@@ -26,6 +26,8 @@ public sealed class TwilioOptions
     public List<TwilioNumberConfig> Numbers { get; set; } = [];
     /// <summary>Approved WhatsApp templates (Twilio Content SIDs, HX…) by campaign type: Twilio__Templates__Reorder, __UnpaidOrder, __Promo, __AdminRestock. Needed to message anyone outside the 24-hour window.</summary>
     public Dictionary<string, string> Templates { get; set; } = [];
+    /// <summary>Businesses without a number of their own that use the first number (one line sells for every business): comma-separated keys, or "*" (the default) for all.</summary>
+    public string SharedWith { get; set; } = "*";
 }
 
 /// <summary>Twilio's WhatsApp channel over plain HTTPS (no SDK, same style as the other gateways).</summary>
@@ -35,7 +37,13 @@ public sealed class TwilioWhatsAppClient(HttpClient http, IOptions<TwilioOptions
 
     public static string Digits(string? s) => new((s ?? "").Where(char.IsDigit).ToArray());
 
-    public TwilioNumberConfig? ForCompany(string companyKey) => Opt.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(companyKey, StringComparison.OrdinalIgnoreCase));
+    /// <summary>The business's own number; failing that, the shared line (see <see cref="TwilioOptions.SharedWith"/>).</summary>
+    public TwilioNumberConfig? ForCompany(string companyKey) =>
+        Opt.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(companyKey, StringComparison.OrdinalIgnoreCase))
+        ?? (Shares(companyKey) ? Opt.Numbers.FirstOrDefault(n => Digits(n.From).Length > 0) : null);
+
+    private bool Shares(string companyKey) =>
+        Opt.SharedWith.Trim() == "*" || Opt.SharedWith.Split([",", ";", " "], StringSplitOptions.RemoveEmptyEntries).Contains(companyKey, StringComparer.OrdinalIgnoreCase);
     /// <summary>The number the customer wrote TO ("whatsapp:+14155238886") decides which company the message is for.</summary>
     public TwilioNumberConfig? ForToNumber(string? to) => Opt.Numbers.FirstOrDefault(n => Digits(n.From) == Digits(to) && Digits(to).Length > 0);
 

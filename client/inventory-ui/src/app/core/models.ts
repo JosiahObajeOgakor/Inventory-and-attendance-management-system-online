@@ -17,10 +17,15 @@ export interface Product {
   costPrice: number | null;                       // null for clerks (hidden by the server)
   priceDistributor: number; priceWholesaler: number; priceRetail: number;
   barcode: string | null; tracksSerial: boolean; isActive: boolean; totalQuantity: number;
+  species?: string | null; lifeStage?: string | null; proteinPct?: number | null; fatPct?: number | null; fiberPct?: number | null; moisturePct?: number | null;
+  nutritionSummary?: string | null; description?: string | null; feedingGuide?: string | null;
 }
 export interface ProductInput {
   sku: string; name: string; categoryId: number; unit: string; reorderLevel: number; costPrice: number;
   priceDistributor: number; priceWholesaler: number; priceRetail: number; barcode: string | null; tracksSerial: boolean;
+  /** For the website's product page and the sales assistant's nutrition answers. Always sent, so an edit never blanks them. */
+  species?: string | null; lifeStage?: string | null; proteinPct?: number | null; fatPct?: number | null; fiberPct?: number | null; moisturePct?: number | null;
+  nutritionSummary?: string | null; description?: string | null; feedingGuide?: string | null;
   /** The suppliers who supply it (it goes on each one's item list). Leave out / null to keep the links as they are. */
   supplierIds?: number[] | null;
 }

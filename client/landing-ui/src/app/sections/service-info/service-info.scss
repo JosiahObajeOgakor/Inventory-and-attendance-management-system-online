@@ -1,0 +1,14 @@
+:host { display: block; }
+.info__head h2 { font-size: clamp(1.8rem, 3.6vw, 2.7rem); font-weight: 600; max-width: 22ch; }
+.info__grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1.25rem; margin-top: 1.75rem; }
+.panel { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: clamp(1.1rem, 2.5vw, 1.75rem); }
+.panel h3 { font-family: var(--font-body); font-size: 1.1rem; font-weight: 700; margin-bottom: 0.8rem; }
+.zones { width: 100%; border-collapse: collapse; }
+.zones th, .zones td { text-align: left; padding: 0.55rem 0.5rem 0.55rem 0; border-bottom: 1px solid var(--line); }
+.zones th { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); font-weight: 600; }
+.zones td:nth-child(2) { font-weight: 700; white-space: nowrap; }
+.note, .where { margin-top: 0.9rem; color: var(--ink-dim); line-height: 1.55; }
+.note a, .panel a { color: var(--violet-deep); text-decoration: underline; text-underline-offset: 3px; }
+.big { font-size: 1.25rem; font-weight: 700; line-height: 1.4; }
+.promise { margin-top: 0.6rem; display: inline-block; padding: 0.4rem 0.8rem; border-radius: 999px; background: rgba(37, 211, 102, 0.12); color: #0b5d2a; font-weight: 600; }
+@media (max-width: 860px) { .info__grid { grid-template-columns: 1fr; } }

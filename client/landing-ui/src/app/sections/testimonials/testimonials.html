@@ -1,19 +1,61 @@
-<section id="reviews" class="reviews">
-  <p class="watermark reviews__watermark" aria-hidden="true">REVIEWS</p>
-
+<section id="reviews" class="reviews" aria-labelledby="reviews-title">
   <div class="reviews__head reveal" appReveal>
-    <p class="eyebrow">What pet parents say</p>
-    <h2>Real bowls. Real happy pets.</h2>
+    <p class="eyebrow">{{ t('reviews.eyebrow') }}</p>
+    <h2 id="reviews-title">Real bowls. Real happy pets.</h2>
   </div>
 
-  <div class="reviews__blob reveal" appReveal>
-    <div class="reviews__pill">
-      <span class="reviews__stars" aria-hidden="true">☆☆☆☆☆</span>
-      <p>
-        We're collecting real reviews from Chewy Pet customers — check back soon, or message us
-        on WhatsApp if you'd like to share yours.
-      </p>
+  @if (reviews().length) {
+    <ul class="list">
+      @for (r of reviews(); track $index) {
+        <li class="review">
+          <p class="review__stars" [attr.aria-label]="r.rating + ' out of 5 stars'">{{ stars(r.rating) }}</p>
+          <blockquote>{{ r.text }}</blockquote>
+          <p class="review__who">{{ r.name }}@if (r.place) { <span>, {{ r.place }}</span> }</p>
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="empty reveal" appReveal>We're collecting reviews from our customers. Bought from us? Be the first to tell others how it went.</p>
+  }
+  <button type="button" class="btn btn--primary write" (click)="open()">{{ t('reviews.write') }}</button>
+
+  @if (partners().length) {
+    <div class="partners" aria-label="Our partners">
+      <p class="eyebrow">Trusted by</p>
+      <ul>
+        @for (p of partners(); track p.id) {
+          <li>
+            @if (p.url) { <a [href]="p.url" target="_blank" rel="noopener"><img [src]="'/api/webchat/partners/' + p.id + '/logo'" [alt]="p.name" loading="lazy" /></a> }
+            @else { <img [src]="'/api/webchat/partners/' + p.id + '/logo'" [alt]="p.name" loading="lazy" /> }
+          </li>
+        }
+      </ul>
     </div>
-    <img class="reviews__peek" src="/chewy-bag-all-life-stages.jpg" alt="" aria-hidden="true" loading="lazy" />
-  </div>
+  }
+
+  <dialog #write class="sheet" aria-labelledby="write-title" (click)="$event.target === $event.currentTarget && close()">
+    @if (sent()) {
+      <div class="sheet__body">
+        <h2 id="write-title" class="sheet__title">Thank you!</h2>
+        <p>Your review has been sent. We publish reviews after a quick check, showing your first name only.</p>
+        <button type="button" class="btn btn--primary" (click)="close()">Close</button>
+      </div>
+    } @else {
+      <form class="sheet__body form" (submit)="send(rn.value, rp.value, rt.value, rc.checked); $event.preventDefault()">
+        <button type="button" class="sheet__close" (click)="close()" aria-label="Close">×</button>
+        <h2 id="write-title" class="sheet__title">Write a review</h2>
+        <fieldset class="rate"><legend>Your rating</legend>
+          @for (n of [1, 2, 3, 4, 5]; track n) {
+            <label [class.on]="n <= rating()"><input type="radio" name="rating" [value]="n" [checked]="n === rating()" (change)="rating.set(n)" /><span aria-hidden="true">★</span><span class="sr">{{ n }} star{{ n === 1 ? '' : 's' }}</span></label>
+          }
+        </fieldset>
+        <label class="f"><span>Your review</span><textarea #rt rows="4" required minlength="10" maxlength="1000" placeholder="How did your pet like it? How was the service and delivery?"></textarea></label>
+        <label class="f"><span>First name</span><input #rn required minlength="2" maxlength="60" autocomplete="given-name" /></label>
+        <label class="f"><span>Area (optional)</span><input #rp maxlength="60" placeholder="e.g. Ikeja" /></label>
+        <label class="consent"><input #rc type="checkbox" required /> You may publish this review on your website with my first name.</label>
+        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+        <button type="submit" class="btn btn--primary" [disabled]="sending()">{{ sending() ? 'Sending…' : 'Send review' }}</button>
+      </form>
+    }
+  </dialog>
 </section>

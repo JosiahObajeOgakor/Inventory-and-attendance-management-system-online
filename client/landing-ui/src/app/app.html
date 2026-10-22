@@ -1,21 +1,27 @@
+<a class="skip-link" href="#main">Skip to content</a>
 <header class="nav">
   <a class="nav__brand" href="#top">
     <img src="logo.png" alt="Chewy Pet" width="40" height="40" />
     <span>Chewy Pet</span>
   </a>
-  <nav class="nav__links">
-    <a href="#range">Range</a>
-    <a href="#shop">Shop</a>
-    <a href="#crates">Cages</a>
-    <a href="#why">Why Chewy Pet</a>
-    <a href="#team">Team</a>
-    <a href="#reviews">Reviews</a>
-    <a href="#purrfect">Candid Purrfect</a>
+  <nav class="nav__links" aria-label="Main">
+    <a href="#range">{{ t('nav.range') }}</a>
+    <a href="#shop">{{ t('nav.shop') }}</a>
+    <a href="#crates">{{ t('nav.cages') }}</a>
+    <a href="#why">{{ t('nav.why') }}</a>
+    <a href="#team">{{ t('nav.team') }}</a>
+    <a href="#reviews">{{ t('nav.reviews') }}</a>
+    <a href="#candid">{{ t('nav.sister') }}</a>
   </nav>
   <div class="nav__actions">
+  <label class="nav__lang"><span class="sr-only">{{ t('nav.language') }}</span>
+    <select [value]="i18n.lang()" (change)="i18n.set($any($event.target).value)" [attr.aria-label]="t('nav.language')">
+      @for (l of langs; track l.code) { <option [value]="l.code" [selected]="l.code === i18n.lang()">{{ l.label }}</option> }
+    </select>
+  </label>
   <a class="nav__cta" [href]="whatsappHref" target="_blank" rel="noopener">
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
-    Order on WhatsApp
+    {{ t('shop.whatsapp') }}
   </a>
   </div>
 </header>
@@ -26,6 +32,7 @@
 </div>
 
 <main id="top">
+  <span id="main" tabindex="-1"></span>
   <!-- Hero: the thesis — real product, real footage, one action -->
   <section class="hero">
     <video #heroVideo class="hero__bg" autoplay muted loop playsinline poster="/hero-poster.jpg">
@@ -34,6 +41,9 @@
       <source src="/hero-720.mp4" type="video/mp4" />
     </video>
     <div class="hero__scrim"></div>
+    <button type="button" class="video-toggle" (click)="toggleVideo()" [attr.aria-pressed]="videoPaused()">
+      {{ videoPaused() ? 'Play background video' : 'Pause background video' }}
+    </button>
     <p class="watermark hero__watermark" aria-hidden="true">ChewyPet</p>
 
     <div class="hero__content">
@@ -41,10 +51,10 @@
         <span class="hero__line">Complete nutrition,</span>
         <span class="hero__line hero__line--accent">every stage.</span>
       </h1>
-      <p class="hero__sub">Premium dog food from puppy to senior, produced and packed in Nigeria. See what's in stock and order in minutes.</p>
+      <p class="hero__sub">{{ t('hero.sub') }}</p>
 
       <div class="hero__actions">
-        <a class="btn btn--accent hero__cta" href="#shop">Shop what's in stock</a>
+        <a class="btn btn--accent hero__cta" href="#shop">{{ t('hero.shop') }}</a>
         <a class="hero__link" [href]="whatsappHref" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
           Chat with us on WhatsApp
@@ -64,6 +74,8 @@
   <app-product-list />
 
   <app-stores />
+
+  <app-service-info />
 
   <!-- New product line: collapsible cages -->
   <section id="crates" class="crates">
@@ -94,7 +106,7 @@
     <div class="window__inner reveal" appReveal>
       <p class="eyebrow">Fed right, full of play</p>
       <h2 class="window__title">Good food results <br />in happy pets.</h2>
-      <a class="btn btn--accent btn--lg" href="#shop">Shop what's in stock</a>
+      <a class="btn btn--accent btn--lg" href="#shop">{{ t('hero.shop') }}</a>
     </div>
   </section>
 
@@ -143,6 +155,8 @@
   <app-team />
 
   <app-testimonials />
+
+  <app-articles />
   </div>
 
   <!-- Window 2 (finale): the backyard again, full height -->
@@ -171,8 +185,9 @@
     </div>
 
     <nav class="footer__col" aria-label="Explore">
-      <p class="footer__heading">Explore</p>
+      <p class="footer__heading">{{ t('footer.explore') }}</p>
       <a href="#shop">Shop</a>
+      <a href="#delivery">Delivery &amp; hours</a>
       <a href="#range">Our range</a>
       <a href="#crates">Cages</a>
       <a href="#why">Why Chewy Pet</a>
@@ -181,27 +196,31 @@
     </nav>
 
     <div class="footer__col">
-      <p class="footer__heading">Our stores</p>
+      <p class="footer__heading">{{ t('footer.stores') }}</p>
       <a href="#shop">Chewy Pet</a>
       <a href="#candid">Candid Purrfect (sister store)</a>
-      @if (candid()?.phone; as p) { <a [href]="'tel:' + p">Candid Purrfect: {{ p }}</a> }
       <a href="/inventory/">Staff sign-in</a>
     </div>
 
     <address class="footer__col footer__contact">
-      <p class="footer__heading">Contact</p>
+      <p class="footer__heading">{{ t('footer.contact') }}</p>
       @if (main(); as m) {
         @if (m.address) { <span>{{ m.address }}, Lagos</span> }
         @if (m.phone) { <a [href]="'tel:' + m.phone">{{ m.phone }}</a> }
         @if (m.email) { <a [href]="'mailto:' + m.email">{{ m.email }}</a> }
       }
       <span>WhatsApp {{ whatsappDisplay }}</span>
+      @if (main()?.openingHours; as h) { <span>{{ h }}</span> }
+      @if (main()?.socials?.length) {
+        <span class="footer__social">@for (s of main()!.socials!; track s.url) { <a [href]="s.url" target="_blank" rel="noopener">{{ s.platform }}</a> }</span>
+      }
     </address>
   </div>
 
   <div class="footer__bottom">
     <span>&copy; {{ year }} ChewyPets Farm &amp; Feeds Company Ltd. All rights reserved.</span>
     <span>Candid Purrfect Pets Company Ltd is a sister company.</span>
+    <span class="footer__legal"><a href="/privacy/">{{ t('footer.privacy') }}</a> · <a href="/terms/">{{ t('footer.terms') }}</a></span>
     <a class="footer__top" href="#top" aria-label="Back to top">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </a>

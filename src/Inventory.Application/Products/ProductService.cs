@@ -29,6 +29,9 @@ public sealed class ProductInput
     public decimal? FiberPct { get; set; }
     public decimal? MoisturePct { get; set; }
     public string? NutritionSummary { get; set; }
+    /// <summary>For the product's page on the website.</summary>
+    public string? Description { get; set; }
+    public string? FeedingGuide { get; set; }
 
     /// <summary>The suppliers who supply this product (it goes on each one's item list). Null = leave the links as they are.</summary>
     public List<int>? SupplierIds { get; set; }
@@ -65,6 +68,8 @@ public sealed class ProductInputValidator : AbstractValidator<ProductInput>
 
 public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, StockService stock, IClock clock, ICompanyContext company)
 {
+    private static string? Clip(string? s, int max) => string.IsNullOrWhiteSpace(s) ? null : s.Trim().Length > max ? s.Trim()[..max] : s.Trim();
+
     public Task<int> CreateAsync(NewProductRequest req, CurrentUser user, CancellationToken ct = default)
     {
         new ProductInputValidator().ValidateAndThrow(req.Product);
@@ -86,6 +91,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
                 PriceRetail = p.PriceRetail, SellingPrice = p.PriceRetail, Barcode = barcode, TracksSerial = p.TracksSerial,
                 Species = p.Species, LifeStage = p.LifeStage, ProteinPct = p.ProteinPct, FatPct = p.FatPct,
                 FiberPct = p.FiberPct, MoisturePct = p.MoisturePct, NutritionSummary = p.NutritionSummary,
+                Description = Clip(p.Description, 2000), FeedingGuide = Clip(p.FeedingGuide, 2000),
             };
             db.Products.Add(product);
             await db.SaveChangesAsync(inner);
@@ -140,6 +146,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         p.Barcode = barcode; p.TracksSerial = input.TracksSerial;
         p.Species = input.Species; p.LifeStage = input.LifeStage; p.ProteinPct = input.ProteinPct; p.FatPct = input.FatPct;
         p.FiberPct = input.FiberPct; p.MoisturePct = input.MoisturePct; p.NutritionSummary = input.NutritionSummary;
+        p.Description = Clip(input.Description, 2000); p.FeedingGuide = Clip(input.FeedingGuide, 2000);
         await LinkSuppliersAsync(p, input.SupplierIds, ct);
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_UPDATED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
         await db.SaveChangesAsync(ct);

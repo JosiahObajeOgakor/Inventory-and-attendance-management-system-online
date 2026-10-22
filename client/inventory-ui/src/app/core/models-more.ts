@@ -4,7 +4,7 @@ import { Paged, SaleLine } from './models';
 export interface Bank { bankName: string; accountName: string; accountNumber: string; }
 export interface CompanyProfile {
   legalName: string; address: string; phone: string; email: string; taxId: string; defaultVatRate: number; defaultRebatePerUnit: number;
-  banks: Bank[]; assets: string[]; hasPriceLists: boolean; buysGoods: boolean;
+  banks: Bank[]; assets: string[]; hasPriceLists: boolean; buysGoods: boolean; openingHours?: string | null; replyPromise?: string | null;
 }
 export type AssetKind = 'logo' | 'signature' | 'waybill-stamp';
 
@@ -21,8 +21,8 @@ export interface WaybillRow { id: number; waybillNumber: string; issueDate: stri
 export interface PendingInvoice { invoiceId: number; invoiceNumber: string; invoiceDate: string; customer: string; warehouse: string | null; totalAmount: number; waybillCount: number; }
 export interface WaybillPrefill { invoiceNumber: string; customer: string; phone: string; address: string; warehouse: string; }
 export interface WaybillDetail { id: number; waybillNumber: string; issueDate: string; invoiceId: number; invoiceNumber: string; driverName: string | null; driverPhone: string | null; vehiclePlate: string | null; destinationAddress: string | null; notes: string | null; }
-export interface DeliveryZone { id: number; name: string; fee: number; isActive: boolean; }
-export interface DeliveryZoneInput { name: string; fee: number; isActive: boolean; }
+export interface DeliveryZone { id: number; name: string; fee: number; isActive: boolean; eta?: string | null; }
+export interface DeliveryZoneInput { name: string; fee: number; isActive: boolean; eta?: string | null; }
 export interface WaybillInput { invoiceId: number; issueDate?: string | null; driverName: string | null; driverPhone: string | null; vehiclePlate: string | null; destinationAddress: string | null; notes: string | null; }
 
 // ---- attendance ----

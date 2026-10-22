@@ -61,6 +61,7 @@ builder.Services.AddHttpClient<Inventory.Application.Payments.IVirtualAccountGat
 builder.Services.Configure<Inventory.Infrastructure.WhatsApp.TwilioOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.WhatsApp.TwilioOptions.Section));
 builder.Services.AddHttpClient<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddScoped<Inventory.Application.Messaging.IChatSender>(sp => sp.GetRequiredService<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>());
+builder.Services.AddSingleton<Inventory.Api.Infrastructure.ChatStoreRouter>();   // one WhatsApp line sells for every store
 Inventory.Application.SalesAssistant.Chat.ChatText.LoadOverrides(builder.Configuration["SalesAssistant:PhrasesFile"]);
 // Campaigns: admin-scheduled reminders, offers and restock alerts. Email goes through SendGrid when a key is set, otherwise the existing SMTP mailbox.
 builder.Services.Configure<Inventory.Application.Campaigns.CampaignOptions>(builder.Configuration.GetSection(Inventory.Application.Campaigns.CampaignOptions.Section));
