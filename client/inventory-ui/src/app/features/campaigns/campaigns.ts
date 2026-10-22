@@ -13,6 +13,16 @@ interface Campaign {
 }
 interface RunResult { planned: number; sent: number; failed: number; skipped: number; samples: string[]; note: string; }
 interface Consent { optedIn: number; optedOut: number; unknown: number; }
+interface FunnelStep { stage: string; whatsApp: number; website: number; }
+interface DropOff { stage: string; whatsApp: number; website: number; reachable: number; campaign: string | null; }
+interface Slice { name: string; count: number; }
+interface Insights {
+  days: number; conversations: number; customerMessages: number; messagesPerConversation: number; aiCalls: number; quotes: number; quotesRefused: number; handoffs: number;
+  sales: number; salesValue: number; conversionPct: number; funnel: FunnelStep[]; dropOffs: DropOff[]; languages: Slice[]; countries: Slice[]; networks: Slice[]; webRegions: Slice[]; messagesByHour: number[];
+}
+const STEP: Record<string, string> = { started: 'Started a chat', browsed: 'Looked at products', selected: 'Picked products', summary: 'Saw the total', order: 'Got a payment account', sale: 'Paid' };
+const DROP: Record<string, string> = { started: 'Said hello, then left', browsed: 'Looked, picked nothing', selected: 'Picked, left before the total', summary: 'Saw the total, didn\'t say yes', order: 'Got an account, didn\'t pay' };
+const LANG: Record<string, string> = { en: 'English', pcm: 'Pidgin', ig: 'Igbo', ha: 'Hausa', yo: 'Yoruba', igl: 'Igala' };
 interface LogRow { id: number; campaign: string; customer: string; recipient: string; channel: string; language: string; status: string; detail: string | null; mode: string | null; text: string; at: string; }
 
 /**
@@ -35,8 +45,66 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
         <p class="stats"><strong>{{ c.optedIn }}</strong> customers have agreed to messages · <strong>{{ c.optedOut }}</strong> opted out · <strong>{{ c.unknown }}</strong> not asked yet (they are asked on their next WhatsApp order)</p>
       }
 
+      @if (insights(); as s) {
+        <section class="card card-pad" aria-labelledby="ins-h">
+          <div class="top">
+            <h2 id="ins-h" class="display sub">Who is chatting, and where they drop off</h2>
+            <label class="inline sm">Last <select class="input" [ngModel]="days()" (ngModelChange)="setDays($event)" aria-label="Period">
+              <option [ngValue]="7">7 days</option><option [ngValue]="30">30 days</option><option [ngValue]="90">90 days</option></select></label>
+          </div>
+          <p class="stats sm"><strong>{{ s.conversations }}</strong> chats · <strong>{{ s.customerMessages }}</strong> customer messages ({{ s.messagesPerConversation }} per chat) ·
+            <strong>{{ s.sales }}</strong> paid ({{ s.conversionPct }}%) · <strong>{{ s.quotes }}</strong> quotations, {{ s.quotesRefused }} refused by the once-a-day limit ·
+            {{ s.handoffs }} handed to a person · <strong>{{ s.aiCalls }}</strong> AI calls on open chats</p>
+
+          <div class="cols">
+            <div>
+              <h3 class="h3">How far people get</h3>
+              <table class="table small">
+                <thead><tr><th>Step</th><th class="r">WhatsApp</th><th class="r">Website</th></tr></thead>
+                <tbody>
+                  @for (f of s.funnel; track f.stage; let i = $index) {
+                    <tr><td>{{ stepName(f.stage) }}</td>
+                      <td class="r">{{ f.whatsApp }}@if (i > 0) { <span class="muted"> {{ pct(f.whatsApp, s.funnel[i - 1].whatsApp) }}</span> }</td>
+                      <td class="r">{{ f.website }}@if (i > 0) { <span class="muted"> {{ pct(f.website, s.funnel[i - 1].website) }}</span> }</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <h3 class="h3">Where they stopped (did not buy)</h3>
+              <table class="table small">
+                <thead><tr><th>Stopped at</th><th class="r">WhatsApp</th><th class="r">Website</th><th class="r">We may message</th><th></th></tr></thead>
+                <tbody>
+                  @for (d of s.dropOffs; track d.stage) {
+                    <tr><td>{{ dropName(d.stage) }}</td><td class="r">{{ d.whatsApp }}</td><td class="r">{{ d.website }}</td><td class="r">{{ d.reachable }}</td>
+                      <td>@if (d.campaign && d.reachable > 0) { <button type="button" class="btn btn-sm" (click)="target(d.campaign)">Follow up</button> }</td></tr>
+                  }
+                </tbody>
+              </table>
+              <p class="muted sm">"We may message" counts people we know (a number on record) who agreed to reminders. Website visitors are only reachable once they give their WhatsApp number in the chat.</p>
+            </div>
+          </div>
+
+          <div class="cols four">
+            <div><h3 class="h3">Language</h3>@for (x of s.languages; track x.name) { <p class="row"><span>{{ langName(x.name) }}</span><strong>{{ x.count }}</strong></p> } @empty { <p class="muted sm">No chats yet.</p> }</div>
+            <div><h3 class="h3">WhatsApp: country</h3>@for (x of s.countries; track x.name) { <p class="row"><span>{{ x.name }}</span><strong>{{ x.count }}</strong></p> } @empty { <p class="muted sm">None.</p> }</div>
+            <div><h3 class="h3">Nigerian network</h3>@for (x of s.networks; track x.name) { <p class="row"><span>{{ x.name }}</span><strong>{{ x.count }}</strong></p> } @empty { <p class="muted sm">None.</p> }
+              <p class="muted sm">By number prefix; ported numbers may differ.</p></div>
+            <div><h3 class="h3">Website: time zone</h3>@for (x of s.webRegions; track x.name) { <p class="row"><span>{{ x.name }}</span><strong>{{ x.count }}</strong></p> } @empty { <p class="muted sm">None.</p> }</div>
+          </div>
+
+          <h3 class="h3">When customers write (Lagos time)</h3>
+          <div class="hours" role="img" [attr.aria-label]="hoursLabel(s.messagesByHour)">
+            @for (n of s.messagesByHour; track $index) {
+              <div class="bar" [title]="$index + ':00 – ' + n + ' messages'"><span [style.height.%]="barHeight(n, s.messagesByHour)"></span><small>{{ $index % 3 === 0 ? $index : '' }}</small></div>
+            }
+          </div>
+          <p class="muted sm">Best time to run a campaign: around {{ busiestHour(s.messagesByHour) }}:00, when most customers are already chatting (customers are never messaged before 07:00 or after 20:30).</p>
+        </section>
+      }
+
       @for (c of campaigns(); track c.id) {
-        <section class="card card-pad" [class.on]="c.enabled">
+        <section class="card card-pad" [class.on]="c.enabled" [id]="'camp-' + c.type" [class.flash]="flash() === c.type">
           <div class="top">
             <div>
               <h2 class="display sub">{{ c.name }}</h2>
@@ -113,6 +181,12 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
     .actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: .8rem; }
     .sample { margin-top: .8rem; padding: .8rem 1rem; background: color-mix(in srgb, var(--brand) 6%, transparent); border-radius: 8px; }
     .msg { margin: .5rem 0 0; white-space: pre-wrap; } .small { font-size: .82rem; } .text { white-space: pre-wrap; max-width: 28rem; }
+    .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem 1.5rem; margin: .6rem 0; } .cols.four { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+    .h3 { font-size: .95rem; margin: .4rem 0; } .r { text-align: right; } .row { display: flex; justify-content: space-between; margin: .15rem 0; font-size: .85rem; border-bottom: 1px dashed var(--line, #ddd); }
+    .hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 5.5rem; align-items: end; margin: .4rem 0; }
+    .bar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; text-align: center; } .bar span { display: block; background: var(--brand); border-radius: 2px 2px 0 0; min-height: 1px; }
+    .bar small { font-size: .62rem; color: var(--muted, #777); height: .9rem; } .btn-sm { padding: .15rem .55rem; font-size: .78rem; }
+    section.flash { outline: 3px solid var(--brand); }
     .pill { display: inline-block; padding: .05rem .5rem; border-radius: 99px; background: #dff3e6; font-size: .75rem; } .pill.bad { background: #f8d9d6; } .pill.skip { background: #eee; }
   `,
 })
@@ -126,8 +200,33 @@ export class CampaignsPage implements OnInit {
   protected readonly preview$ = signal<{ id: number; result: RunResult } | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly insights = signal<Insights | null>(null);
+  protected readonly days = signal(30);
+  protected readonly flash = signal('');
 
-  ngOnInit() { void this.load(); }
+  ngOnInit() { void this.load(); void this.loadInsights(); }
+
+  private async loadInsights() {
+    try { this.insights.set(await firstValueFrom(this.http.get<Insights>('/api/campaigns/insights', { params: { days: this.days() } }))); }
+    catch (e) { this.error.set(messageOf(e)); }
+  }
+  protected setDays(d: number) { this.days.set(Number(d)); void this.loadInsights(); }
+  protected stepName(s: string) { return STEP[s] ?? s; }
+  protected dropName(s: string) { return DROP[s] ?? s; }
+  protected langName(s: string) { return LANG[s] ?? s; }
+  protected pct(n: number, of: number) { return of > 0 ? `(${Math.round((100 * n) / of)}%)` : ''; }
+  protected barHeight(n: number, all: number[]) { const max = Math.max(...all, 1); return Math.round((100 * n) / max); }
+  protected busiestHour(all: number[]) { let best = 10; all.forEach((n, h) => { if (h >= 7 && h <= 20 && n > all[best]) best = h; }); return String(best).padStart(2, '0'); }
+  protected hoursLabel(all: number[]) { return `Customer messages by hour; busiest ${this.busiestHour(all)}:00`; }
+
+  /** "Follow up": jump to the campaign that messages these people and show who it would pick today. */
+  protected target(type: string) {
+    const c = this.campaigns().find(x => x.type === type);
+    if (!c) return;
+    this.flash.set(type);
+    document.getElementById('camp-' + type)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    void this.preview(c);
+  }
 
   private async load() {
     try {

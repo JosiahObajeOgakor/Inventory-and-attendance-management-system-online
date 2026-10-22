@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Api.Controllers;
 
-public sealed record WebChatRequest(string SessionId, string Message);
+/// <param name="TimeZone">The browser's time zone ("Africa/Lagos"): where the visitor is, roughly, for the campaign insights. Optional.</param>
+public sealed record WebChatRequest(string SessionId, string Message, string? TimeZone = null);
 /// <param name="Reply">All of the bot's messages for this turn joined by blank lines (older widgets read only this).</param>
 /// <param name="Replies">The same messages one by one, so the page can show them as separate bubbles.</param>
 /// <param name="AwaitingPayment">True while a payment account has been given and not yet paid: the page then checks <c>updates</c> for the confirmation.</param>
@@ -53,7 +54,7 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
             return new WebChatResponse(ai.Text, ai.CheckoutUrl, ai.QuotationNumber, [ai.Text], false, DateTime.UtcNow);
         }
         var flow = HttpContext.RequestServices.GetRequiredService<ChatFlowService>();
-        var reply = await flow.HandleAsync(ChatChannels.WebChat, session, "", r.Message ?? "", ct);
+        var reply = await flow.HandleAsync(ChatChannels.WebChat, session, "", r.Message ?? "", ct, r.TimeZone);
         var state = await StateAsync(session, ct);
         return new WebChatResponse(string.Join("\n\n", reply.Messages), null, null, reply.Messages, state == ChatStates.AwaitingPayment, DateTime.UtcNow);
     }

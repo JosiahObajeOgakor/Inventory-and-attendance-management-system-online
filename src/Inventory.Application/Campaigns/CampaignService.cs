@@ -23,6 +23,7 @@ public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner
     [
         (CampaignTypes.Reorder, "Reorder reminders", "Reminds customers who bought a product some time ago that they may be running out, using their own buying rhythm and today's stock. Warns when our stock is low.", 7 * 60 + 30, 1, 7, true, false),
         (CampaignTypes.UnpaidOrder, "Unpaid orders & overdue balances", "Nudges customers who started an order and never paid (offering a fresh payment account), and those with a balance past its due date.", 9 * 60, 1, 7, true, false),
+        (CampaignTypes.ChatDropOff, "Chat drop-offs", "Follows up people who picked products in the WhatsApp or website chat and left before ordering, reminding them of exactly what they picked if it is still in stock. Looks back the number of days below; each person is reminded once.", 11 * 60, 1, 3, true, false),
         (CampaignTypes.Promo, "Offers from stock", "Tells a customer about a product that is in stock and worth moving, matched to what they bought before. Never invents a discount.", 10 * 60, 7, 7, true, false),
         (CampaignTypes.AdminRestock, "Restock alerts to the admin", "A morning digest of products that will run out within the number of days below, with the daily rate, the date, a suggested order and your biggest buyer. Sent only on days something is at risk.", 6 * 60 + 30, 1, 7, true, true),
     ];

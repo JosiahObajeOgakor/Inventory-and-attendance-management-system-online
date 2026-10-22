@@ -190,6 +190,37 @@ public class ChatSalesTests(MySqlFixture mysql)
     }
 
     [Fact]
+    public async Task One_new_quotation_per_number_a_day_and_a_second_request_points_back_to_it()
+    {
+        var r = await BuildAsync(stock: 20);
+        await r.Say(Ngozi, "quote 3 adult dog food", "Ngozi");
+        Assert.Contains("Quotation ", await r.Say(Ngozi, "send"));
+        await r.Say(Ngozi, "no");
+        await r.Say(Ngozi, "quote 5 adult dog food");
+        var again = await r.Say(Ngozi, "send");
+        Assert.Contains("check back in about an hour", again);
+        Assert.Equal(1, await r.Db.Quotations.CountAsync());                     // no second document
+        Assert.True(await r.Db.ChatEvents.AnyAsync(e => e.Kind == ChatEventKinds.QuoteLimited));
+        Assert.Contains("8880007001", await r.Say(Ngozi, "yes"));                // they can still buy straight away
+    }
+
+    [Fact]
+    public async Task The_chat_records_each_step_and_where_the_number_is_from()
+    {
+        var r = await BuildAsync(stock: 20);
+        await r.Say(Ngozi, "products", "Ngozi");
+        await r.Say(Ngozi, "2 adult dog food");
+        r.Db.ChangeTracker.Clear();
+        var kinds = await r.Db.ChatEvents.AsNoTracking().Select(e => e.Kind).ToListAsync();
+        Assert.Contains(ChatEventKinds.Browsed, kinds);
+        Assert.Contains(ChatEventKinds.Selected, kinds);
+        Assert.Contains(ChatEventKinds.Summary, kinds);
+        var conv = await r.Db.ChatConversations.AsNoTracking().SingleAsync();
+        Assert.Equal(2, conv.MessageCount);
+        Assert.Equal("Nigeria", conv.Country);
+    }
+
+    [Fact]
     public async Task Anyone_can_ask_for_a_quotation_on_whatsapp_and_then_buy_the_same_items()
     {
         var r = await BuildAsync(stock: 20);

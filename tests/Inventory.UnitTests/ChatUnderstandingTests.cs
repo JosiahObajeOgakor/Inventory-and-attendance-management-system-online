@@ -62,6 +62,22 @@ public class ChatUnderstandingTests
         Assert.Equal(ChatLanguages.Pidgin, ChatLexicon.DetectLanguage(N(text), ChatLanguages.Pidgin));
 
     [Theory]
+    [InlineData("whatsapp:+2348031234567", "Nigeria", "MTN")]
+    [InlineData("2347054272549", "Nigeria", "Glo")]
+    [InlineData("2348021234567", "Nigeria", "Airtel")]
+    [InlineData("+233244123456", "Ghana", null)]
+    [InlineData("+447700900123", "United Kingdom", null)]
+    [InlineData("123", null, null)]
+    public void A_number_tells_the_country_and_the_nigerian_network(string phone, string? country, string? network) =>
+        Assert.Equal((country, network), ChatOrigin.FromPhone(phone));
+
+    [Theory]
+    [InlineData("Africa/Lagos", "Africa/Lagos")]
+    [InlineData("<script>", null)]
+    [InlineData("", null)]
+    public void Only_a_real_looking_time_zone_is_kept(string tz, string? kept) => Assert.Equal(kept, ChatOrigin.CleanTimeZone(tz));
+
+    [Theory]
     [InlineData("i wan buy dog food", true)]
     [InlineData("do you have cat food", true)]
     [InlineData("2 chewypets als 10kg", false)]

@@ -12,6 +12,8 @@ public sealed class SalesAssistantOptions
     public int DailyMessagesPerConversation { get; set; } = 60;
     /// <summary>Hard ceiling on AI calls for ONE sale (counted per conversation, reset when the sale completes or is cancelled). A normal sale uses none.</summary>
     public int MaxAiCallsPerSale { get; set; } = 10;
+    /// <summary>New quotations one number (or one website visitor) can get in a rolling 24 hours. Asking again shows today's quotation instead.</summary>
+    public int QuotesPerDay { get; set; } = 1;
     /// <summary>How long stock is held for a customer who has been given a payment account but hasn't paid.</summary>
     public int ReservationMinutes { get; set; } = 60;
     /// <summary>Optional JSON file with native-speaker wording and recognition words (see ChatText). Igala lives here.</summary>

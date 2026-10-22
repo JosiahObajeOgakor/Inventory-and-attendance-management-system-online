@@ -77,7 +77,8 @@ public sealed class ChatFlowService(
 
     // ------------------------------------------------------------------ entry point
 
-    public async Task<ChatFlowReply> HandleAsync(string channel, string externalId, string profileName, string message, CancellationToken ct)
+    /// <param name="timeZone">Website chat only: the browser's time zone, kept as the visitor's rough location.</param>
+    public async Task<ChatFlowReply> HandleAsync(string channel, string externalId, string profileName, string message, CancellationToken ct, string? timeZone = null)
     {
         message = (message ?? "").Trim();
         if (message.Length > Opt.MaxMessageChars) message = message[..Opt.MaxMessageChars];
@@ -88,10 +89,14 @@ public sealed class ChatFlowService(
             return new ChatFlowReply([ChatText.Get(c.Language, "limit")], true);
 
         if (c.LastMessageAt == c.CreatedAt) Track(t, ChatEventKinds.Started);          // a brand-new conversation
+        c.MessageCount++;
+        if (c.Channel == ChatChannels.WhatsApp && c.Country is null) (c.Country, c.Network) = ChatOrigin.FromPhone(c.ExternalId);
+        else if (c.Channel != ChatChannels.WhatsApp && c.Region is null) c.Region = ChatOrigin.CleanTimeZone(timeZone);
         c.Language = ChatLexicon.DetectLanguage(t.Norm, c.Language);
         if (string.IsNullOrWhiteSpace(t.D.Name) && UsableName(t.ProfileName)) t.D.Name = ExtractName(t.ProfileName);   // WhatsApp sends the customer's profile name with every message
         await conversations.AppendAsync(c.Id, ChatRoles.User, message, ct);
 
+        var before = t.D.Lines.ToDictionary(l => l.ProductId, l => l.Qty);
         try { await StepAsync(t, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -99,6 +104,8 @@ public sealed class ChatFlowService(
             t.Out.Add(ChatText.Get(c.Language, "error"));
         }
 
+        foreach (var l in t.D.Lines.Where(l => l.Qty > before.GetValueOrDefault(l.ProductId)))       // what went into the order this turn, for the drop-off follow-up
+            Track(t, ChatEventKinds.Selected, null, $"{l.ProductId}:{l.Qty}");
         c.DraftJson = JsonSerializer.Serialize(t.D, Json);
         c.LastMessageAt = clock.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -312,6 +319,7 @@ public sealed class ChatFlowService(
         var rows = t.D.Lines.Select(l => (Item: cat.First(c => c.Id == l.ProductId), l.Qty)).ToList();
         var totals = DocumentCalculator.Sale(rows.Select(r => new SaleLineInput(r.Item.Id, r.Qty, r.Item.Price)), 0, vat);
         t.C.State = ChatStates.AwaitingConfirm;
+        Track(t, ChatEventKinds.Summary, totals.Total);
         t.Say(t.D.Quote ? "quote_summary" : "summary", string.Join('\n', rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price))), ChatOrderText.Naira(totals.Total));
     }
 
@@ -639,6 +647,24 @@ public sealed class ChatFlowService(
         return true;
     }
 
+    /// <summary>
+    /// One new quotation per number (or website visitor) per rolling day, set by <see cref="SalesAssistantOptions.QuotesPerDay"/>. A second request
+    /// gets today's quotation number back, a suggestion to check again in an hour, and the offer to buy those items now: no new document, no email.
+    /// </summary>
+    private async Task<bool> QuoteLimitReachedAsync(Turn t, int customerId, CancellationToken ct)
+    {
+        var since = clock.UtcNow.AddDays(-1);
+        var today = await db.ChatEvents.AsNoTracking()
+            .Where(e => e.Kind == ChatEventKinds.Quote && e.At > since && (e.ConversationId == t.C.Id || e.CustomerId == customerId))
+            .OrderByDescending(e => e.Id).Select(e => new { e.Reference, e.Amount }).ToListAsync(ct);
+        if (today.Count < Math.Max(1, Opt.QuotesPerDay)) return false;
+        Track(t, ChatEventKinds.QuoteLimited);
+        t.Say("quote_limit", today[0].Reference ?? "", ChatOrderText.Naira(today[0].Amount ?? 0));
+        t.D.Quote = false;                       // "yes" now buys the items they asked about
+        t.C.State = ChatStates.AwaitingConfirm;
+        return true;
+    }
+
     /// <summary>The quotation behind the order awaiting payment: its lines and total, emailed as a PDF when the message carries an address.</summary>
     private async Task QuoteOpenOrderAsync(Turn t, List<CatalogItem> cat, CancellationToken ct)
     {
@@ -666,6 +692,7 @@ public sealed class ChatFlowService(
         if (!string.IsNullOrWhiteSpace(t.D.Name) && customer.Name == phone) customer.Name = t.D.Name!;
         if (!string.IsNullOrWhiteSpace(t.D.Email) && string.IsNullOrWhiteSpace(customer.Email)) customer.Email = t.D.Email;
         await db.SaveChangesAsync(ct);
+        if (await QuoteLimitReachedAsync(t, customer.Id, ct)) return;
 
         var vat = (await profile.GetAsync(ct)).DefaultVatRate;
         QuoteResult quote;
@@ -699,6 +726,7 @@ public sealed class ChatFlowService(
     {
         var inStock = cat.Where(p => p.Available > 0).Take(15).ToList();
         if (inStock.Count == 0) { t.Say("catalogue_empty"); return; }
+        Track(t, ChatEventKinds.Browsed);
         t.Out.Add(ChatText.Get(t.Lang, "catalogue_head") + "\n" + string.Join('\n', inStock.Select(p => $"• {p.Name} — {ChatOrderText.Naira(p.Price)}")) + "\n\n" + ChatText.Get(t.Lang, "catalogue_tail", inStock[0].Name.ToLowerInvariant()));
     }
 

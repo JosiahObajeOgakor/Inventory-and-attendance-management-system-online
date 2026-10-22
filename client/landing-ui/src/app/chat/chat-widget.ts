@@ -24,6 +24,11 @@ const SESSION_KEY = 'chewypet.chat.session';
 /** How often to look for the "payment received" message while the customer has an account to pay into. */
 const PAYMENT_CHECK_MS = 10_000;
 
+/** The browser's time zone (e.g. Africa/Lagos): the only hint of where a visitor is that needs no permission. */
+function timeZone(): string | undefined {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; }
+}
+
 function sessionId(): string {
   try {
     const existing = localStorage.getItem(SESSION_KEY);
@@ -79,7 +84,7 @@ export class ChatWidget {
     this.bubbles.update((b) => [...b, { role: 'user', text }]);
     this.sending.set(true);
 
-    this.http.post<WebChatResponse>('/api/webchat/message', { sessionId: this.session, message: text }).subscribe({
+    this.http.post<WebChatResponse>('/api/webchat/message', { sessionId: this.session, message: text, timeZone: timeZone() }).subscribe({
       next: (res) => {
         const parts = res.replies?.length ? res.replies : [res.reply];
         this.bubbles.update((b) => [

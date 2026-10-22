@@ -200,7 +200,11 @@ public partial class BusinessDbContext
             e.Property(x => x.DraftJson).HasMaxLength(4000);
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.LastMessageAt).HasPrecision(6);
+            e.Property(x => x.Country).HasMaxLength(40);
+            e.Property(x => x.Network).HasMaxLength(20);
+            e.Property(x => x.Region).HasMaxLength(60);
             e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();
+            e.HasIndex(x => x.LastMessageAt);
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Quotation>().WithMany().HasForeignKey(x => x.QuotationId).OnDelete(DeleteBehavior.Restrict);
         });

@@ -10,8 +10,8 @@ namespace Inventory.Application.Campaigns;
 /// </summary>
 public static class CampaignText
 {
-    public const string Reorder = "reorder", ReorderUrgent = "reorder-urgent", Unpaid = "unpaid", Debt = "debt", Promo = "promo";
-    public static readonly string[] Kinds = [Reorder, ReorderUrgent, Unpaid, Debt, Promo];
+    public const string Reorder = "reorder", ReorderUrgent = "reorder-urgent", Unpaid = "unpaid", Debt = "debt", Promo = "promo", DropOff = "dropoff";
+    public static readonly string[] Kinds = [Reorder, ReorderUrgent, Unpaid, Debt, Promo, DropOff];
 
     /// <summary>Situation → what the AI is told is going on (never customer data, only the shape of the message).</summary>
     public static string Situation(string kind) => kind switch
@@ -20,6 +20,7 @@ public static class CampaignText
         ReorderUrgent => "The customer bought a pet-feed product some time ago and has probably used it up. Our stock of it is getting low, so it may run out soon. Remind them kindly, mention that stock is low, and offer to prepare the same order again.",
         Unpaid => "The customer started an order but never paid, and the items are still available today. Nudge them kindly and offer a fresh payment account.",
         Debt => "The customer has an amount still outstanding on their account past its due date. Remind them politely and without pressure.",
+        DropOff => "The customer was choosing products in our chat recently and left before ordering. The items are in stock today. Remind them warmly of what they picked and offer to put the order together, without pressure.",
         Promo => "The customer has bought from us before. A product they might like is in stock today. Tell them about it warmly, tied to what they bought last, without any discount or claim not given.",
         _ => "A friendly note from the shop.",
     };
@@ -45,6 +46,10 @@ public static class CampaignText
                 "Hi {name}! Since you bought {last} from us, we thought you'd like to know {product} is in stock today at {price}. We have {stock} available.",
                 "{name}, {company} has {product} ready at {price}. Good company for the {last} you got last time." ],
 
+            (ChatLanguages.English, DropOff) => [
+                "Hi {name}! You were looking at {product} ({total}) in our chat {days} day(s) ago. It's still in stock at {company} today.",
+                "{name}, your {product} is still waiting at {company}. We have it in stock today whenever you're ready." ],
+
             (ChatLanguages.Pidgin, Reorder) => [
                 "Hi {name}! Na {days} days since you collect {qty} × {product} from {company}. If e don dey finish, we get am for stock today, {price} each.",
                 "Good morning {name}, small thing from {company}: the {product} wey you buy for {date} suppose don almost finish. We don ready if you ready." ],
@@ -60,6 +65,10 @@ public static class CampaignText
             (ChatLanguages.Pidgin, Promo) => [
                 "Hi {name}! Since you buy {last} from us, we think say you go like to know say {product} dey stock today, {price}. We get {stock}.",
                 "{name}, {company} get {product} ready, {price}. E go match the {last} wey you buy before." ],
+
+            (ChatLanguages.Pidgin, DropOff) => [
+                "Hi {name}! You bin dey check {product} ({total}) for our chat {days} day(s) ago. E still dey stock for {company} today.",
+                "{name}, the {product} wey you pick still dey wait for you for {company}. E dey stock today anytime you ready." ],
 
             (ChatLanguages.Igbo, Reorder) => [
                 "Ndewo {name}! Ọ bụ ụbọchị {days} kemgbe ị zụtara {qty} × {product} n'aka {company}. Ọ bụrụ na ọ na-agwụ, anyị nwere ya taa na {price} otu.",
@@ -77,6 +86,10 @@ public static class CampaignText
                 "Ndewo {name}! Ebe ọ bụ na ị zụtara {last} n'aka anyị, anyị chere na ị ga-masị ịmara na {product} dị taa na {price}. Anyị nwere {stock}.",
                 "{name}, {company} nwere {product} njikere na {price}. Ọ dabara nke ọma na {last} i zụrụ n'oge gara aga." ],
 
+            (ChatLanguages.Igbo, DropOff) => [
+                "Ndewo {name}! Ị na-ele {product} ({total}) na chat anyị ụbọchị {days} gara aga. Ọ ka dị n'ahịa na {company} taa.",
+                "{name}, {product} ị họọrọ ka na-eche gị na {company}. Ọ dị taa mgbe ọ bụla ị dị njikere." ],
+
             (ChatLanguages.Hausa, Reorder) => [
                 "Sannu {name}! Kwanaki {days} ke nan da ka ɗauki {qty} × {product} daga {company}. Idan yana ƙarewa, muna da shi a yau a {price} kowanne.",
                 "Barka da safiya {name}, ɗan saƙo daga {company}: {product} ɗin da ka saya ranar {date} ya kamata ya kusa ƙarewa yanzu. A shirye muke duk lokacin da ka shirya." ],
@@ -92,6 +105,9 @@ public static class CampaignText
             (ChatLanguages.Hausa, Promo) => [
                 "Sannu {name}! Tun da ka sayi {last} daga wurinmu, mun ga zai yi maka daɗi ka san cewa {product} yana nan yau a {price}. Muna da {stock}.",
                 "{name}, {company} na da {product} a shirye a {price}. Yana tafiya da {last} ɗin da ka saya a baya." ],
+            (ChatLanguages.Hausa, DropOff) => [
+                "Sannu {name}! Kana duba {product} ({total}) a cikin hirarmu kwanaki {days} da suka wuce. Yana nan a kaya a {company} yau.",
+                "{name}, {product} ɗin da ka zaɓa yana jiranka a {company}. Yana nan yau duk lokacin da ka shirya." ],
             _ => lang == ChatLanguages.English ? ["Hi {name}, a quick note from {company}."] : Variants(kind, ChatLanguages.English),
         };
     }
@@ -103,6 +119,7 @@ public static class CampaignText
         Unpaid => ChatText.Get(lang, "cta_unpaid") + "\n" + ChatText.Get(lang, "stop_hint"),
         Debt => ChatText.Get(lang, "cta_debt") + "\n" + ChatText.Get(lang, "stop_hint"),
         Promo => ChatText.Get(lang, "cta_promo") + "\n" + ChatText.Get(lang, "stop_hint"),
+        DropOff => ChatText.Get(lang, "cta_dropoff") + "\n" + ChatText.Get(lang, "stop_hint"),
         _ => ChatText.Get(lang, "stop_hint"),
     };
 }

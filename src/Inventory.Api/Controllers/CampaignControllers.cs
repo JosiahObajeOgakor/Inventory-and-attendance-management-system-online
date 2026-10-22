@@ -13,8 +13,10 @@ namespace Inventory.Api.Controllers;
 
 /// <summary>Switch campaigns on or off, set when they run, look at a sample of what they would say today, run one now, and see exactly what was sent. Administrators only.</summary>
 [ApiController, Route("api/campaigns"), Authorize(Policy = Policies.Admin), RequiresNewFeatures]
-public class CampaignsController(ICurrentUser cu, CampaignService svc) : AppController(cu)
+public class CampaignsController(ICurrentUser cu, CampaignService svc, Inventory.Application.Queries.ChatFunnelQueries funnel) : AppController(cu)
 {
+    /// <summary>Who chats, from where, in what language, when, how far they get, and who can be followed up — for targeting the campaigns below.</summary>
+    [HttpGet("insights")] public Task<Inventory.Application.Queries.ChatFunnel> Insights([FromQuery] int days, CancellationToken ct) => funnel.GetAsync(days == 0 ? 30 : days, ct);
     [HttpGet] public Task<List<CampaignDto>> List(CancellationToken ct) => svc.ListAsync(ct);
     [HttpPut("{id:int}")] public Task<CampaignDto> Update(int id, CampaignUpdate u, CancellationToken ct) => svc.UpdateAsync(id, u, Me.FullName, ct);
     [HttpPost("{id:int}/preview")] public Task<RunResult> Preview(int id, CancellationToken ct) => svc.PreviewAsync(id, ct);

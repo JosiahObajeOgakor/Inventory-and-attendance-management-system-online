@@ -83,7 +83,7 @@ public class CampaignTests(MySqlFixture mysql)
         db.Customers.Add(c); await db.SaveChangesAsync();
         var req = Sale(r.Seed, qty, vat: 0, paid: qty * 11500m);
         req.CustomerId = c.Id; req.SaleDate = Clock.BusinessToday.AddDays(-daysAgo); req.PaymentMethod = "Cash";
-        await SalesFor(db).SaveAsync(req, Clerk, null);
+        await SalesFor(db).SaveAsync(req, new CurrentUser(1, "Mo Manager", Inventory.Domain.RoleNames.Manager), null);   // only a manager may record a past sale
         return c.Id;
     }
 

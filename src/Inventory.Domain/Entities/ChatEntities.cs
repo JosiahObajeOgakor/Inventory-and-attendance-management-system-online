@@ -29,6 +29,16 @@ public class ChatConversation
     public string? DraftJson { get; set; }
     /// <summary>AI calls spent on the sale in progress. Hard-capped; reset to 0 when the sale completes or is cancelled.</summary>
     public int AiCalls { get; set; }
+
+    // ---- where and how the customer chats (for the campaign insights) ----
+    /// <summary>Messages the customer has sent in this conversation, all time.</summary>
+    public int MessageCount { get; set; }
+    /// <summary>Country from the WhatsApp number's calling code ("Nigeria"), when known.</summary>
+    public string? Country { get; set; }
+    /// <summary>Nigerian mobile network by number prefix ("MTN"); approximate, because numbers can be ported.</summary>
+    public string? Network { get; set; }
+    /// <summary>Website chat: the browser's time zone ("Africa/Lagos"), the only location a browser gives without asking.</summary>
+    public string? Region { get; set; }
 }
 
 public static class ChatStates

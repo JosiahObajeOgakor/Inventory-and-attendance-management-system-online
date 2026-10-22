@@ -41,6 +41,7 @@ public sealed class CampaignPlanner(IBusinessDbContext db, IClock clock, StockAv
             CampaignTypes.Reorder => await ReorderAsync(c, ct),
             CampaignTypes.UnpaidOrder => await UnpaidAsync(c, ct),
             CampaignTypes.Promo => await PromoAsync(c, ct),
+            CampaignTypes.ChatDropOff => await DropOffAsync(c, ct),
             _ => [],
         };
         var since = clock.UtcNow.AddDays(-Math.Max(0, c.CooldownDays));
@@ -157,6 +158,61 @@ public sealed class CampaignPlanner(IBusinessDbContext db, IClock clock, StockAv
             {
                 ["name"] = FirstName(cu.Name), ["total"] = Money(o.Owed), ["date"] = Day(o.Oldest!.Value), ["company"] = company.LegalName,
             }));
+        }
+        return targets;
+    }
+
+    // ------------------------------------------------------------------ picked products in the chat, left before ordering
+
+    private async Task<List<Target>> DropOffAsync(Campaign c, CancellationToken ct)
+    {
+        var now = clock.UtcNow;
+        var since = now.AddDays(-Math.Max(1, c.ThresholdDays));
+        var quiet = now.AddHours(-2);                                    // still mid-conversation: leave them be
+        var events = await db.ChatEvents.AsNoTracking().Where(e => e.At >= since && e.ConversationId != null
+                && (e.Kind == ChatEventKinds.Selected || e.Kind == ChatEventKinds.Order || e.Kind == ChatEventKinds.Sale))
+            .Select(e => new { ConversationId = e.ConversationId!.Value, e.Kind, e.At, e.Reference }).ToListAsync(ct);
+        var convIds = events.Select(e => e.ConversationId).Distinct().ToList();
+        var convs = await db.ChatConversations.AsNoTracking().Where(x => convIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        var sent = await db.CampaignMessages.AsNoTracking().Where(m => m.CampaignId == c.Id && m.Status == CampaignMessageStatuses.Sent && m.CreatedAt >= since && m.CustomerId != null)
+            .Select(m => new { CustomerId = m.CustomerId!.Value, m.CreatedAt }).ToListAsync(ct);
+
+        var picks = new List<(int CustomerId, DateTime At, List<(int ProductId, int Qty)> Lines)>();
+        foreach (var g in events.GroupBy(e => e.ConversationId))
+        {
+            // Only what was picked AFTER the last order or sale in this chat: earlier picks were bought (or are the unpaid-order campaign's job).
+            var lastBuy = g.Where(e => e.Kind != ChatEventKinds.Selected).Select(e => (DateTime?)e.At).Max();
+            var selected = g.Where(e => e.Kind == ChatEventKinds.Selected && (lastBuy is null || e.At > lastBuy)).ToList();
+            if (selected.Count == 0 || selected.Max(e => e.At) > quiet || !convs.TryGetValue(g.Key, out var conv)) continue;
+            var lines = selected.Select(e => (e.Reference ?? "").Split(':'))
+                .Where(p => p.Length == 2 && int.TryParse(p[0], out _) && int.TryParse(p[1], out _))
+                .Select(p => (ProductId: int.Parse(p[0], CultureInfo.InvariantCulture), Qty: int.Parse(p[1], CultureInfo.InvariantCulture)))
+                .GroupBy(l => l.ProductId).Select(x => (x.Key, x.Last().Qty)).Where(l => l.Qty > 0).ToList();
+            var customerId = conv.CustomerId;
+            if (customerId is null && conv.Channel == ChatChannels.WhatsApp && CustomerLookupService.Normalize(conv.ExternalId) is { } phone)
+                customerId = await db.Customers.AsNoTracking().Where(x => x.Phone == phone).Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
+            if (customerId is int id && lines.Count > 0) picks.Add((id, selected.Max(e => e.At), lines));
+        }
+
+        var targets = new List<Target>();
+        foreach (var p in picks.OrderByDescending(p => p.At).GroupBy(p => p.CustomerId).Select(g => g.First()))
+        {
+            if (sent.Any(s => s.CustomerId == p.CustomerId && s.CreatedAt > p.At)) continue;      // reminded once about this visit already
+            var cu = await db.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == p.CustomerId, ct);
+            if (cu is null || cu.MarketingStatus != MarketingStatuses.OptedIn || (cu.Phone is null && cu.Email is null)) continue;
+            var ids = p.Lines.Select(l => l.ProductId).ToList();
+            var avail = await stock.AvailableAsync(ids, null, ct);
+            if (p.Lines.Any(l => avail.GetValueOrDefault(l.ProductId) < l.Qty)) continue;          // only remind them of an order we can fill today
+            var products = await db.Products.AsNoTracking().Where(x => ids.Contains(x.Id) && x.IsActive).ToDictionaryAsync(x => x.Id, ct);
+            if (products.Count != ids.Count) continue;
+            var total = p.Lines.Sum(l => products[l.ProductId].PriceFor(PriceTiers.Retailer) * l.Qty);
+            var first = products[p.Lines[0].ProductId].Name;
+            var label = p.Lines.Count > 1 ? $"{p.Lines[0].Qty} × {first} and {p.Lines.Count - 1} more" : $"{p.Lines[0].Qty} × {first}";
+            targets.Add(new Target(cu.Id, cu.Name, cu.Phone, cu.Email, cu.PreferredLanguage ?? ChatLanguages.English, CampaignText.DropOff, new()
+            {
+                ["name"] = FirstName(cu.Name), ["product"] = label, ["total"] = Money(total), ["company"] = company.LegalName,
+                ["days"] = Math.Max(1, (int)Math.Ceiling((now - p.At).TotalDays)).ToString(CultureInfo.InvariantCulture),
+            }, PrimeKind.Order, p.Lines));
         }
         return targets;
     }

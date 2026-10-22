@@ -18,7 +18,9 @@ public static class CampaignTypes
     public const string Promo = "Promo";
     /// <summary>Tells the admin which products will run out within the lead-time window and what to order.</summary>
     public const string AdminRestock = "AdminRestock";
-    public static readonly string[] All = [Reorder, UnpaidOrder, Promo, AdminRestock];
+    /// <summary>People who picked products in the chat and left before ordering: reminds them of exactly what they picked.</summary>
+    public const string ChatDropOff = "ChatDropOff";
+    public static readonly string[] All = [Reorder, UnpaidOrder, ChatDropOff, Promo, AdminRestock];
 }
 
 /// <summary>One kind of automatic message, switched on/off and scheduled by an admin. Messages are drafted fresh each run from live records; no per-message approval.</summary>
