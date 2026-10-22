@@ -38,7 +38,7 @@ const clock = (v: string | null) => (v ? new Date(v.endsWith('Z') ? v : v + 'Z')
           <tbody>@for (e of events.items(); track e.id) { <tr><td>{{ e.at | stampTime }}</td><td class="strong">{{ e.fullName }}</td><td>{{ e.event }}</td></tr> }</tbody>
         </table></div>
         @if (!events.loading() && !events.items().length) { <div class="empty"><strong>No events in this period</strong></div> }
-        <app-pager [page]="events.page()" [pageSize]="events.pageSize" [total]="events.total()" (pageChange)="events.goTo($event)" />
+        <app-pager [page]="events.page()" [pageSize]="events.pageSize" [total]="events.total()" (pageChange)="events.goTo($event)" [sizeable]="true" (sizeChange)="events.setSize($event)" />
       }
     </section>`,
   styles: `.inline { display: flex; align-items: center; gap: .4rem; } .inline label { margin: 0; } .pills { margin: 0 0 0 auto; border: 0; }`,

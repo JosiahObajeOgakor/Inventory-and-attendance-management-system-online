@@ -36,7 +36,7 @@ public sealed class PriceBookService(IBusinessDbContext db, TransactionRunner tx
         Require();
         var q = from p in db.Products.AsNoTracking().Where(x => x.IsActive) join c in db.Categories.AsNoTracking() on p.CategoryId equals c.Id select new { p, Category = c.Name };
         if (categoryId is int cid) q = q.Where(r => r.p.CategoryId == cid);
-        if (page.Term is { } t) q = q.Where(r => r.p.Name.Contains(t) || r.p.Sku.Contains(t) || r.Category.Contains(t));
+        foreach (var w in SearchTerms.Words(page.Term)) q = q.Where(r => r.p.Name.Contains(w) || r.p.Sku.Contains(w) || r.Category.Contains(w) || (r.p.Barcode != null && r.p.Barcode.Contains(w)));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderBy(r => r.Category).ThenBy(r => r.p.Name).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var ids = rows.Select(r => r.p.Id).ToList();

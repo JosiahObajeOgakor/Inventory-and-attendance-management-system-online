@@ -70,6 +70,27 @@ public static class DependencyInjection
         s.AddScoped<Campaigns.CampaignPlanner>();
         s.AddScoped<Campaigns.CampaignWriter>();      // scoped on purpose: one scope = one run = one AI budget
         s.AddScoped<Campaigns.CampaignRunner>();
+        // The record-keeping apps this business has bought (Sign, Events, Fleet…): one engine, and each app's own rules (every IAppHook in this assembly).
+        s.AddScoped<AppsEngine.AppRecordService>();
+        s.AddScoped<AppsEngine.FiguresService>();
+        s.AddScoped<TimeOff.TimeOffService>();
+        s.AddScoped<Branches.BranchService>();
+        s.AddScoped<Ledger.GeneralLedger>();
+        s.AddScoped<Ledger.LedgerSync>();
+        s.AddScoped<Ledger.AccountingService>();
+        s.AddScoped<Tax.TaxService>();
+        s.AddScoped<Banking.BankReconciliationService>();
+        s.AddScoped<Assets.FixedAssetService>();
+        s.AddScoped<Budgets.BudgetService>();
+        s.AddScoped<Currencies.CurrencyService>();
+        s.AddScoped<Approvals.ApprovalService>();
+        s.AddScoped<Approvals.IApprovalHandler, Approvals.StockAdjustApproval>();
+        s.AddScoped<Approvals.IApprovalHandler, Approvals.SalesVoidApproval>();
+        s.AddScoped<AppsEngine.BroadcastQueue>();
+        s.AddScoped<AppsEngine.BroadcastDispatcher>();
+        s.AddScoped<AppsEngine.AutomationService>();
+        foreach (var hook in typeof(DependencyInjection).Assembly.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(AppsEngine.IAppHook).IsAssignableFrom(t)))
+            s.AddScoped(typeof(AppsEngine.IAppHook), hook);
         s.AddScoped<Campaigns.CampaignService>();
         return s;
     }

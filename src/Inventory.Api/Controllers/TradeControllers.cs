@@ -60,8 +60,13 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
 
     /// <summary>Replaces "Delete invoice": reverses stock, balance and rebate, keeps the record (defect D1). Admin only.</summary>
     [HttpPost("{id:int}/void"), Authorize(Policy = Policies.Admin)]
-    public async Task<IActionResult> Void(int id, VoidRequest r, CancellationToken ct)
+    public async Task<IActionResult> Void(int id, VoidRequest r, [FromServices] Inventory.Application.Approvals.ApprovalService approvals, CancellationToken ct)
     {
+        // Above the business's limit (off until switched on under Approvals) the void is held for someone else's approval (202) instead of being made.
+        var value = await approvals.VoidValueAsync(id, ct);
+        if (await approvals.NeedsApprovalAsync(Inventory.Domain.Entities.ApprovalActions.SalesVoid, value, ct))
+            return Accepted(await approvals.SubmitAsync(Inventory.Domain.Entities.ApprovalActions.SalesVoid, value,
+                $"Void invoice #{id}: {r.Reason}", new Inventory.Application.Approvals.VoidPayload(id, r.Reason), Me, ct));
         await voids.VoidAsync(id, r.Reason, Me, ct);
         return NoContent();
     }

@@ -32,6 +32,7 @@ public sealed class ApiFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("Companies__0__Schema", $"t_chewy_{tag}");
         Environment.SetEnvironmentVariable("Companies__1__Schema", $"t_candid_{tag}");
         Environment.SetEnvironmentVariable("Setup__Token", "test-setup-token");
+        Environment.SetEnvironmentVariable("Demo__SeedCompany", "");   // keep the demo records out of the tests
         Environment.SetEnvironmentVariable("RateLimit__LoginPerMinute", "1000");   // production default is 10/min/IP
         Factory = new WebApplicationFactory<Program>();
         _ = Factory.Server;   // starts the host, which creates schemas and applies migrations

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Api.Controllers;
 
 public sealed record LoginRequest(string Username, string Password, string Company);
-public sealed record CompanyChoice(string Key, string DisplayName, bool HasPriceLists = false, bool BuysGoods = false);
+public sealed record CompanyChoice(string Key, string DisplayName, bool HasPriceLists = false, bool BuysGoods = false, bool HasNewFeatures = false);
 public sealed record MeResponse(int Id, string Username, string FullName, string Role, string Company, IReadOnlyList<CompanyChoice> Companies, bool MustChangePassword);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record SwitchCompanyRequest(string Company);
@@ -29,7 +29,7 @@ public class AuthController(
     /// <summary>The businesses shown on the sign-in screen (names only; nothing sensitive).</summary>
     [HttpGet("companies")]
     [AllowAnonymous]
-    public IEnumerable<CompanyChoice> Companies() => companies.All.Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods));
+    public IEnumerable<CompanyChoice> Companies() => companies.All.Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures));
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -115,6 +115,8 @@ public class AuthController(
     {
         var extra = new List<Claim> { new(AppClaims.Company, companyKey), new(AppClaims.FullName, user.FullName) };
         if (user.MustChangePassword) extra.Add(new Claim(MustChangePasswordMiddleware.ClaimType, "true"));
+        if (await store.UserBranches.AsNoTracking().Where(x => x.UserId == user.Id && x.CompanyKey == companyKey).Select(x => (int?)x.BranchId).FirstOrDefaultAsync() is int branch)
+            extra.Add(new Claim(AppClaims.Branch, branch.ToString()));
         await signIn.SignOutAsync();
         await signIn.SignInWithClaimsAsync(user, isPersistent: false, extra);
     }
@@ -122,7 +124,7 @@ public class AuthController(
     private async Task<MeResponse> BuildMe(AppUser user, string companyKey)
     {
         var role = (await users.GetRolesAsync(user)).FirstOrDefault() ?? "";
-        var choices = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods)).ToList();
+        var choices = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures)).ToList();
         return new MeResponse(user.Id, user.UserName!, user.FullName, role, companyKey, choices, user.MustChangePassword);
     }
 

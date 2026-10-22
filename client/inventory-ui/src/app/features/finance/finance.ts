@@ -58,7 +58,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
       <section class="card gap">
         <h2>Customer and supplier ledger</h2>
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search account or reference" aria-label="Search ledger" (input)="ledger.setSearch($any($event.target).value)" /></div></div>
+          <input class="input" type="search" placeholder="Search account, reference, amount or date" aria-label="Search ledger" (input)="ledger.setSearch($any($event.target).value)" /></div></div>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Date</th><th>Account</th><th>Type</th><th>Reference</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
           <tbody>
@@ -69,7 +69,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
           </tbody>
         </table></div>
         @if (!ledger.loading() && !ledger.items().length) { <div class="empty"><strong>No ledger entries</strong>Credit sales, payments and supplier bills are posted here.</div> }
-        <app-pager [page]="ledger.page()" [pageSize]="ledger.pageSize" [total]="ledger.total()" (pageChange)="ledger.goTo($event)" />
+        <app-pager [page]="ledger.page()" [pageSize]="ledger.pageSize" [total]="ledger.total()" (pageChange)="ledger.goTo($event)" [sizeable]="true" (sizeChange)="ledger.setSize($event)" />
       </section>
     </div>`,
   styles: `.gap { margin-top: 1rem; } .sel { width: 12rem; } .owes { color: var(--stamp); font-weight: 600; }`,

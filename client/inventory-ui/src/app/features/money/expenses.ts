@@ -30,7 +30,7 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
           <div class="field inline"><label for="et">To</label><input id="et" class="input" type="date" [ngModel]="to()" (ngModelChange)="setTo($event)" /></div>
           <div class="field inline"><label for="ec">Category</label>
             <select id="ec" class="input" [ngModel]="category()" (ngModelChange)="setCategory($event)"><option value="">All</option>@for (c of categories(); track c) { <option>{{ c }}</option> }</select></div>
-          <div class="search grow"><app-icon name="search" [size]="17" /><input class="input" type="search" placeholder="Search notes" aria-label="Search expenses" (input)="setSearch($any($event.target).value)" /></div>
+          <div class="search grow"><app-icon name="search" [size]="17" /><input class="input" type="search" placeholder="Search category, note or amount" aria-label="Search expenses" (input)="setSearch($any($event.target).value)" /></div>
         </div>
         @if (data(); as d) {
           <div class="sums">

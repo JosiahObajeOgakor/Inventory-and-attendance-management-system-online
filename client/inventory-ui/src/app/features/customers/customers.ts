@@ -24,7 +24,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
       </div>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search name, phone or location" aria-label="Search customers" (input)="list.setSearch($any($event.target).value)" /></div></div>
+          <input class="input" type="search" placeholder="Search name, contact, phone, email, place or type" aria-label="Search customers" (input)="list.setSearch($any($event.target).value)" /></div></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Customer</th><th>Type</th><th>Last 12 months</th><th class="num">Owes</th><th class="num">Rebate rate</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -42,7 +42,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No customers found</strong>Add a customer to sell on credit or track their spend.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>
 

@@ -147,7 +147,13 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
     public async Task<PagedResult<QuotationRowDto>> ListAsync(PageRequest page, CancellationToken ct)
     {
         var q = from x in db.Quotations.AsNoTracking() join c in db.Customers.AsNoTracking() on x.CustomerId equals c.Id select new { x, c.Name };
-        if (page.Term is { } t) q = q.Where(r => r.x.QuotationNumber.Contains(t) || r.Name.Contains(t) || r.x.Status.Contains(t));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var amount = SearchTerms.Amount(w);
+            var day = SearchTerms.Dates(w);
+            var from = day?.From; var to = day?.To;
+            q = q.Where(r => r.x.QuotationNumber.Contains(w) || r.Name.Contains(w) || r.x.Status.Contains(w) || (amount != null && r.x.TotalAmount == amount) || (from != null && r.x.QuotationDate >= from && r.x.QuotationDate <= to));
+        }
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(r => r.x.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var briefs = await users.BriefsAsync(rows.Select(r => r.x.CreatedByUserId), ct);

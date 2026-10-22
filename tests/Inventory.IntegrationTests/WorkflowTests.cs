@@ -316,7 +316,7 @@ public class PaymentAndVoidTests(MySqlFixture mysql)
 public class VoidFallbackTests(MySqlFixture mysql)
 {
     [Fact]
-    public async Task A_migrated_sale_with_no_batch_id_returns_to_one_shared_RETURNED_batch()
+    public async Task A_migrated_sale_with_no_batch_id_returns_to_the_products_existing_row()
     {
         var cs = await mysql.NewSchemaAsync();
         var seed = await SeedAsync(cs, stock: 10);
@@ -337,6 +337,7 @@ public class VoidFallbackTests(MySqlFixture mysql)
 
         await using var check = NewContext(cs);
         Assert.Equal(10, await check.StockBatches.SumAsync(x => x.QuantityOnHand));
-        Assert.Single(await check.StockBatches.Where(b => b.BatchNumber == "RETURNED").ToListAsync());   // one shared batch, not one per invoice
+        Assert.Empty(await check.StockBatches.Where(b => b.BatchNumber == "RETURNED").ToListAsync());   // no separate "RETURNED" row any more
+        Assert.Single(await check.StockBatches.ToListAsync());                                          // the units are back on the product's one row
     }
 }

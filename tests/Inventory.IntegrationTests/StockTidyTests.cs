@@ -64,7 +64,43 @@ public class StockTidyTests(MySqlFixture mysql)
     }
 
     [Fact]
-    public async Task Stock_with_an_expiry_date_tops_up_its_own_row_and_other_dates_stay_separate()
+    public async Task Adding_stock_with_a_batch_number_typed_still_tops_up_the_existing_row()
+    {
+        var r = await BuildAsync(stock: 10);
+        await using (var db = NewContext(r.Cs))
+        {
+            var ops = new StockOperations(db, Wire.Tx(db), new StockService(db, Clock), Clock);
+            await ops.RecordProductionAsync(r.Seed.ProductId, r.Seed.WarehouseId, 7, DateOnly.FromDateTime(DateTime.UtcNow), "BATCH-OCT-21", null, Clerk);
+            await ops.RecordProductionAsync(r.Seed.ProductId, r.Seed.WarehouseId, 5, DateOnly.FromDateTime(DateTime.UtcNow), "BATCH-OCT-22", null, Clerk);
+        }
+        await using var check = NewContext(r.Cs);
+        var row = Assert.Single(await check.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId).ToListAsync());   // still one row
+        Assert.Equal(22, row.QuantityOnHand);                                                                                           // 10 + 7 + 5
+        Assert.Equal(2, await check.StockMovements.CountAsync(m => m.ProductId == r.Seed.ProductId && m.ReferenceType == "Production"));   // both additions are in the history
+    }
+
+    [Fact]
+    public async Task A_transfer_onto_a_warehouse_that_already_holds_the_product_tops_up_its_row()
+    {
+        var r = await BuildAsync(stock: 30);
+        int other;
+        await using (var db = NewContext(r.Cs))
+        {
+            var w = new Warehouse { Name = "Second store" };
+            db.Warehouses.Add(w); await db.SaveChangesAsync();
+            other = w.Id;
+            db.StockBatches.Add(new StockBatch { ProductId = r.Seed.ProductId, WarehouseId = other, BatchNumber = "THEIRS", QuantityOnHand = 4 });
+            await db.SaveChangesAsync();
+            await new StockOperations(db, Wire.Tx(db), new StockService(db, Clock), Clock).TransferAsync(r.Seed.ProductId, r.Seed.WarehouseId, other, 9, Clerk);
+        }
+        await using var check = NewContext(r.Cs);
+        var there = Assert.Single(await check.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId && b.WarehouseId == other).ToListAsync());
+        Assert.Equal(13, there.QuantityOnHand);
+        Assert.Equal(21, (await check.StockBatches.AsNoTracking().SingleAsync(b => b.ProductId == r.Seed.ProductId && b.WarehouseId == r.Seed.WarehouseId)).QuantityOnHand);
+    }
+
+    [Fact]
+    public async Task Restocking_tops_up_the_one_row_whatever_the_expiry_date_and_keeps_the_earliest_date()
     {
         var r = await BuildAsync(stock: 0);
         await using (var db = NewContext(r.Cs))
@@ -75,14 +111,16 @@ public class StockTidyTests(MySqlFixture mysql)
             {
                 var d1 = new DateOnly(2027, 3, 1); var d2 = new DateOnly(2027, 9, 1);
                 await stockSvc.ReceiveToShelfAsync(r.Seed.ProductId, r.Seed.WarehouseId, 5, d1, "Manual", null, 1, ct);
-                await stockSvc.ReceiveToShelfAsync(r.Seed.ProductId, r.Seed.WarehouseId, 7, d1, "Manual", null, 1, ct);     // same date, same transaction: one row
+                await stockSvc.ReceiveToShelfAsync(r.Seed.ProductId, r.Seed.WarehouseId, 7, d1, "Manual", null, 1, ct);     // same transaction: still one row
                 await stockSvc.ReceiveToShelfAsync(r.Seed.ProductId, r.Seed.WarehouseId, 4, d2, "Manual", null, 1, ct);
                 await db.SaveChangesAsync(ct); return true;
             }, default);
         }
         await using var check = NewContext(r.Cs);
         var rows = await check.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId && b.QuantityOnHand > 0).OrderBy(b => b.ExpiryDate).ToListAsync();
-        Assert.Equal([12, 4], rows.Select(b => b.QuantityOnHand).ToArray());
+        var row = Assert.Single(rows);                                          // one row for the product here, not one per expiry date
+        Assert.Equal(16, row.QuantityOnHand);
+        Assert.Equal(new DateOnly(2027, 3, 1), row.ExpiryDate);                 // the earliest date is kept
     }
 
     [Fact]

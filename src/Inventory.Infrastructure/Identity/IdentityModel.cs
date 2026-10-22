@@ -33,11 +33,19 @@ public class LoginAuditEntry
     public DateTime AtUtc { get; set; }
 }
 
+public class UserBranch
+{
+    public int UserId { get; set; }
+    public string CompanyKey { get; set; } = "";
+    public int BranchId { get; set; }
+}
+
 public class IdentityStore(DbContextOptions<IdentityStore> options)
     : IdentityDbContext<AppUser, IdentityRole<int>, int>(options)
 {
     public DbSet<LoginAuditEntry> LoginAudit => Set<LoginAuditEntry>();
     public DbSet<Inventory.Infrastructure.Ai.AiUsageEntry> AiUsage => Set<Inventory.Infrastructure.Ai.AiUsageEntry>();
+    public DbSet<UserBranch> UserBranches => Set<UserBranch>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -55,6 +63,12 @@ public class IdentityStore(DbContextOptions<IdentityStore> options)
             e.ToTable("ai_usage");
             e.Property(x => x.AtUtc).HasPrecision(6);
             e.HasIndex(x => new { x.UserId, x.AtUtc });
+        });
+        b.Entity<UserBranch>(e =>
+        {
+            e.ToTable("user_branches");
+            e.HasKey(x => new { x.UserId, x.CompanyKey });
+            e.Property(x => x.CompanyKey).HasMaxLength(40);
         });
         b.Entity<LoginAuditEntry>(e =>
         {

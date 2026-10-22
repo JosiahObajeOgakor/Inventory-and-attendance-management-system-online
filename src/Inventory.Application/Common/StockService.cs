@@ -64,10 +64,16 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
 
     public static string ShelfBatchNumber(DateOnly? expiry) => expiry is { } e ? "EXP-" + e.ToString("yyMMdd") : MainBatch;
 
+    /// <summary>When stock with another expiry joins an existing row, the row keeps the earliest expiry date it has (none counts as no date).</summary>
+    public static void KeepEarliestExpiry(StockBatch batch, DateOnly? expiry)
+    {
+        if (expiry is { } e && (batch.ExpiryDate is null || e < batch.ExpiryDate)) batch.ExpiryDate = e;
+    }
+
     /// <summary>
-    /// Receives stock onto the product's EXISTING shelf stock in that warehouse: it is added to the batch with the same expiry date (none = ordinary stock),
-    /// and only if there is no such batch yet is one created. So buying more of a product tops up the one record instead of adding a new row every time;
-    /// what was bought, when and from which order stays in the stock history (an IN movement carrying the purchase order). Logs an IN.
+    /// Receives stock onto the product's EXISTING stock row in that warehouse, whatever its expiry date, and only if there is no row yet is one created.
+    /// So restocking a product updates the one record instead of adding a new row; what was bought, when and from which order stays in the stock
+    /// history (an IN movement carrying the purchase order). The row keeps the earliest expiry date. Logs an IN.
     /// </summary>
     public async Task<StockBatch> ReceiveToShelfAsync(int productId, int warehouseId, int quantity, DateOnly? expiry, string referenceType, int? referenceId,
         int userId, CancellationToken ct, string? note = null)
@@ -76,17 +82,32 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
         await LockWarehouseBatchesAsync(productId, warehouseId, ct);     // loads and locks what exists
         // Local also holds a batch created earlier in this same transaction (not yet saved), so two lines for one product can't create two rows.
         var batches = db.StockBatches.Local.Where(b => b.ProductId == productId && b.WarehouseId == warehouseId).OrderBy(b => b.Id == 0 ? int.MaxValue : b.Id).ToList();
-        var batch = batches.FirstOrDefault(b => b.ExpiryDate == expiry);
+        var batch = batches.FirstOrDefault();   // the oldest existing row for this product here
         if (batch is null)
         {
-            var number = ShelfBatchNumber(expiry);
-            if (batches.Any(b => b.BatchNumber == number)) number = $"{number}-{batches.Count + 1}";      // an old batch already uses the name for a different expiry
-            batch = new StockBatch { ProductId = productId, WarehouseId = warehouseId, BatchNumber = number, QuantityOnHand = quantity, ExpiryDate = expiry };
+            batch = new StockBatch { ProductId = productId, WarehouseId = warehouseId, BatchNumber = ShelfBatchNumber(expiry), QuantityOnHand = quantity, ExpiryDate = expiry };
             db.StockBatches.Add(batch);
         }
-        else batch.QuantityOnHand += quantity;
+        else { batch.QuantityOnHand += quantity; KeepEarliestExpiry(batch, expiry); }
         AddMovement(productId, warehouseId, MovementTypes.In, quantity, referenceType, referenceId, userId, note);
         return batch;
+    }
+
+    /// <summary>
+    /// Adds quantity to the product's EXISTING stock row in that warehouse (whatever its batch number), creating a row only when there is none, under
+    /// <paramref name="newBatchNumber"/>. The row keeps the earliest expiry date. Logs nothing: the caller logs the business event once.
+    /// </summary>
+    public async Task<StockBatch> TopUpAsync(int productId, int warehouseId, int quantity, DateOnly? expiry, string newBatchNumber, CancellationToken ct)
+    {
+        await LockWarehouseBatchesAsync(productId, warehouseId, ct);
+        var existing = db.StockBatches.Local.Where(b => b.ProductId == productId && b.WarehouseId == warehouseId).OrderBy(b => b.Id == 0 ? int.MaxValue : b.Id).FirstOrDefault();
+        if (existing is null)
+        {
+            existing = new StockBatch { ProductId = productId, WarehouseId = warehouseId, BatchNumber = newBatchNumber, QuantityOnHand = quantity, ExpiryDate = expiry };
+            db.StockBatches.Add(existing);
+        }
+        else { existing.QuantityOnHand += quantity; KeepEarliestExpiry(existing, expiry); }
+        return existing;
     }
 
     /// <summary>Adds stock to the (product, warehouse, batch number) batch, creating it if needed, and logs an IN.</summary>

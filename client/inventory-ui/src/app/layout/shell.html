@@ -22,10 +22,18 @@
           <div class="items" [id]="'grp-' + g.title" [attr.inert]="isOpen(g) ? null : ''">
             <div class="inner">
               @for (i of g.items; track i.path) {
-                <a [routerLink]="i.path" routerLinkActive="active" (click)="go()">
-                  <app-icon [name]="i.icon" [size]="18" />
-                  <span>{{ i.label }}</span>
-                </a>
+                @if (locked(i)) {
+                  <span class="locked" title="Test with K9" aria-disabled="true" role="link" tabindex="0">
+                    <app-icon [name]="i.icon" [size]="18" />
+                    <span>{{ i.label }}</span>
+                    <span class="soon">Test with K9</span>
+                  </span>
+                } @else {
+                  <a [routerLink]="i.path" routerLinkActive="active" (click)="go()">
+                    <app-icon [name]="i.icon" [size]="18" />
+                    <span>{{ i.label }}</span>
+                  </a>
+                }
               }
             </div>
           </div>

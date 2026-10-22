@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { CalendarData, DueItem } from '../../core/models-dash';
 import { Icon } from '../../shared/icon';
 import { compact, naira } from './widgets';
@@ -15,7 +16,7 @@ const longDay = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('en-
  */
 @Component({
   selector: 'app-due-calendar',
-  imports: [Icon],
+  imports: [Icon, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="head">
@@ -28,19 +29,19 @@ const longDay = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('en-
       @for (d of dow; track d) { <div class="dow" role="columnheader">{{ d }}</div> }
       @for (c of cells(); track c.date) {
         <div class="cell" role="gridcell" [class.out]="!c.inMonth" [class.today]="c.today" [class.has]="c.items.length" [attr.tabindex]="c.items.length ? 0 : -1"
-             [attr.aria-label]="c.items.length ? label(c) : null" (mouseenter)="show(c)" (mouseleave)="hide()" (focus)="show(c)" (blur)="hide()">
+             [attr.aria-label]="c.items.length ? label(c) : null" (mouseenter)="show(c)" (mouseleave)="hide()" (focus)="show(c)" (click)="tap(c, $event)" (keydown.enter)="tap(c, $event)">
           <span class="n">{{ c.day }}</span>
           @for (it of c.items.slice(0, 2); track it.invoiceId) {
-            <span class="pill" [class]="kind(it)">{{ short(it) }}</span>
+            <a class="pill" [class]="kind(it)" [routerLink]="['/sales', it.invoiceId]" [attr.title]="'Open ' + it.invoiceNumber" (click)="$event.stopPropagation()">{{ short(it) }}</a>
           }
           @if (c.items.length > 2) { <span class="more">+{{ c.items.length - 2 }} more</span> }
           @if (open()?.date === c.date && c.items.length) {
             <div class="tip" [class.right]="c.col >= 4" role="tooltip">
               <div class="when">{{ longDay(c.date) }}</div>
               @for (it of c.items; track it.invoiceId) {
-                <p><i [class]="kind(it)"></i><span><strong>{{ it.customer }}</strong> owes <b>{{ full(it.outstanding) }}</b> and it is due for payment on {{ longDay(it.dueDate) }}.
+                <a class="entry" [routerLink]="['/sales', it.invoiceId]" (click)="$event.stopPropagation()"><i [class]="kind(it)"></i><span><strong>{{ it.customer }}</strong> owes <b>{{ full(it.outstanding) }}</b> and it is due for payment on {{ longDay(it.dueDate) }}.
                   @if (it.daysOverdue > 0) { <em>{{ it.daysOverdue }} day{{ it.daysOverdue === 1 ? '' : 's' }} overdue.</em> }
-                  <small>{{ it.invoiceNumber }}{{ it.phone ? ' · ' + it.phone : '' }}</small></span></p>
+                  <small>{{ it.invoiceNumber }}{{ it.phone ? ' · ' + it.phone : '' }} · open sale →</small></span></a>
               }
             </div>
           }
@@ -52,7 +53,7 @@ const longDay = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('en-
         <span class="pill overdue">Overdue</span> {{ earlier().length }} earlier invoice(s) still unpaid — {{ full(earlierTotal()) }}
         @if (showEarlier()) {
           <div class="tip up" role="tooltip">@for (it of earlier().slice(0, 6); track it.invoiceId) {
-            <p><i class="overdue"></i><span><strong>{{ it.customer }}</strong> owes <b>{{ full(it.outstanding) }}</b>, due {{ longDay(it.dueDate) }}. <em>{{ it.daysOverdue }} days overdue.</em></span></p>
+            <a class="entry" [routerLink]="['/sales', it.invoiceId]"><i class="overdue"></i><span><strong>{{ it.customer }}</strong> owes <b>{{ full(it.outstanding) }}</b>, due {{ longDay(it.dueDate) }}. <em>{{ it.daysOverdue }} days overdue.</em><small>{{ it.invoiceNumber }} · open sale →</small></span></a>
           }</div>
         }
       </div>
@@ -65,13 +66,14 @@ const longDay = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('en-
     .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid #edf0f5; border-left: 1px solid #edf0f5; }
     .dow { padding: .4rem .5rem; font-size: .6875rem; letter-spacing: .06em; text-transform: uppercase; color: #8b95a7; border-right: 1px solid #edf0f5; border-bottom: 1px solid #edf0f5; background: #fafbfd; }
     .cell { position: relative; min-height: 86px; padding: .3rem .35rem; border-right: 1px solid #edf0f5; border-bottom: 1px solid #edf0f5; display: flex; flex-direction: column; gap: 3px; background: #fff; }
-    .cell.out { background: #fafbfd; } .cell.out .n { color: #c3cad6; } .cell.has { cursor: default; } .cell.has:hover, .cell.has:focus-visible { background: #f3f9ff; outline: none; z-index: 5; box-shadow: inset 0 0 0 2px #3db4ff; }
+    .cell.out { background: #fafbfd; } .cell.out .n { color: #c3cad6; } .cell.has { cursor: pointer; } .cell.has:hover, .cell.has:focus-visible { background: #f3f9ff; outline: none; z-index: 5; box-shadow: inset 0 0 0 2px #3db4ff; }
     .n { font-size: .75rem; color: #5b6579; } .cell.today .n { background: #1c2130; color: #fff; border-radius: 50%; width: 22px; height: 22px; display: grid; place-items: center; }
     .pill { font-size: .6875rem; padding: 2px 6px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
     .pill.overdue { background: #fdeceb; color: #b3261e; } .pill.soon { background: #fff3dc; color: #8a5a00; } .pill.upcoming { background: #e4f4ff; color: #0b6aa8; } .more { font-size: .6875rem; color: #7a8497; }
     .tip { position: absolute; z-index: 20; top: 100%; left: 8px; width: 280px; background: #1c2130; color: #fff; border-radius: 12px; padding: .7rem .8rem; box-shadow: 0 12px 32px rgb(20 30 60 / .28); font-size: .78rem; line-height: 1.45; }
     .tip.right { left: auto; right: 8px; } .tip.up { top: auto; bottom: 110%; left: 0; } .when { font-weight: 700; margin-bottom: .35rem; color: #9ad9ff; }
-    .tip p { margin: .35rem 0 0; display: flex; gap: .5rem; } .tip i { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: .4rem; } .tip b { font-family: var(--font-mono); } .tip em { color: #ffb4ae; font-style: normal; display: block; }
+    .tip p, .tip .entry { margin: .35rem 0 0; display: flex; gap: .5rem; } .tip .entry { color: inherit; text-decoration: none; padding: .25rem .3rem; border-radius: 8px; } .tip .entry:hover, .tip .entry:focus-visible { background: rgb(255 255 255 / .12); outline: none; }
+    a.pill { text-decoration: none; cursor: pointer; } a.pill:hover { filter: brightness(.95); text-decoration: underline; } .tip i { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: .4rem; } .tip b { font-family: var(--font-mono); } .tip em { color: #ffb4ae; font-style: normal; display: block; }
     .tip small { display: block; color: #9aa6bd; font-family: var(--font-mono); font-size: .68rem; }
     .earlier { position: relative; margin-top: .7rem; padding: .55rem .7rem; background: #fdf4f3; border-radius: 10px; font-size: .8125rem; color: #6d2320; cursor: default; } .earlier:focus-visible { outline: 2px solid #ef5b52; }
     @media (max-width: 700px) { .cell { min-height: 64px; } .pill { font-size: .6rem; } .legend { display: none; } }
@@ -113,4 +115,11 @@ export class DueCalendar {
   protected label(c: Cell) { return c.items.map(i => `${i.customer} owes ${naira(i.outstanding)}, due ${longDay(i.dueDate)}`).join('. '); }
   protected show(c: Cell) { if (c.items.length) this.open.set(c); }
   protected hide() { this.open.set(null); }
+  private readonly router = inject(Router);
+  /** A click or tap: a date with one payment opens that sale; a date with several shows the list (on a phone there is no hover) and each line opens its sale. */
+  protected tap(c: Cell, e: Event) {
+    if (!c.items.length) return;
+    if (c.items.length === 1) { void this.router.navigate(['/sales', c.items[0].invoiceId]); return; }
+    e.stopPropagation(); this.open.set(this.open()?.date === c.date ? null : c);
+  }
 }

@@ -37,7 +37,7 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
       <section class="card">
         <div class="toolbar">
           <div class="search grow"><app-icon name="search" [size]="17" />
-            <input class="input" type="search" placeholder="Search product, SKU or batch" aria-label="Search stock" (input)="current().setSearch($any($event.target).value)" /></div>
+            <input class="input" type="search" placeholder="Search product, SKU, batch, warehouse or category" aria-label="Search stock" (input)="current().setSearch($any($event.target).value)" /></div>
           @if (tab() === 'batches') { <label class="check"><input type="checkbox" (change)="onlyLow($any($event.target).checked)" /> Only low or expiring</label> }
         </div>
 
@@ -56,7 +56,7 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
             </tbody>
           </table></div>
           @if (!batches.loading() && !batches.items().length) { <div class="empty"><strong>No stock found</strong>Record a purchase or production run to bring stock in.</div> }
-          <app-pager [page]="batches.page()" [pageSize]="batches.pageSize" [total]="batches.total()" (pageChange)="batches.goTo($event)" />
+          <app-pager [page]="batches.page()" [pageSize]="batches.pageSize" [total]="batches.total()" (pageChange)="batches.goTo($event)" [sizeable]="true" (sizeChange)="batches.setSize($event)" />
         } @else {
           <div class="table-wrap"><table class="table">
             <thead><tr><th>When</th><th>Product</th><th>Warehouse</th><th>Movement</th><th class="num">Qty</th><th>Reason</th><th>By</th></tr></thead>
@@ -69,7 +69,7 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
             </tbody>
           </table></div>
           @if (!moves.loading() && !moves.items().length) { <div class="empty"><strong>No movements yet</strong>Every sale, receipt, transfer and adjustment is logged here.</div> }
-          <app-pager [page]="moves.page()" [pageSize]="moves.pageSize" [total]="moves.total()" (pageChange)="moves.goTo($event)" />
+          <app-pager [page]="moves.page()" [pageSize]="moves.pageSize" [total]="moves.total()" (pageChange)="moves.goTo($event)" [sizeable]="true" (sizeChange)="moves.setSize($event)" />
         }
       </section>
     </div>

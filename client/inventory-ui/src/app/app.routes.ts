@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { adminGuard, authGuard } from './core/http';
+import { adminGuard, authGuard, newFeaturesGuard } from './core/http';
 import { Shell } from './layout/shell';
 
 // Every feature is lazy-loaded. The guards only shape the UI: the API enforces the same roles on every endpoint.
@@ -35,9 +35,21 @@ export const routes: Routes = [
       { path: 'expenses', canActivate: [adminGuard], loadComponent: () => import('./features/money/expenses').then(m => m.ExpensesPage), title: 'Expenses' },
       { path: 'rebates', canActivate: [adminGuard], loadComponent: () => import('./features/money/rebates').then(m => m.RebatesPage), title: 'Rebates' },
       { path: 'company', canActivate: [adminGuard], loadComponent: () => import('./features/company/company').then(m => m.CompanyPage), title: 'Company & documents' },
-      { path: 'campaigns', canActivate: [adminGuard], loadComponent: () => import('./features/campaigns/campaigns').then(m => m.CampaignsPage), title: 'Campaigns' },
+      { path: 'campaigns', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/campaigns/campaigns').then(m => m.CampaignsPage), title: 'Campaigns' },
       { path: 'analytics', canActivate: [adminGuard], loadComponent: () => import('./features/analytics/analytics').then(m => m.AnalyticsPage), title: 'Analytics' },
       { path: 'storage', canActivate: [adminGuard], loadComponent: () => import('./features/system/storage').then(m => m.StoragePage), title: 'Database storage' },
+      // The record-keeping apps: Spreadsheet and Time Off have screens of their own; every other app uses the shared records screen (its definition comes from the server).
+      { path: 'apps/spreadsheet', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/apps-engine/spreadsheet').then(m => m.SpreadsheetPage), title: 'Spreadsheet' },
+      { path: 'apps/:app', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/apps-engine/engine').then(m => m.EnginePage), title: 'App' },
+      { path: 'accounting', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/accounting/accounting').then(m => m.AccountingPage), title: 'Accounting' },
+      { path: 'tax', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/accounting/tax').then(m => m.TaxPage), title: 'Tax' },
+      { path: 'banking', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/accounting/banking').then(m => m.BankingPage), title: 'Bank reconciliation' },
+      { path: 'approvals', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/accounting/approvals').then(m => m.ApprovalsPage), title: 'Approvals' },
+      { path: 'budgets', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/erp/budgets').then(m => m.BudgetsPage), title: 'Budgets' },
+      { path: 'fixed-assets', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/erp/fixed-assets').then(m => m.FixedAssetsPage), title: 'Fixed assets' },
+      { path: 'currencies', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/erp/currencies').then(m => m.CurrenciesPage), title: 'Currencies' },
+      { path: 'branches', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/branches/branches').then(m => m.BranchesPage), title: 'Branches' },
+      { path: 'time-off', canActivate: [adminGuard, newFeaturesGuard], loadComponent: () => import('./features/apps/time-off').then(m => m.TimeOffPage), title: 'Time Off' },
       { path: 'appearance', loadComponent: () => import('./features/system/appearance').then(m => m.AppearancePage), title: 'Appearance' },
       { path: 'activity', canActivate: [adminGuard], loadComponent: () => import('./features/users/activity').then(m => m.ActivityPage), title: 'Activity log' },
     ],

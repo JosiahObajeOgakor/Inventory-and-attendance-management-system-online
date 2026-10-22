@@ -20,7 +20,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
       </div>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search name or phone" aria-label="Search suppliers" (input)="list.setSearch($any($event.target).value)" /></div>
+          <input class="input" type="search" placeholder="Search name, contact, phone, email or product type" aria-label="Search suppliers" (input)="list.setSearch($any($event.target).value)" /></div>
           <span class="muted">We owe suppliers <strong class="mono">{{ owedTotal() | naira }}</strong> on this page</span></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
@@ -34,7 +34,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No suppliers found</strong>Add the businesses you buy from.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>
 

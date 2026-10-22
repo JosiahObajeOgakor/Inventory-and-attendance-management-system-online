@@ -116,7 +116,8 @@ public class AuditController(ICurrentUser cu, IBusinessDbContext db, IdentitySto
     public async Task<PagedResult<AuditRowDto>> Actions([FromQuery] PageRequest paging, CancellationToken ct)
     {
         var q = db.AuditLogs.AsNoTracking().AsQueryable();
-        if (paging.Term is { } t) q = q.Where(a => a.Action.Contains(t) || a.UserName.Contains(t) || a.Entity.Contains(t) || (a.Detail != null && a.Detail.Contains(t)));
+        foreach (var w in Inventory.Application.Queries.SearchTerms.Words(paging.Term))
+            q = q.Where(a => a.Action.Contains(w) || a.UserName.Contains(w) || a.Entity.Contains(w) || (a.EntityId != null && a.EntityId.Contains(w)) || (a.Detail != null && a.Detail.Contains(w)));
         var total = await q.CountAsync(ct);
         var items = await q.OrderByDescending(a => a.Id).Skip((paging.SafePage - 1) * paging.SafeSize).Take(paging.SafeSize)
             .Select(a => new AuditRowDto(a.Id, a.At, a.UserName, a.Action, a.Entity, a.EntityId, a.Detail)).ToListAsync(ct);

@@ -67,6 +67,9 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             p.SetPrecision(14); // scale set per column below where different
 
         ConfigureMore(b);
+        ConfigureApps(b);
+        ConfigureBranches(b);
+        ConfigureMoney(b);
 
         b.Entity<Category>(e =>
         {

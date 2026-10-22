@@ -16,7 +16,7 @@ namespace Inventory.Infrastructure.Identity.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("Inventory.Infrastructure.Ai.AiUsageEntry", b =>
@@ -159,6 +159,23 @@ namespace Inventory.Infrastructure.Identity.Migrations
                     b.HasIndex("AtUtc");
 
                     b.ToTable("login_audit", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Infrastructure.Identity.UserBranch", b =>
+                {
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CompanyKey")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
+                    b.HasKey("UserId", "CompanyKey");
+
+                    b.ToTable("user_branches", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<int>", b =>

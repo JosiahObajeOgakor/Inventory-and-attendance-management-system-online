@@ -27,7 +27,7 @@ public class AnalyticsServiceTests(MySqlFixture mysql)
         {
             await using var s = NewContext(cs);
             var req = Sale(seed, 10, vat: 0);
-            req.SaleDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-7 * w + 1);
+            req.SaleDate = new SystemClock().BusinessToday.AddDays(-7 * w + 1);   // the shop's (Lagos) day, as the forecast reads it
             req.Lines.Add(new SaleLineDto { ProductId = treats, Quantity = 5, UnitPrice = 1200 });
             await SalesFor(s).SaveAsync(req, Clerk, null);
         }

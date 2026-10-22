@@ -25,6 +25,7 @@ builder.Services.AddSingleton(registry);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<IdentityStore>(o => o.UseMySQL(registry.ConnectionFor(registry.IdentitySchema)));
 builder.Services.AddScoped<RequestCompany>();
+builder.Services.AddScoped<LedgerSyncFilter>();
 builder.Services.AddScoped<ICompanyContext>(sp => sp.GetRequiredService<RequestCompany>());
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<BusinessDbContext>(sp => sp.GetRequiredService<CompanyRegistry>().CreateFor(sp.GetRequiredService<RequestCompany>().Info));
@@ -87,6 +88,10 @@ builder.Services.AddScoped<Inventory.Application.Ai.IAiUsageStore, Inventory.Inf
 builder.Services.AddSingleton<Inventory.Application.Email.IEmailSender, Inventory.Infrastructure.Email.SmtpEmailSender>();
 builder.Services.AddScoped<Inventory.Application.Queries.IUserDirectory, UserDirectory>();
 builder.Services.AddApplication();
+builder.Services.AddSingleton(new Inventory.Application.AppsEngine.AppAccess(builder.Configuration["Apps:Enabled"]));
+builder.Services.AddSingleton<Inventory.Api.Infrastructure.CompanyScopes>();
+builder.Services.AddScoped<Inventory.Application.Messaging.ISmsSender, Inventory.Infrastructure.Messaging.TermiiSmsSender>();
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.BroadcastWorker>();
 
 // ---- identity: cookie session, legacy-hash aware, lockout 5 tries / 15 min (rule A) ----
 builder.Services.AddIdentity<AppUser, IdentityRole<int>>(o =>
@@ -184,6 +189,13 @@ if (builder.Configuration.GetValue("Database:MigrateOnStartup", true))
         }
         catch (Exception ex) { app.Logger.LogWarning(ex, "Could not check product-name uniqueness for {Company}", company.Key); }
     }
+}
+
+// Demo records for the one business named in Demo:SeedCompany (only if it is empty); no other business is touched.
+if (builder.Configuration.GetValue("Database:MigrateOnStartup", true))
+{
+    try { await Inventory.Api.Infrastructure.K9DemoSeeder.RunAsync(app.Services, registry, builder.Configuration["Demo:SeedCompany"], app.Logger); }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Could not fill the demo business with records."); }
 }
 
 // Say loudly, once, at start-up what would otherwise fail silently later (a customer's WhatsApp message that is just ignored, a payment webhook that is just rejected).

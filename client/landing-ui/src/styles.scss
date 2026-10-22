@@ -21,9 +21,21 @@
   --cream-dim: #e8dcc8;
   --kibble: #8b5a2b;
 
+  // Page surfaces — the reference layout is a light page (white/cream sections, dark
+  // only in the footer and the photo hero), not a dark theme with light accents.
+  --paper: #fffaf3;
+  --paper-warm: #fbf1e4;
+  --line: rgba(23, 11, 34, 0.1);
+  --ink-dim: rgba(23, 11, 34, 0.68);
+
   // Functional
   --whatsapp: #25d366;
   --whatsapp-dark: #1da851;
+
+  // Gold foil accent, sampled from the "All Life Stages" bag's corner pattern —
+  // used for rotated watermark type and small accent details.
+  --gold: #d9a441;
+  --gold-bright: #f0c15c;
 
   --font-display: 'Fredoka', ui-rounded, system-ui, sans-serif;
   --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
@@ -50,8 +62,8 @@ html {
 
 body {
   margin: 0;
-  background: var(--ink);
-  color: var(--cream);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -82,3 +94,190 @@ button {
   outline: 3px solid var(--orange-bright);
   outline-offset: 3px;
 }
+
+// ---------- shared building blocks (every landing section, incl. standalone sub-components) ----------
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--orange-bright);
+  margin: 0 0 0.75rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 1rem;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+.btn--whatsapp {
+  background: var(--whatsapp);
+  color: #0b1f12;
+  box-shadow: 0 10px 26px -10px rgba(37, 211, 102, 0.65);
+}
+.btn--whatsapp:hover {
+  background: var(--whatsapp-dark);
+  transform: translateY(-2px);
+}
+// Default ghost style is for the (now-light) page body — dark text/border on paper.
+.btn--ghost {
+  background: transparent;
+  border-color: rgba(23, 11, 34, 0.25);
+  color: var(--ink);
+}
+.btn--ghost:hover {
+  background: rgba(23, 11, 34, 0.05);
+  border-color: rgba(23, 11, 34, 0.45);
+}
+.btn--lg {
+  padding: 1.1rem 2rem;
+  font-size: 1.1rem;
+}
+
+// The signature element: a swing-tag, like the ones printed on the real bags,
+// reused for stats and feature copy throughout the page.
+.tag {
+  position: relative;
+  background: #ffffff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px 16px 16px 16px;
+  box-shadow: 0 16px 30px -18px rgba(23, 11, 34, 0.25);
+}
+.tag::before {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--cream);
+}
+.tag--card {
+  list-style: none;
+  padding: 1.5rem 1.5rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 148px;
+}
+.tag__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+.tag__desc {
+  font-size: 0.92rem;
+  color: rgba(23, 11, 34, 0.72);
+  line-height: 1.45;
+}
+
+section {
+  padding: clamp(3.5rem, 8vw, 6rem) clamp(1.25rem, 4vw, 3rem);
+  max-width: var(--max);
+  margin: 0 auto;
+}
+
+// Scroll-reveal (see core/reveal.directive.ts). Reduced-motion users get the
+// no-animation override above, so this still resolves to fully visible.
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+// ---------- shared "Happy Tails"-structure primitives ----------
+// A giant rotated outline wordmark bleeding behind section content — the recurring
+// background-type treatment borrowed from the reference layout. Position/rotate per use.
+.watermark {
+  position: absolute;
+  z-index: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(5rem, 16vw, 12.5rem);
+  line-height: 1;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(23, 11, 34, 0.09);
+  pointer-events: none;
+  user-select: none;
+}
+// A photo card with a bottom scrim, eyebrow badge and title overlay — used for the
+// nutrition row, the dogs/cats duo band and the team grid.
+.photo-card {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  isolation: isolate;
+  display: block;
+}
+.photo-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.photo-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(23, 11, 34, 0.92) 0%, rgba(23, 11, 34, 0.15) 55%, transparent 75%);
+}
+.photo-card__badge {
+  position: absolute;
+  z-index: 1;
+  top: 0.9rem;
+  left: 0.9rem;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+}
+.photo-card__foot {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.1rem 1.1rem 1.2rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.photo-card__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--cream);
+}
+.photo-card__arrow {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--orange);
+  color: var(--ink);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.photo-card__arrow:hover { background: var(--orange-bright); transform: rotate(45deg); }

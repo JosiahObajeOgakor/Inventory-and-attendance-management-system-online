@@ -15,7 +15,7 @@ public sealed class SystemClock : IClock
 public sealed record BankDefault(string Bank, string AccountName, string AccountNumber);
 
 public sealed record CompanyInfo(string Key, string DisplayName, string DocumentPrefix, string Schema, string LegalName = "", bool HasPriceLists = false,
-    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, int Order = 0);
+    bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, int Order = 0, bool HasNewFeatures = false);
 
 public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
 {
@@ -24,6 +24,7 @@ public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
     public string LegalName => string.IsNullOrWhiteSpace(info.LegalName) ? info.DisplayName : info.LegalName;
     public bool HasPriceLists => info.HasPriceLists;
     public bool BuysGoods => info.BuysGoods;
+    public bool HasNewFeatures => info.HasNewFeatures;
     public int DefaultWarehouseId => info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();

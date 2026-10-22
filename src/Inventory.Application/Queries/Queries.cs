@@ -20,7 +20,9 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
     public async Task<PagedResult<ProductDto>> ProductsAsync(PageRequest page, bool includeInactive, bool isAdmin, CancellationToken ct)
     {
         var q = db.Products.AsNoTracking().Where(p => includeInactive || p.IsActive);
-        if (page.Term is { } t) q = q.Where(p => p.Name.Contains(t) || p.Sku.Contains(t) || (p.Barcode != null && p.Barcode.Contains(t)));
+        foreach (var w in SearchTerms.Words(page.Term))
+            q = q.Where(p => p.Name.Contains(w) || p.Sku.Contains(w) || (p.Barcode != null && p.Barcode.Contains(w)) || p.Unit.Contains(w) || p.Category!.Name.Contains(w)
+                || (p.Species != null && p.Species.Contains(w)) || (p.LifeStage != null && p.LifeStage.Contains(w)));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderBy(p => p.Name).ThenBy(p => p.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
             .Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
@@ -73,7 +75,13 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
                 join t in totals on b.ProductId equals t.ProductId
                 where b.QuantityOnHand > 0 || (t.Total <= 0 && b.Id == db.StockBatches.Where(x => x.ProductId == b.ProductId).Min(x => x.Id))
                 select new { b, p, Category = p.Category!.Name, Warehouse = w.Name, t.Total };
-        if (page.Term is { } term) q = q.Where(x => x.p.Name.Contains(term) || x.p.Sku.Contains(term) || x.b.BatchNumber.Contains(term));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var day = SearchTerms.Dates(w);
+            var from = day?.From; var to = day?.To;
+            q = q.Where(x => x.p.Name.Contains(w) || x.p.Sku.Contains(w) || (x.p.Barcode != null && x.p.Barcode.Contains(w)) || x.b.BatchNumber.Contains(w) || x.Category.Contains(w) || x.Warehouse.Contains(w)
+                || (from != null && x.b.ExpiryDate != null && x.b.ExpiryDate >= from && x.b.ExpiryDate <= to));
+        }
         if (onlyLow) q = q.Where(x => x.Total <= x.p.ReorderLevel || (x.b.QuantityOnHand > 0 && x.b.ExpiryDate != null && x.b.ExpiryDate <= soon));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderBy(x => x.Category).ThenBy(x => x.p.Name).ThenBy(x => x.Warehouse).ThenBy(x => x.b.ExpiryDate).ThenBy(x => x.b.Id)
@@ -96,7 +104,13 @@ public sealed class CatalogQueries(IBusinessDbContext db, IUserDirectory users, 
                 select new { m, p, Warehouse = w.Name };
         if (referenceType is not null) q = q.Where(x => x.m.ReferenceType == referenceType);
         if (productId is not null) q = q.Where(x => x.m.ProductId == productId);
-        if (page.Term is { } t) q = q.Where(x => x.p.Name.Contains(t) || x.p.Sku.Contains(t));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var span = SearchTerms.Moments(w);
+            var from = span?.From; var to = span?.To;
+            q = q.Where(x => x.p.Name.Contains(w) || x.p.Sku.Contains(w) || x.Warehouse.Contains(w) || x.m.MovementType.Contains(w) || (x.m.ReferenceType != null && x.m.ReferenceType.Contains(w))
+                || (x.m.Note != null && x.m.Note.Contains(w)) || (from != null && x.m.MovementDate >= from && x.m.MovementDate < to));
+        }
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(x => x.m.MovementDate).ThenByDescending(x => x.m.Id)
             .Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
@@ -111,7 +125,13 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
     public async Task<PagedResult<SupplierDto>> SuppliersAsync(PageRequest page, CancellationToken ct)
     {
         var q = db.Suppliers.AsNoTracking().AsQueryable();
-        if (page.Term is { } t) q = q.Where(s => s.Name.Contains(t) || (s.Phone != null && s.Phone.Contains(t)));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var ph = SearchTerms.PhoneNeedle(w);
+            q = q.Where(s => s.Name.Contains(w) || (s.ContactName != null && s.ContactName.Contains(w)) || (s.Email != null && s.Email.Contains(w)) || (s.Category != null && s.Category.Contains(w))
+                || (s.Address != null && s.Address.Contains(w)) || (s.TaxId != null && s.TaxId.Contains(w)) || (s.Phone != null && s.Phone.Contains(w))
+                || (ph != "" && s.Phone != null && s.Phone.Replace(" ", "").Replace("-", "").Replace("+", "").Contains(ph)));
+        }
         var total = await q.CountAsync(ct);
         var items = await q.OrderBy(s => s.Name).ThenBy(s => s.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
             .Select(s => new SupplierDto(s.Id, s.Name, s.Category, s.ContactName, s.Phone, s.Email, s.Address, s.TaxId, s.Balance)).ToListAsync(ct);
@@ -121,7 +141,7 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
     public async Task<PagedResult<CustomerDto>> CustomersAsync(PageRequest page, CancellationToken ct)
     {
         var q = db.Customers.AsNoTracking().AsQueryable();
-        if (page.Term is { } t) q = q.Where(c => c.Name.Contains(t) || (c.Phone != null && c.Phone.Contains(t)) || (c.Location != null && c.Location.Contains(t)));
+        foreach (var w in SearchTerms.Words(page.Term)) q = q.Where(CustomerMatches(w));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderBy(c => c.Name).ThenBy(c => c.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var since = clock.BusinessToday.AddMonths(-12);
@@ -137,11 +157,20 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
         return new PagedResult<CustomerDto>(items, total, page.SafePage, page.SafeSize);
     }
 
+    /// <summary>One typed word against everything that identifies a customer: name, contact person, phone (however typed), email, place, address, tax id and type.</summary>
+    private static System.Linq.Expressions.Expression<Func<Domain.Entities.Customer, bool>> CustomerMatches(string w)
+    {
+        var ph = SearchTerms.PhoneNeedle(w);
+        return c => c.Name.Contains(w) || (c.ContactName != null && c.ContactName.Contains(w)) || (c.Email != null && c.Email.Contains(w)) || (c.Location != null && c.Location.Contains(w))
+            || (c.Address != null && c.Address.Contains(w)) || (c.TaxId != null && c.TaxId.Contains(w)) || c.CustomerType.Contains(w) || (c.Phone != null && c.Phone.Contains(w))
+            || (ph != "" && c.Phone != null && c.Phone.Replace(" ", "").Replace("-", "").Replace("+", "").Contains(ph));
+    }
+
     /// <summary>Picker data for the sale form (clerks may not open the Customers screen, but they need to choose one).</summary>
     public Task<List<CustomerLookupDto>> LookupAsync(string? search, CancellationToken ct)
     {
         var q = db.Customers.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrWhiteSpace(search)) { var t = search.Trim(); q = q.Where(c => c.Name.Contains(t) || (c.Phone != null && c.Phone.Contains(t))); }
+        foreach (var w in SearchTerms.Words(search)) q = q.Where(CustomerMatches(w));
         return q.OrderBy(c => c.Name).Take(50).Select(c => new CustomerLookupDto(c.Id, c.Name, c.CustomerType, c.Phone, c.Balance)).ToListAsync(ct);
     }
 }
@@ -150,8 +179,20 @@ public sealed class SalesQueries(IBusinessDbContext db, IUserDirectory users)
 {
     public async Task<PagedResult<InvoiceRowDto>> InvoicesAsync(PageRequest page, bool isAdmin, CancellationToken ct)
     {
-        var q = from i in db.Invoices.AsNoTracking() join c in db.Customers.AsNoTracking() on i.CustomerId equals c.Id select new { i, c.Name, c.Phone };
-        if (page.Term is { } t) q = q.Where(x => x.i.InvoiceNumber.Contains(t) || x.Name.Contains(t) || (x.Phone != null && x.Phone.Contains(t)) || x.i.PaymentMethod.Contains(t) || x.i.Status.Contains(t));
+        var q = from i in db.Invoices.AsNoTracking() join c in db.Customers.AsNoTracking() on i.CustomerId equals c.Id select new { i, c.Name, c.Phone, c.Email, c.ContactName };
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var ph = SearchTerms.PhoneNeedle(w);
+            var amount = SearchTerms.Amount(w);
+            var day = SearchTerms.Dates(w);
+            var from = day?.From; var to = day?.To;
+            q = q.Where(x => x.i.InvoiceNumber.Contains(w) || x.Name.Contains(w) || (x.ContactName != null && x.ContactName.Contains(w)) || (x.Email != null && x.Email.Contains(w))
+                || (x.Phone != null && x.Phone.Contains(w)) || (ph != "" && x.Phone != null && x.Phone.Replace(" ", "").Replace("-", "").Replace("+", "").Contains(ph))
+                || x.i.PaymentMethod.Contains(w) || x.i.Status.Contains(w)
+                || (amount != null && (x.i.TotalAmount == amount || x.i.AmountPaid == amount))
+                || (from != null && x.i.InvoiceDate >= from && x.i.InvoiceDate <= to)
+                || db.InvoiceItems.Any(it => it.InvoiceId == x.i.Id && db.Products.Any(pr => pr.Id == it.ProductId && (pr.Name.Contains(w) || pr.Sku.Contains(w)))));
+        }
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(x => x.i.InvoiceDate).ThenByDescending(x => x.i.CreatedAt).ThenByDescending(x => x.i.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         var ids = rows.Select(r => r.i.Id).ToList();
@@ -192,8 +233,19 @@ public sealed class PurchaseQueries(IBusinessDbContext db)
 {
     public async Task<PagedResult<PurchaseRowDto>> ListAsync(PageRequest page, CancellationToken ct)
     {
-        var q = from p in db.PurchaseOrders.AsNoTracking() join s in db.Suppliers.AsNoTracking() on p.SupplierId equals s.Id select new { p, s.Name };
-        if (page.Term is { } t) q = q.Where(x => x.p.PoNumber.Contains(t) || x.Name.Contains(t) || x.p.Status.Contains(t));
+        var q = from p in db.PurchaseOrders.AsNoTracking() join s in db.Suppliers.AsNoTracking() on p.SupplierId equals s.Id select new { p, s.Name, s.Phone };
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var ph = SearchTerms.PhoneNeedle(w);
+            var amount = SearchTerms.Amount(w);
+            var day = SearchTerms.Dates(w);
+            var from = day?.From; var to = day?.To;
+            q = q.Where(x => x.p.PoNumber.Contains(w) || x.Name.Contains(w) || x.p.Status.Contains(w) || x.p.PaymentStatus.Contains(w)
+                || (x.Phone != null && x.Phone.Contains(w)) || (ph != "" && x.Phone != null && x.Phone.Replace(" ", "").Replace("-", "").Replace("+", "").Contains(ph))
+                || (amount != null && (x.p.TotalAmount == amount || x.p.AmountPaid == amount))
+                || (from != null && x.p.OrderDate >= from && x.p.OrderDate <= to)
+                || db.PurchaseOrderItems.Any(it => it.PurchaseOrderId == x.p.Id && db.Products.Any(pr => pr.Id == it.ProductId && (pr.Name.Contains(w) || pr.Sku.Contains(w)))));
+        }
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(x => x.p.OrderDate).ThenByDescending(x => x.p.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         return new PagedResult<PurchaseRowDto>(rows.Select(x => new PurchaseRowDto(x.p.Id, x.p.PoNumber, x.Name, x.p.OrderDate, x.p.Status,
@@ -247,7 +299,13 @@ public sealed class FinanceQueries(IBusinessDbContext db, IClock clock)
     {
         var q = db.Ledger.AsNoTracking().AsQueryable();
         if (accountType is not null) q = q.Where(l => l.AccountType == accountType);
-        if (page.Term is { } t) q = q.Where(l => l.AccountName.Contains(t) || (l.Reference != null && l.Reference.Contains(t)));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var amount = SearchTerms.Amount(w);
+            var day = SearchTerms.Dates(w);
+            var from = day?.From; var to = day?.To;
+            q = q.Where(l => l.AccountName.Contains(w) || (l.Reference != null && l.Reference.Contains(w)) || l.EntryType.Contains(w) || (amount != null && l.Amount == amount) || (from != null && l.EntryDate >= from && l.EntryDate <= to));
+        }
         var total = await q.CountAsync(ct);
         var items = await q.OrderByDescending(l => l.EntryDate).ThenByDescending(l => l.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize)
             .Select(l => new LedgerRowDto(l.Id, l.EntryDate, l.AccountName, l.AccountType, l.EntryType, l.Amount, l.Reference)).ToListAsync(ct);

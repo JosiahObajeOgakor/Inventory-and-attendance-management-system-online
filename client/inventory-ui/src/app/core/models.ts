@@ -2,7 +2,7 @@
 
 export type Role = 'ADMIN' | 'CLERK';
 
-export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; }
+export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; }
 export interface Me {
   id: number; username: string; fullName: string; role: Role; company: string;
   companies: CompanyChoice[]; mustChangePassword: boolean;

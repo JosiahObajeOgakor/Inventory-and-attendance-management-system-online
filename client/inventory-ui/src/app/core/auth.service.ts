@@ -14,12 +14,14 @@ export class Auth {
   /** The business chosen on the sign-in screen (before there is a session). */
   readonly selected = signal<string>(storageGet('company') ?? 'chewypets');
   readonly isAdmin = computed(() => this.me()?.role === 'ADMIN');
+  /** This business has two roles, so every accounting permission (journals, approvals, tax, periods…) is simply an admin's. */
+  can(_permission: string): boolean { return this.isAdmin(); }
   readonly company = computed(() => this.me()?.company ?? this.selected());
   readonly companyName = computed(() => this.me()?.companies.find(c => c.key === this.company())?.displayName ?? '');
 
   readonly flags = computed(() => {
     const c = this.me()?.companies.find(x => x.key === this.company());
-    return { hasPriceLists: !!c?.hasPriceLists, buysGoods: !!c?.buysGoods };
+    return { hasPriceLists: !!c?.hasPriceLists, buysGoods: !!c?.buysGoods, hasNewFeatures: !!c?.hasNewFeatures };
   });
 
   constructor() {

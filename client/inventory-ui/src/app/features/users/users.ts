@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api, messageOf } from '../../core/api.service';
 import { Auth } from '../../core/auth.service';
@@ -23,7 +23,7 @@ import { StampTimePipe } from '../../shared/ui';
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Person</th><th>Role</th><th>Can open</th><th>Last sign-in</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
-            @for (u of users(); track u.id) {
+            @for (u of shown(); track u.id) {
               <tr><td><span class="strong">{{ u.fullName }}</span><div class="muted mono sm">{{ u.username }}</div></td>
                 <td>{{ u.role === 'ADMIN' ? 'Administrator' : 'Warehouse clerk' }}</td><td>{{ names(u.companyAccess) }}</td><td>{{ u.lastLoginAt ? (u.lastLoginAt | stampTime) : 'Never' }}</td>
                 <td>@if (!u.isActive) { <span class="stamp stamp-bad">Disabled</span> } @else if (u.mustChangePassword) { <span class="stamp stamp-warn">Must set password</span> } @else { <span class="stamp stamp-ok">Active</span> }</td>
@@ -66,6 +66,12 @@ export class UsersPage implements OnInit {
   private readonly toasts = inject(Toasts);
   protected readonly auth = inject(Auth);
   protected readonly users = signal<UserRow[]>([]);
+  protected readonly term = signal('');
+  /** Every word typed must match the person's name, username, role, status or one of the businesses they can open. */
+  protected readonly shown = computed(() => {
+    const words = this.term().toLowerCase().split(/\s+/).filter(Boolean);
+    return words.length === 0 ? this.users() : this.users().filter(u => { const hay = [u.fullName, u.username, u.role === 'ADMIN' ? 'administrator admin' : 'warehouse clerk', u.isActive ? 'active' : 'disabled off', this.names(u.companyAccess)].join(' ').toLowerCase(); return words.every(w => hay.includes(w)); });
+  });
   protected readonly error = signal('');
   protected readonly formOpen = signal(false);
   protected readonly editing = signal<UserRow | null>(null);

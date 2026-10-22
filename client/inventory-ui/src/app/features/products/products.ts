@@ -24,7 +24,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
       <section class="card">
         <div class="toolbar">
           <div class="search grow"><app-icon name="search" [size]="17" />
-            <input class="input" type="search" placeholder="Search name, SKU or barcode" aria-label="Search products" (input)="list.setSearch($any($event.target).value)" /></div>
+            <input class="input" type="search" placeholder="Search name, SKU, barcode, category or type" aria-label="Search products" (input)="list.setSearch($any($event.target).value)" /></div>
           @if (auth.isAdmin()) { <label class="check"><input type="checkbox" (change)="inactive = $any($event.target).checked; list.goTo(1)" /> Show inactive</label> }
         </div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
@@ -50,7 +50,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No products found</strong>Add a product to start tracking its stock.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>
 
@@ -82,6 +82,17 @@ import { NairaPipe, Pager } from '../../shared/ui';
       <ng-container modal-actions>
         <button type="button" class="btn" (click)="dialogOpen.set(false)">Cancel</button>
         <button type="submit" form="pf" class="btn btn-primary" [disabled]="form.invalid || busy()">{{ editing() ? 'Save changes' : 'Add product' }}</button>
+      </ng-container>
+    </app-modal>
+
+    <app-modal [open]="categoryOpen()" heading="New category" (closed)="categoryOpen.set(false)">
+      <form id="cf" (submit)="$event.preventDefault(); saveCategory()">
+        <div class="field"><label for="c-name">Name for the new category</label>
+          <input id="c-name" class="input" #cname maxlength="60" autocomplete="off" placeholder="e.g. Puppy food" [value]="categoryName()" (input)="categoryName.set(cname.value)" /></div>
+      </form>
+      <ng-container modal-actions>
+        <button type="button" class="btn" (click)="categoryOpen.set(false)">Cancel</button>
+        <button type="submit" form="cf" class="btn btn-primary" [disabled]="!categoryName().trim() || savingCategory()">Add category</button>
       </ng-container>
     </app-modal>`,
   styles: `.sm { font-size: .75rem; } .low { color: var(--stamp); font-weight: 600; } tr.inactive { opacity: .6; } .inline { display: flex; gap: .4rem; } fieldset.open { border: 1px dashed var(--line-strong); border-radius: var(--r-2); padding: .8rem; margin: 0; }`,
@@ -128,14 +139,21 @@ export class ProductsPage implements OnInit {
     this.dialogOpen.set(true);
   }
 
-  protected async addCategory() {
-    const name = window.prompt('Name for the new category');
-    if (!name?.trim()) return;
+  protected readonly categoryOpen = signal(false);
+  protected readonly categoryName = signal('');
+  protected readonly savingCategory = signal(false);
+  protected addCategory() { this.categoryName.set(''); this.categoryOpen.set(true); }
+
+  protected async saveCategory() {
+    const name = this.categoryName().trim();
+    if (!name) return;
+    this.savingCategory.set(true);
     try {
-      const { id } = await this.api.addCategory(name.trim());
+      const { id } = await this.api.addCategory(name);
+      this.categoryOpen.set(false);
       this.categories.set(await this.api.categories());
       this.form.controls.categoryId.setValue(id);
-    } catch (e) { this.toasts.error(messageOf(e)); }
+    } catch (e) { this.toasts.error(messageOf(e)); } finally { this.savingCategory.set(false); }
   }
 
   protected async save() {

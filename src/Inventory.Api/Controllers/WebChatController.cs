@@ -24,12 +24,20 @@ public sealed record WebChatUpdates(IReadOnlyList<string> Messages, bool Awaitin
 /// browser-generated session id. The company is fixed to the landing page's own brand (WebChat:CompanyKey, default "chewypets").
 /// </summary>
 [ApiController, Route("api/webchat")]
-public class WebChatController(IConfiguration config) : ControllerBase
+public class WebChatController(IConfiguration config, Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.WhatsApp.TwilioOptions> twilio) : ControllerBase
 {
     private string CompanyKey => config["WebChat:CompanyKey"] is { Length: > 0 } k ? k : "chewypets";
 
     [HttpGet("status"), AllowAnonymous]
-    public object Status() => new { configured = true };
+    /// <summary>The landing page reads the WhatsApp number from here, so its links go to the number the sales assistant really answers on (the Twilio sandbox on a test machine).</summary>
+    public object Status() => new { configured = true, whatsappNumber = WhatsAppDigits() };
+
+    private string? WhatsAppDigits()
+    {
+        var from = twilio.Value.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(CompanyKey, StringComparison.OrdinalIgnoreCase))?.From;
+        var digits = new string((from ?? "").Where(char.IsDigit).ToArray());
+        return digits.Length >= 8 ? digits : null;
+    }
 
     [HttpPost("message"), AllowAnonymous, RequestSizeLimit(65536), EnableRateLimiting(Policies.WebChatRateLimit)]
     public async Task<WebChatResponse> Message(WebChatRequest r, CancellationToken ct)

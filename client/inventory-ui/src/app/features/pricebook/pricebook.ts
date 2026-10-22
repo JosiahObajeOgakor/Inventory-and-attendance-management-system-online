@@ -101,7 +101,7 @@ function adjusted(price: number, pct: number, step: number): number {
             }</tbody>
           </table></div>
           @if (!history.loading() && !history.items().length) { <div class="empty"><strong>No price changes yet</strong></div> }
-          <app-pager [page]="history.page()" [pageSize]="history.pageSize" [total]="history.total()" (pageChange)="history.goTo($event)" />
+          <app-pager [page]="history.page()" [pageSize]="history.pageSize" [total]="history.total()" (pageChange)="history.goTo($event)" [sizeable]="true" (sizeChange)="history.setSize($event)" />
         </section>
       }
     </div>

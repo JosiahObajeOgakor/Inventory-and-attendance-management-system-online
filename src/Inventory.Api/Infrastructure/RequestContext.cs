@@ -9,6 +9,7 @@ public static class AppClaims
 {
     public const string Company = "company";
     public const string FullName = "full_name";
+    public const string Branch = "branch";
 }
 
 /// <summary>The company the signed-in user opened. Comes from the auth cookie, never from a request parameter.</summary>
@@ -27,6 +28,7 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     public string LegalName => string.IsNullOrWhiteSpace(Info.LegalName) ? Info.DisplayName : Info.LegalName;
     public bool HasPriceLists => Info.HasPriceLists;
     public bool BuysGoods => Info.BuysGoods;
+    public bool HasNewFeatures => Info.HasNewFeatures;
     public int DefaultWarehouseId => Info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
@@ -42,7 +44,8 @@ public sealed class HttpCurrentUser(IHttpContextAccessor http) : ICurrentUser
             if (p?.Identity?.IsAuthenticated != true) return null;
             var id = p.FindFirstValue(ClaimTypes.NameIdentifier);
             return int.TryParse(id, out var n)
-                ? new CurrentUser(n, p.FindFirstValue(AppClaims.FullName) ?? p.Identity.Name ?? "", p.FindFirstValue(ClaimTypes.Role) ?? "")
+                ? new CurrentUser(n, p.FindFirstValue(AppClaims.FullName) ?? p.Identity.Name ?? "", p.FindFirstValue(ClaimTypes.Role) ?? "",
+                    int.TryParse(p.FindFirstValue(AppClaims.Branch), out var branch) ? branch : null)
                 : null;
         }
     }

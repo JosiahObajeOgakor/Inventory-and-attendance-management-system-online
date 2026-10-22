@@ -23,7 +23,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
       <section class="card">
         <div class="toolbar">
           <div class="search grow"><app-icon name="search" [size]="17" />
-            <input class="input" type="search" placeholder="Search invoice, customer, phone or status" aria-label="Search sales" (input)="list.setSearch($any($event.target).value)" /></div>
+            <input class="input" type="search" placeholder="Search invoice, customer, phone, product, amount, date or status" aria-label="Search sales" (input)="list.setSearch($any($event.target).value)" /></div>
           <div class="search scan"><app-icon name="scan" [size]="17" />
             <input class="input" placeholder="Scan a receipt" aria-label="Scan a receipt" (keydown.enter)="scan($any($event.target))" /></div>
         </div>
@@ -46,7 +46,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
         @if (!list.loading() && !list.items().length) {
           <div class="empty"><strong>{{ list.search() ? 'No sales match that search' : 'No sales yet' }}</strong>{{ list.search() ? 'Try a different invoice number, customer or phone.' : 'Sales you record will appear here.' }}</div>
         }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>`,
   styles: `.scan { width: 14rem; } @media (max-width: 640px) { .scan { width: 100%; } }`,

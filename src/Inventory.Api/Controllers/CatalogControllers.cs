@@ -135,8 +135,13 @@ public class StockController(ICurrentUser cu, StockOperations ops, IClock clock)
     }
 
     [HttpPost("adjustments"), Authorize(Policy = Policies.Admin)]
-    public async Task<IActionResult> Adjust(AdjustRequest r, CancellationToken ct)
+    public async Task<IActionResult> Adjust(AdjustRequest r, [FromServices] Inventory.Application.Approvals.ApprovalService approvals, CancellationToken ct)
     {
+        // Above the business's limit (off until switched on under Approvals) the adjustment is held for someone else's approval (202) instead of being made.
+        var value = await approvals.AdjustmentValueAsync(r.BatchId, r.Delta, ct);
+        if (await approvals.NeedsApprovalAsync(Inventory.Domain.Entities.ApprovalActions.StockAdjust, value, ct))
+            return Accepted(await approvals.SubmitAsync(Inventory.Domain.Entities.ApprovalActions.StockAdjust, value,
+                $"Adjust batch #{r.BatchId} by {r.Delta:+#;-#}: {r.Reason}", new Inventory.Application.Approvals.AdjustPayload(r.BatchId, r.Delta, r.Reason), Me, ct));
         await ops.AdjustAsync(r.BatchId, r.Delta, r.Reason, Me, ct);
         return NoContent();
     }

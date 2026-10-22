@@ -27,6 +27,8 @@ nav { padding: .8rem .6rem; flex: 1; display: flex; flex-direction: column; gap:
 .group.open .items { grid-template-rows: 1fr; }
 .items .inner { overflow: hidden; display: flex; flex-direction: column; gap: .15rem; padding-left: .5rem; }
 nav a { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--r-2); color: #d5ddd8; text-decoration: none; font-weight: 500; }
+nav .locked { display: flex; align-items: center; gap: .7rem; padding: .5rem .6rem; border-radius: var(--r-2); color: #d5ddd8; opacity: .45; cursor: not-allowed; font-weight: 500; }
+nav .locked .soon { margin-left: auto; font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; border: 1px solid currentColor; border-radius: 999px; padding: .05rem .4rem; white-space: nowrap; }
 nav a:hover { background: var(--ink-2); color: #fff; }
 nav a.active { background: var(--brand); color: var(--brand-on); font-weight: 600; }
 .rail-foot { padding: .9rem 1.1rem 1.1rem; border-top: 1px solid var(--ink-3); display: flex; flex-direction: column; gap: .15rem; font-size: .875rem; }

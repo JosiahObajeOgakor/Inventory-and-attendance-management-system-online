@@ -117,7 +117,7 @@ public sealed class InvoiceVoidService(IBusinessDbContext db, TransactionRunner 
                 }
                 else
                 {
-                    await stock.ReceiveAsync(m.ProductId, m.WarehouseId, "RETURNED", m.Quantity, null, MovementReferences.InvoiceVoid, invoice.Id, user.Id, inner, note);
+                    await stock.ReceiveToShelfAsync(m.ProductId, m.WarehouseId, m.Quantity, null, MovementReferences.InvoiceVoid, invoice.Id, user.Id, inner, note);
                 }
             }
 

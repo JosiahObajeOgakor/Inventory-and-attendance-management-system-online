@@ -26,7 +26,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
       <p class="muted lede">A quotation prices a job without touching stock or anyone’s balance. Turn it into a sale when the customer says yes.</p>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search number, customer or status" aria-label="Search quotations" (input)="list.setSearch($any($event.target).value)" /></div></div>
+          <input class="input" type="search" placeholder="Search number, customer, amount, date or status" aria-label="Search quotations" (input)="list.setSearch($any($event.target).value)" /></div></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Quotation</th><th>Customer</th><th>Date</th><th class="num">Total</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -49,7 +49,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No quotations yet</strong>Price a job for a customer and it will be listed here.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>
 

@@ -9,6 +9,26 @@ public interface IBusinessDbContext
 {
     DbSet<Category> Categories { get; }
     DbSet<Warehouse> Warehouses { get; }
+    DbSet<Branch> Branches { get; }
+    DbSet<GlAccount> GlAccounts { get; }
+    DbSet<GlPeriod> GlPeriods { get; }
+    DbSet<GlJournal> GlJournals { get; }
+    DbSet<GlLine> GlLines { get; }
+    DbSet<ApprovalRule> ApprovalRules { get; }
+    DbSet<ApprovalRequest> ApprovalRequests { get; }
+    DbSet<TaxFiling> TaxFilings { get; }
+    DbSet<BankAccount> BankAccounts { get; }
+    DbSet<BankStatementLine> BankStatementLines { get; }
+    DbSet<BankReconciliation> BankReconciliations { get; }
+    DbSet<FixedAsset> FixedAssets { get; }
+    DbSet<AssetDepreciation> AssetDepreciations { get; }
+    DbSet<DepreciationRun> DepreciationRuns { get; }
+    DbSet<Budget> Budgets { get; }
+    DbSet<BudgetLine> BudgetLines { get; }
+    DbSet<Currency> Currencies { get; }
+    DbSet<ExchangeRate> ExchangeRates { get; }
+    DbSet<FxDocument> FxDocuments { get; }
+    DbSet<FxSettlement> FxSettlements { get; }
     DbSet<Product> Products { get; }
     DbSet<StockBatch> StockBatches { get; }
     DbSet<StockMovement> StockMovements { get; }
@@ -44,6 +64,10 @@ public interface IBusinessDbContext
     DbSet<SupplierPayment> SupplierPayments { get; }
     DbSet<Campaign> Campaigns { get; }
     DbSet<CampaignMessage> CampaignMessages { get; }
+    DbSet<AppRecord> AppRecords { get; }
+    DbSet<CampaignRecipient> CampaignRecipients { get; }
+    DbSet<LeaveType> LeaveTypes { get; }
+    DbSet<LeaveRequest> LeaveRequests { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
@@ -59,7 +83,8 @@ public interface IClock
     DateTime BusinessNow { get; }
 }
 
-public sealed record CurrentUser(int Id, string FullName, string Role);
+/// <param name="BranchId">The branch the user works at in the open business, if they are tied to one (they then use only its warehouses).</param>
+public sealed record CurrentUser(int Id, string FullName, string Role, int? BranchId = null);
 
 public interface ICurrentUser
 {
@@ -77,6 +102,8 @@ public interface ICompanyContext
     bool HasPriceLists { get; }
     /// <summary>Candid buys what it sells (no production runs); ChewyPets produces.</summary>
     bool BuysGoods { get; }
+    /// <summary>Campaigns and the Marketing apps (email, SMS, WhatsApp, automation, social, surveys) are switched on per business; only the demo business has them for now.</summary>
+    bool HasNewFeatures { get; }
     /// <summary>The warehouse the sales assistant fulfills online orders from (config-set; 0 means unconfigured).</summary>
     int DefaultWarehouseId { get; }
     IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks { get; }

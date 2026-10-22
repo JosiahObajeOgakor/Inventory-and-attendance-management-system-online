@@ -55,7 +55,7 @@ public sealed class AttendanceService(IBusinessDbContext db, IClock clock)
     public async Task<PagedResult<AttendanceEventDto>> EventsAsync(DateOnly from, DateOnly to, PageRequest page, CancellationToken ct = default)
     {
         var q = db.AttendanceEvents.AsNoTracking().Where(e => e.WorkDate >= from && e.WorkDate <= to);
-        if (page.Term is { } t) q = q.Where(e => e.FullName.Contains(t));
+        foreach (var w in SearchTerms.Words(page.Term)) q = q.Where(e => e.FullName.Contains(w));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(e => e.HappenedAt).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         return new PagedResult<AttendanceEventDto>(rows.Select(e => new AttendanceEventDto(e.Id, e.FullName, e.WorkDate, e.HappenedAt,

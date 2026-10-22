@@ -48,7 +48,7 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
               </div>
             } @else {
               <div class="search"><app-icon name="search" [size]="17" />
-                <input class="input" placeholder="Search customers by name or phone" aria-label="Search customers" (input)="searchCustomers($any($event.target).value)" /></div>
+                <input class="input" placeholder="Search customers by name, phone, email or place" aria-label="Search customers" (input)="searchCustomers($any($event.target).value)" /></div>
               <ul class="pick">
                 @for (c of customers(); track c.id) {
                   <li><button type="button" (click)="chooseCustomer(c)"><span>{{ c.name }}</span><span class="muted">{{ c.customerType }}{{ c.phone ? ' · ' + c.phone : '' }}</span></button></li>

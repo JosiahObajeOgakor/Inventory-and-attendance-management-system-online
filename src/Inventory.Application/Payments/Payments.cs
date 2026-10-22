@@ -168,8 +168,9 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 else
                 {
                     var quote = await db.Quotations.AsNoTracking().SingleAsync(x => x.Id == l.DocId, inner);
-                    var warehouseId = quote.WarehouseId ?? company.DefaultWarehouseId;
-                    if (warehouseId <= 0) throw new BusinessRuleException("No warehouse is configured for online sales (Companies:DefaultWarehouseId); the order could not be converted.");
+                    var warehouseId = quote.WarehouseId ?? await SalesAssistant.Chat.WarehouseChooser.ForOrderAsync(db, company, clock,
+                        (await db.QuotationItems.AsNoTracking().Where(i => i.QuotationId == quote.Id).Select(i => new { i.ProductId, i.Quantity }).ToListAsync(inner)).Select(i => (i.ProductId, i.Quantity)).ToList(), inner);
+                    if (warehouseId <= 0) throw new BusinessRuleException("This business has no warehouse yet, so the online order could not be converted.");
                     // "Card" is the closest of SaleRequestValidator's fixed PaymentMethods to an online gateway charge; the actual
                     // processor and channel are recorded on the Payment row and PaymentLink below.
                     var sale = await quotations.ConvertWithinAsync(l.DocId, new ConvertQuoteRequest { WarehouseId = warehouseId, PaymentMethod = l.Provider == AlatProvider ? "Bank Transfer" : "Card", PaidNow = 0 }, system, inner);

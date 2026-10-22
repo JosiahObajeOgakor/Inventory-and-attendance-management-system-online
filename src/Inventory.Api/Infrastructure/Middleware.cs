@@ -36,6 +36,9 @@ public sealed class CsrfHeaderMiddleware(RequestDelegate next)
                    || ctx.Request.Path.Equals("/api/alatpay/webhook", StringComparison.OrdinalIgnoreCase)
                    // One-click unsubscribe (RFC 8058) is POSTed by the recipient's mail app, which cannot send our header; the signed link is the proof.
                    || ctx.Request.Path.Equals("/api/marketing/unsubscribe", StringComparison.OrdinalIgnoreCase);
+        // The public site (/api/site/{company}/...): anonymous HTML forms (register for an event, post to the forum, sign a document, answer a survey). They carry no
+        // cookie-based sign-in, so there is nothing for a cross-site request to ride on, and an HTML form can't add a custom header.
+        webhook |= ctx.Request.Path.StartsWithSegments("/api/site", StringComparison.OrdinalIgnoreCase);
         if (unsafeMethod && !webhook && ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers[HeaderName] != HeaderValue)
         {
             ctx.Response.StatusCode = StatusCodes.Status400BadRequest;

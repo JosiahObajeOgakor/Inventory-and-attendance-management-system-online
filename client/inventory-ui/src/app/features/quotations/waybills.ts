@@ -35,7 +35,7 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No waybills yet</strong>Choose a sale that is going out and fill in the driver and vehicle.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>
 
@@ -53,7 +53,7 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
         </tbody>
       </table></div>
       @if (!pending.loading() && !pending.items().length) { <div class="empty"><strong>Nothing to dispatch</strong>Every recent sale already has a waybill.</div> }
-      <app-pager [page]="pending.page()" [pageSize]="pending.pageSize" [total]="pending.total()" (pageChange)="pending.goTo($event)" />
+      <app-pager [page]="pending.page()" [pageSize]="pending.pageSize" [total]="pending.total()" (pageChange)="pending.goTo($event)" [sizeable]="true" (sizeChange)="pending.setSize($event)" />
     </app-modal>
 
     <app-modal [open]="!!chosen()" heading="Dispatch details" (closed)="chosen.set(null)">

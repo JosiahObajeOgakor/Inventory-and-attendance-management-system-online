@@ -65,7 +65,8 @@ public sealed class WaybillService(IBusinessDbContext db, TransactionRunner tx, 
     {
         var q = from w in db.Waybills.AsNoTracking() join i in db.Invoices.AsNoTracking() on w.InvoiceId equals i.Id join c in db.Customers.AsNoTracking() on i.CustomerId equals c.Id
                 select new { w, i.InvoiceNumber, Customer = c.Name };
-        if (page.Term is { } t) q = q.Where(r => r.w.WaybillNumber.Contains(t) || r.InvoiceNumber.Contains(t) || r.Customer.Contains(t) || (r.w.DriverName != null && r.w.DriverName.Contains(t)));
+        foreach (var w2 in SearchTerms.Words(page.Term))
+            q = q.Where(r => r.w.WaybillNumber.Contains(w2) || r.InvoiceNumber.Contains(w2) || r.Customer.Contains(w2) || (r.w.DriverName != null && r.w.DriverName.Contains(w2)));
         var total = await q.CountAsync(ct);
         var rows = await q.OrderByDescending(r => r.w.Id).Skip((page.SafePage - 1) * page.SafeSize).Take(page.SafeSize).ToListAsync(ct);
         return new PagedResult<WaybillRowDto>(rows.Select(r => new WaybillRowDto(r.w.Id, r.w.WaybillNumber, r.w.IssueDate, r.w.InvoiceId, r.InvoiceNumber, r.Customer, r.w.DriverName, r.w.VehiclePlate)).ToList(), total, page.SafePage, page.SafeSize);

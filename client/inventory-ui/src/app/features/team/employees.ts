@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
@@ -14,13 +14,13 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="card">
-      <div class="toolbar"><div class="grow"></div>
+      <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" /><input class="input" type="search" placeholder="Search name, position or phone" aria-label="Search employees" (input)="term.set($any($event.target).value)" /></div>
         <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> New employee</button></div>
       @if (error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ error() }}</p> }
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Employee</th><th>Since</th><th class="num">Monthly salary</th><th class="num">Owes on loans</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>
-          @for (e of employees(); track e.id) {
+          @for (e of shown(); track e.id) {
             <tr [class.off]="!e.isActive">
               <td><span class="strong">{{ e.fullName }}</span>@if (!e.isActive) { <span class="stamp stamp-info off-tag">Not working</span> }<div class="muted sm">{{ e.position }}{{ e.phone ? ' · ' + e.phone : '' }}</div></td>
               <td>{{ e.startedOn | day }}</td><td class="num mono">{{ e.monthlySalary | naira }}</td><td class="num mono" [class.owes]="e.openLoanBalance > 0">{{ e.openLoanBalance | naira }}</td>
@@ -84,6 +84,12 @@ export class EmployeesTab implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
   protected readonly employees = signal<Employee[]>([]);
+  protected readonly term = signal('');
+  protected readonly shown = computed(() => {
+    const words = this.term().toLowerCase().split(/\s+/).filter(Boolean);
+    const digits = (s: string) => s.replace(/\D/g, '');
+    return words.length === 0 ? this.employees() : this.employees().filter(e => { const hay = [e.fullName, e.position, e.phone ?? '', e.isActive ? 'working' : 'not working'].join(' ').toLowerCase(); return words.every(w => hay.includes(w) || (digits(w).length >= 4 && digits(e.phone ?? '').includes(digits(w).replace(/^(234|0)/, '')))); });
+  });
   protected readonly error = signal('');
   protected readonly formOpen = signal(false);
   protected readonly editing = signal<Employee | null>(null);

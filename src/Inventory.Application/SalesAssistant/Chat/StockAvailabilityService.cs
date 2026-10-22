@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Inventory.Application.SalesAssistant.Chat;
 
 /// <summary>
-/// The chat's only source of truth for "can I sell this": units on hand in the warehouse the sale will actually be taken from (unexpired batches),
+/// The chat's only source of truth for "can I sell this": units on hand in ALL the business's warehouses and branches (unexpired batches: a sale takes from the default warehouse first and then from any other),
 /// MINUS units promised to other customers who were handed a payment account and haven't paid yet. Without that second part two customers could be
 /// quoted the last bag, both pay, and one sale fails after the money has moved.
 /// </summary>
@@ -17,8 +17,6 @@ public sealed class StockAvailabilityService(IBusinessDbContext db, ICompanyCont
     /// <summary>Active, non-serial products with their price and reservation-adjusted stock. <paramref name="ownQuotationId"/> is the shopper's own open order, which must not count against them.</summary>
     public async Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, CancellationToken ct)
     {
-        var warehouse = company.DefaultWarehouseId;
-        if (warehouse <= 0) return [];
         var products = await db.Products.AsNoTracking().Where(p => p.IsActive && !p.TracksSerial).OrderBy(p => p.Name).ToListAsync(ct);
         if (products.Count == 0) return [];
         var ids = products.Select(p => p.Id).ToList();
@@ -28,13 +26,12 @@ public sealed class StockAvailabilityService(IBusinessDbContext db, ICompanyCont
 
     public async Task<Dictionary<int, int>> AvailableAsync(IReadOnlyCollection<int> productIds, int? ownQuotationId, CancellationToken ct)
     {
-        var warehouse = company.DefaultWarehouseId;
         var today = clock.BusinessToday;
         var now = clock.UtcNow;
         var holdFrom = now.AddMinutes(-options.Value.ReservationMinutes);
 
         var onHand = await db.StockBatches.AsNoTracking()
-            .Where(b => b.WarehouseId == warehouse && productIds.Contains(b.ProductId) && b.QuantityOnHand > 0 && (b.ExpiryDate == null || b.ExpiryDate >= today))
+            .Where(b => productIds.Contains(b.ProductId) && b.QuantityOnHand > 0 && (b.ExpiryDate == null || b.ExpiryDate >= today))
             .GroupBy(b => b.ProductId).Select(g => new { g.Key, Qty = g.Sum(b => b.QuantityOnHand) }).ToListAsync(ct);
 
         var held = db.PaymentLinks.AsNoTracking()

@@ -37,7 +37,11 @@ public sealed class ExpenseService(IBusinessDbContext db, IClock clock)
     {
         var q = db.Expenses.AsNoTracking().Where(e => e.ExpenseDate >= from && e.ExpenseDate <= to);
         if (!string.IsNullOrEmpty(category)) q = q.Where(e => e.Category == category);
-        if (page.Term is { } t) q = q.Where(e => e.Category.Contains(t) || (e.Note != null && e.Note.Contains(t)));
+        foreach (var w in SearchTerms.Words(page.Term))
+        {
+            var amount = SearchTerms.Amount(w);
+            q = q.Where(e => e.Category.Contains(w) || (e.Note != null && e.Note.Contains(w)) || (amount != null && e.Amount == amount));
+        }
         var total = await q.CountAsync(ct);
         var sum = await q.SumAsync(e => (decimal?)e.Amount, ct) ?? 0;
         var byCat = await q.GroupBy(e => e.Category).Select(g => new { g.Key, T = g.Sum(e => e.Amount) }).ToListAsync(ct);

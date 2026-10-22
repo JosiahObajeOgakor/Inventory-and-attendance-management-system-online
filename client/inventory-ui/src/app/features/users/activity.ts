@@ -26,7 +26,7 @@ import { Pager, StampTimePipe } from '../../shared/ui';
             <tbody>@for (a of actions.items(); track a.id) { <tr><td>{{ a.at | stampTime }}</td><td class="strong">{{ a.user }}</td><td class="mono">{{ a.action }}</td><td>{{ a.entity }} {{ a.entityId }}</td><td>{{ a.detail }}</td></tr> }</tbody>
           </table></div>
           @if (!actions.loading() && !actions.items().length) { <div class="empty"><strong>Nothing recorded yet</strong>Sales, stock changes and admin actions are logged here.</div> }
-          <app-pager [page]="actions.page()" [pageSize]="actions.pageSize" [total]="actions.total()" (pageChange)="actions.goTo($event)" />
+          <app-pager [page]="actions.page()" [pageSize]="actions.pageSize" [total]="actions.total()" (pageChange)="actions.goTo($event)" [sizeable]="true" (sizeChange)="actions.setSize($event)" />
         } @else {
           <div class="table-wrap"><table class="table">
             <thead><tr><th>When</th><th>Username</th><th>Result</th><th>Reason</th><th>From</th></tr></thead>
@@ -34,7 +34,7 @@ import { Pager, StampTimePipe } from '../../shared/ui';
               <td>@if (l.succeeded) { <span class="stamp stamp-ok">Signed in</span> } @else { <span class="stamp stamp-bad">Refused</span> }</td><td>{{ l.reason }}</td><td class="mono">{{ l.clientAddress }}</td></tr> }</tbody>
           </table></div>
           @if (!logins.loading() && !logins.items().length) { <div class="empty"><strong>No sign-ins recorded</strong></div> }
-          <app-pager [page]="logins.page()" [pageSize]="logins.pageSize" [total]="logins.total()" (pageChange)="logins.goTo($event)" />
+          <app-pager [page]="logins.page()" [pageSize]="logins.pageSize" [total]="logins.total()" (pageChange)="logins.goTo($event)" [sizeable]="true" (sizeChange)="logins.setSize($event)" />
         }
       </section>
     </div>`,

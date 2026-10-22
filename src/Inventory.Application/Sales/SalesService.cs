@@ -73,6 +73,9 @@ public sealed class SalesService(
             .FromSqlInterpolated($"SELECT * FROM customers WHERE Id = {req.CustomerId} FOR UPDATE")
             .SingleOrDefaultAsync(ct) ?? throw new NotFoundException("Customer");
         if (!await db.Warehouses.AnyAsync(w => w.Id == req.WarehouseId, ct)) throw new NotFoundException("Warehouse");
+        // Staff tied to a branch sell only from its warehouses.
+        if (user.BranchId is int home && !await db.Warehouses.AnyAsync(w => w.Id == req.WarehouseId && w.BranchId == home, ct))
+            throw new BusinessRuleException("You can only sell from your own branch's warehouses.");
 
         var previous = customer.Balance;
         var totals = DocumentCalculator.Sale(lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);

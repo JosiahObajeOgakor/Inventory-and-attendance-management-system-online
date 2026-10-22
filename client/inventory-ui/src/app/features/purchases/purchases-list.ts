@@ -18,7 +18,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
       </div>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search order number, supplier or status" aria-label="Search purchases" (input)="list.setSearch($any($event.target).value)" /></div></div>
+          <input class="input" type="search" placeholder="Search order no., supplier, product, amount, date or status" aria-label="Search purchases" (input)="list.setSearch($any($event.target).value)" /></div></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Order</th><th>Supplier</th><th>Date</th><th>Goods</th><th>Payment</th><th class="num">Total</th><th class="num">Still owed</th></tr></thead>
@@ -31,7 +31,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
           </tbody>
         </table></div>
         @if (!list.loading() && !list.items().length) { <div class="empty"><strong>No purchases yet</strong>Record what you buy from suppliers here.</div> }
-        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" />
+        <app-pager [page]="list.page()" [pageSize]="list.pageSize" [total]="list.total()" (pageChange)="list.goTo($event)" [sizeable]="true" (sizeChange)="list.setSize($event)" />
       </section>
     </div>`,
 })

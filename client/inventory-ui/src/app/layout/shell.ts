@@ -8,13 +8,15 @@ import { I18n } from '../core/i18n.service';
 import { Icon } from '../shared/icon';
 import { Modal } from '../shared/modal';
 import { Toasts } from '../shared/feedback';
+import { HttpClient } from '@angular/common/http';
+import { APPS, APP_GROUPS } from '../core/product-catalog';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
-interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; needs?: 'hasPriceLists'; }
+interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; needs?: 'hasPriceLists'; /** A record-keeping app: offered only when the server has it switched on for this business. */ app?: string; /** A newer feature being tested with K9 Cravings: visible everywhere, usable only there. */ preview?: boolean; }
 interface NavGroup { title: string; icon: string; items: NavItem[]; }
 
-const NAV: NavGroup[] = [
+const BUILT: NavGroup[] = [
   { title: 'Counter', icon: 'sale', items: [
     { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
     { label: 'Sales', path: '/sales', icon: 'sale' },
@@ -27,7 +29,7 @@ const NAV: NavGroup[] = [
     { label: 'Quotations', path: '/quotations', icon: 'file' },
     { label: 'Waybills', path: '/waybills', icon: 'supplier' },
     { label: 'Customers', path: '/customers', icon: 'customer', adminOnly: true },
-    { label: 'Campaigns', path: '/campaigns', icon: 'spark', adminOnly: true },
+    { label: 'Campaigns', path: '/campaigns', icon: 'spark', adminOnly: true, preview: true },
     { label: 'Suppliers', path: '/suppliers', icon: 'supplier', adminOnly: true },
     { label: 'Purchases', path: '/purchases', icon: 'purchase', adminOnly: true },
   ] },
@@ -36,6 +38,13 @@ const NAV: NavGroup[] = [
     { label: 'Analytics', path: '/analytics', icon: 'spark', adminOnly: true },
     { label: 'Expenses', path: '/expenses', icon: 'cash', adminOnly: true },
     { label: 'Rebates', path: '/rebates', icon: 'gift', adminOnly: true },
+    { label: 'Accounting', path: '/accounting', icon: 'audit', adminOnly: true, preview: true },
+    { label: 'Tax', path: '/tax', icon: 'cash', adminOnly: true, preview: true },
+    { label: 'Bank reconciliation', path: '/banking', icon: 'cash', adminOnly: true, preview: true },
+    { label: 'Budgets', path: '/budgets', icon: 'spark', adminOnly: true, preview: true },
+    { label: 'Fixed assets', path: '/fixed-assets', icon: 'stock', adminOnly: true, preview: true },
+    { label: 'Currencies', path: '/currencies', icon: 'finance', adminOnly: true, preview: true },
+    { label: 'Approvals', path: '/approvals', icon: 'audit', adminOnly: true, preview: true },
   ] },
   { title: 'People', icon: 'users', items: [
     { label: 'Team', path: '/team', icon: 'clock', adminOnly: true },
@@ -43,10 +52,23 @@ const NAV: NavGroup[] = [
   ] },
   { title: 'System', icon: 'settings', items: [
     { label: 'Company & documents', path: '/company', icon: 'settings', adminOnly: true },
+    { label: 'Branches', path: '/branches', icon: 'stock', adminOnly: true, preview: true },
     { label: 'Activity log', path: '/activity', icon: 'audit', adminOnly: true },
     { label: 'Database storage', path: '/storage', icon: 'stock', adminOnly: true },
   ] },
 ];
+
+/** The core sections, plus the record-keeping apps: an app of an existing section joins it, the rest get a section of their own just before System. */
+const NAV: NavGroup[] = (() => {
+  const nav = BUILT.map(g => ({ ...g, items: [...g.items] }));
+  for (const g of APP_GROUPS) {
+    const items: NavItem[] = APPS.filter(a => a.group === g.group).map(a => ({ label: a.label, path: a.path ?? '/apps/' + a.key, icon: a.icon, adminOnly: true, app: a.key, preview: true }));
+    const own = nav.find(x => x.title === g.group);
+    if (own) own.items.push(...items);
+    else nav.splice(nav.findIndex(x => x.title === 'System'), 0, { title: g.group, icon: g.icon, items });
+  }
+  return nav;
+})();
 
 @Component({
   selector: 'app-shell',
@@ -62,32 +84,34 @@ export class Shell {
   private readonly toasts = inject(Toasts);
   private readonly api2 = inject(Api2);
   protected readonly i18n = inject(I18n);
+  private readonly http = inject(HttpClient);
+  /** The record-keeping apps this installation has switched on (administrators only; nobody else sees them). */
+  private readonly enabledApps = signal<string[]>([]);
   protected readonly checkinOpen = signal(false);
   protected readonly checkingIn = signal(false);
 
   protected readonly navOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly groups = computed(() =>
-    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.needs || this.auth.flags()[i.needs])) })).filter(g => g.items.length));
+    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || !this.auth.flags().hasNewFeatures || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
+  /** True for a newer feature in a business that doesn't have it yet. */
+  protected locked(i: NavItem): boolean { return !!i.preview && !this.auth.flags().hasNewFeatures; }
   protected readonly initials = computed(() => (this.auth.me()?.fullName ?? '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
   protected readonly countdown = computed(() => {
     const s = this.idle.secondsLeft();
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   });
 
-  // ---- accordion: a group is open if the person opened it, or (until they choose) when it holds the page they are on
+  // ---- accordion: one group open at a time. Opening one closes the others; until the person chooses, the group that holds the page they are on is the open one.
   private readonly url = signal(this.router.url);
-  private readonly chosen = signal<Record<string, boolean>>(readOpen());
+  /** undefined = follow the current page; a title = the group the person opened; null = they closed it and want none open. */
+  private readonly openTitle = signal<string | null | undefined>(undefined);
+  private readonly holder = computed(() => this.groups().find(g => g.items.some(i => this.url().startsWith(i.path)))?.title ?? 'Counter');
   protected isOpen(g: NavGroup): boolean {
-    const c = this.chosen()[g.title];
-    return c ?? (g.items.some(i => this.url().startsWith(i.path)) || (g.title === 'Counter' && !this.groups().some(x => x.items.some(i => this.url().startsWith(i.path)))));
+    const o = this.openTitle();
+    return o === undefined ? this.holder() === g.title : o === g.title;
   }
-  protected toggle(g: NavGroup): void {
-    const next = { ...this.chosen(), [g.title]: !this.isOpen(g) };
-    this.chosen.set(next);
-    try { localStorage.setItem('nav-open', JSON.stringify(next)); } catch { /* private mode */ }
-  }
-
+  protected toggle(g: NavGroup): void { this.openTitle.set(this.isOpen(g) ? null : g.title); }
   // ---- logo: the business's uploaded logo when it has one, else the bundled one; changes when the business is switched
   private readonly uploaded = signal(false);
   private readonly logoBroken = signal(false);
@@ -96,7 +120,7 @@ export class Shell {
   protected logoFailed() { this.logoBroken.set(true); }
 
   constructor() {
-    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) this.url.set(this.router.url); });
+    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) { this.url.set(this.router.url); this.openTitle.set(undefined); } });
     effect(() => {
       const key = this.auth.company(); if (!this.auth.me()) return;
       untracked(async () => {
@@ -106,6 +130,10 @@ export class Shell {
       });
     });
     effect(() => { if (this.auth.isAdmin()) this.idle.start(); else this.idle.stop(); });
+    effect(() => {
+      if (!this.auth.me() || !this.auth.isAdmin()) { this.enabledApps.set([]); return; }
+      this.http.get<string[]>('/api/apps/enabled').subscribe({ next: a => this.enabledApps.set(a), error: () => this.enabledApps.set([]) });
+    });
     // A clerk is asked to clock on once per day, when they first arrive.
     effect(() => { if (this.auth.me() && !this.auth.isAdmin()) void this.askCheckIn(); });
   }
@@ -147,4 +175,3 @@ export class Shell {
   protected async signOut() { this.idle.stop(); await this.auth.logout(); }
 }
 
-function readOpen(): Record<string, boolean> { try { const v = JSON.parse(localStorage.getItem("nav-open") ?? "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; } }
