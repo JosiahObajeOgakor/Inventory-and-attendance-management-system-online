@@ -53,7 +53,10 @@ public class SiteController(CompanyRegistry registry, CompanyScopes scopes) : Co
     {
         var settings = await db.AppRecords.AsNoTracking().Where(r => r.App == "website" && r.Kind == "site" && r.Status == "Published").FirstOrDefaultAsync();
         var d = settings is null ? [] : Dx.Parse(settings.Data);
-        var nav = new List<NavLink> { new("Home", "") };
+        // Home is the business's real website (e.g. https://chewypetsfeeds.com) unless it publishes its home page with the Website Builder here.
+        var ownHome = settings is not null && access.IsEnabled("website");
+        var site = co.Website?.Trim();
+        var nav = new List<NavLink> { new("Home", !ownHome && Uri.TryCreate(site, UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? u.ToString().TrimEnd('/') : "") };
         if (access.IsEnabled("website"))
         {
             if (d.Bool("showCatalogue")) nav.Add(new("Products", "/products"));

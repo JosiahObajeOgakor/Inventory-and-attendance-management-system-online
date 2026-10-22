@@ -4,7 +4,11 @@ using Inventory.Application.Abstractions;
 
 namespace Inventory.Api.Infrastructure;
 
-public sealed record NavLink(string Label, string Path);
+/// <param name="Path">A path inside the business's public pages ("/blog"), or a full web address ("https://chewypetsfeeds.com") for a link out.</param>
+public sealed record NavLink(string Label, string Path)
+{
+    public bool External => Path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || Path.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>What every public page needs to draw itself: the business, its look, and which sections to link to.</summary>
 public sealed record SiteInfo(string Key, string Name, string Tagline, string Accent, string? Phone, string? Email, string? Address, string? Intro, bool ShowCatalogue, IReadOnlyList<NavLink> Nav);
@@ -33,7 +37,10 @@ public static class SiteHtml
     public static string Page(SiteInfo s, string title, string body, string? current = null)
     {
         var accent = System.Text.RegularExpressions.Regex.IsMatch(s.Accent, "^#[0-9a-fA-F]{6}$") ? s.Accent : "#0f1e3d";
-        var nav = string.Join("", s.Nav.Select(n => $"<a href=\"/api/site/{H(s.Key)}{H(n.Path)}\"{(n.Path == current ? " class=\"on\"" : "")}>{H(n.Label)}</a>"));
+        string Href(NavLink n) => n.External ? H(n.Path) : $"/api/site/{H(s.Key)}{H(n.Path)}";
+        var nav = string.Join("", s.Nav.Select(n => $"<a href=\"{Href(n)}\"{(n.Path == current ? " class=\"on\"" : "")}>{H(n.Label)}</a>"));
+        var home = s.Nav.FirstOrDefault(n => n.Label == "Home");
+        var brand = home is null ? $"<b>{H(s.Name)}</b>" : $"<b><a href=\"{Href(home)}\" style=\"opacity:1\">{H(s.Name)}</a></b>";
         return $$"""
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{H(title)}} · {{H(s.Name)}}</title>
 <style>
@@ -49,7 +56,7 @@ textarea{min-height:6rem}button,.btn{display:inline-block;margin-top:1rem;font:i
 .ok{background:#e6f5ee;border:1px solid #9fd5b9;padding:.8rem 1rem;border-radius:8px}.bad{background:#fdecea;border:1px solid #f1aaa3;padding:.8rem 1rem;border-radius:8px}
 .tick{color:#0f7a4d;font-weight:700}footer{color:var(--mut);font-size:.85rem;text-align:center;padding:1.5rem 1rem}
 @media print{header,footer,.noprint{display:none}body{background:#fff}.card{border:0} }
-</style></head><body><header><div class="w"><b>{{H(s.Name)}}</b>{{nav}}</div></header><main><div class="w">{{body}}</div></main>
+</style></head><body><header><div class="w">{{brand}}{{nav}}</div></header><main><div class="w">{{body}}</div></main>
 <footer>{{H(s.Name)}}{{(string.IsNullOrWhiteSpace(s.Phone) ? "" : " · " + H(s.Phone))}}{{(string.IsNullOrWhiteSpace(s.Email) ? "" : " · " + H(s.Email))}}</footer></body></html>
 """;
     }
