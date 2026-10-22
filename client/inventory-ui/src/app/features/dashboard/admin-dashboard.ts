@@ -69,7 +69,7 @@ const POLL_MS = 30_000;
         <!-- customers by month -->
         <section class="card hero">
           <div class="c-head"><app-icon name="customer" [size]="18" /><h2>Top customers</h2>
-            <span class="sub">{{ o.customers }} {{ o.customers === 1 ? 'customer' : 'customers' }} · receivables <b>{{ full(o.receivablesTotal) }}</b>, overdue <b class="neg">{{ full(o.overdueTotal) }}</b></span></div>
+            <span class="sub">{{ o.customers }} {{ o.customers === 1 ? 'customer' : 'customers' }} · <a routerLink="/debtors" title="See everyone who owes">receivables <b>{{ full(o.receivablesTotal) }}</b>, overdue <b class="neg">{{ full(o.overdueTotal) }}</b></a></span></div>
           @if (o.topCustomers.length) {
             <div class="people">
               @for (c of o.topCustomers; track c.id) {

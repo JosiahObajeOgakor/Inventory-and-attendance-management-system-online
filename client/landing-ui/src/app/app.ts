@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, viewChild } from '@angular/core
 import { ChatWidget } from './chat/chat-widget';
 import { Nutrition } from './sections/nutrition/nutrition';
 import { ProductList } from './sections/product-list/product-list';
+import { Shop } from './sections/shop/shop';
 import { Team } from './sections/team/team';
 import { Testimonials } from './sections/testimonials/testimonials';
 import { RevealDirective } from './core/reveal.directive';
@@ -11,7 +12,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 
 @Component({
   selector: 'app-root',
-  imports: [ChatWidget, Nutrition, ProductList, Team, Testimonials, RevealDirective],
+  imports: [ChatWidget, Nutrition, ProductList, Shop, Team, Testimonials, RevealDirective],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })

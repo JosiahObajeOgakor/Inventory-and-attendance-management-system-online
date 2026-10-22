@@ -454,6 +454,24 @@ public class ChatSalesTests(MySqlFixture mysql)
     }
 
     [Fact]
+    public async Task The_basket_sent_from_the_website_shop_becomes_the_order_in_one_message()
+    {
+        var r = await BuildAsync(stock: 10);
+        await using (var db = NewContext(r.Cs))
+        {
+            db.Products.Add(new Product { Sku = "SKU-2", Name = "Adult Dog Food 5kg", CategoryId = (await db.Categories.FirstAsync()).Id, PriceRetail = 3500, SellingPrice = 3500, CostPrice = 2500 });
+            await db.SaveChangesAsync();
+            db.StockBatches.Add(new StockBatch { ProductId = (await db.Products.SingleAsync(p => p.Sku == "SKU-2")).Id, WarehouseId = r.Seed.WarehouseId, BatchNumber = "B2", QuantityOnHand = 9 });
+            await db.SaveChangesAsync();
+        }
+        // exactly what the landing page's "Order on WhatsApp" button types
+        var reply = await r.Say(Ngozi, "Hi! I'd like to order 2 Adult Dog Food 20kg and 3 Adult Dog Food 5kg", "Ngozi");
+        Assert.Contains("2 × Adult Dog Food 20kg", reply);
+        Assert.Contains("3 × Adult Dog Food 5kg", reply);
+        Assert.Equal(0, r.Ai.Calls);
+    }
+
+    [Fact]
     public async Task Ambiguous_and_unknown_products_are_asked_about_by_name_never_by_a_numbered_menu()
     {
         var r = await BuildAsync(stock: 5);

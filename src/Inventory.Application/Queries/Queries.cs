@@ -165,7 +165,7 @@ public sealed class PartnerQueries(IBusinessDbContext db, IClock clock)
     }
 
     /// <summary>One typed word against everything that identifies a customer: name, contact person, phone (however typed), email, place, address, tax id and type.</summary>
-    private static System.Linq.Expressions.Expression<Func<Domain.Entities.Customer, bool>> CustomerMatches(string w)
+    internal static System.Linq.Expressions.Expression<Func<Domain.Entities.Customer, bool>> CustomerMatches(string w)
     {
         var ph = SearchTerms.PhoneNeedle(w);
         return c => c.Name.Contains(w) || (c.ContactName != null && c.ContactName.Contains(w)) || (c.Email != null && c.Email.Contains(w)) || (c.Location != null && c.Location.Contains(w))

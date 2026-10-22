@@ -153,6 +153,8 @@ public static class ChatLexicon
         "ya", "mu", "ku", "nke", "ihe", "ole", "nawa", "ne", "hi", "hello", "hey", "good", "morning", "afternoon", "evening", "thanks", "thank", "you", "pay", "take", "put", "send",
         "chose", "choro", "ugwo", "ego", "kudi", "yes", "no", "ok", "okay", "oya", "sharp",
         "quote", "quotes", "quotation", "quotations", "proforma", "kwote", "email", "mail",
+        // English contractions lose their apostrophe when normalised ("I'd like" -> "id like"), and the website shop's own words
+        "id", "im", "ill", "ive", "wanna", "gonna", "lemme", "kindly", "from", "website", "site", "shop", "following", "items", "these", "those",
         // greetings and forms of address that often open an order ("Ndewo, achọrọ m 2 rice")
         "ndewo", "nnoo", "kedu", "sannu", "barka", "salam", "assalamu", "alaikum", "imeela", "nagode", "daalu", "kwana", "wuni", "jowo", "mo", "fe", "nfe", "ra", "kaaro", "kaasan", "kaale", "egbon", "baba", "iya", "e", "ni", "kan", "dear", "boss", "bros", "brother", "sister", "aunty", "uncle", "mama", "papa", "day", "sup", "yo", "hiya", "far", "afternoon",
     };

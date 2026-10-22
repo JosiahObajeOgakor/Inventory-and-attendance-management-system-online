@@ -100,6 +100,14 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     }
 }
 
+/// <summary>Everyone who owes this business money: the Debtors screen.</summary>
+[ApiController, Route("api/debtors"), Authorize(Policy = Policies.Admin)]
+public class DebtorsController(ICurrentUser cu, DebtorQueries q) : AppController(cu)
+{
+    /// <param name="sort">owed (default), oldest, overdue or name.</param>
+    [HttpGet] public Task<DebtorsPage> List([FromQuery] PageRequest paging, [FromQuery] string? sort, CancellationToken ct) => q.ListAsync(paging, sort, ct);
+}
+
 [ApiController, Route("api/customers")]
 public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerService svc, CustomerPaymentService payments) : AppController(cu)
 {

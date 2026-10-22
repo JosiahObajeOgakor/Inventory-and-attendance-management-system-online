@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { Auth } from '../../core/auth.service';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
 import { Api2 } from '../../core/api-more';
 import { Customer, CustomerInput, CustomerType } from '../../core/models';
@@ -25,7 +26,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
       </div>
       <section class="card">
         <div class="toolbar"><div class="search grow"><app-icon name="search" [size]="17" />
-          <input class="input" type="search" placeholder="Search name, contact, phone, email, place or type" aria-label="Search customers" (input)="list.setSearch($any($event.target).value)" /></div></div>
+          <input class="input" type="search" placeholder="Search name, contact, phone, email, place or type" aria-label="Search customers" [value]="searchText()" (input)="list.setSearch($any($event.target).value)" /></div></div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Customer</th><th>Type</th><th>Last 12 months</th><th class="num">Owes</th><th class="num">Rebate per unit</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -94,6 +95,8 @@ export class CustomersPage implements OnInit {
   /** The company's default rebate (₦ per unit) filled in for a new customer. */
   private defaultRebate = 0;
   private readonly toasts = inject(Toasts);
+  private readonly route = inject(ActivatedRoute);
+  protected readonly searchText = signal('');
   private readonly confirm = inject(Confirm);
   protected readonly list = new PagedList<Customer>(q => this.api.customers(q));
   protected readonly formOpen = signal(false);
@@ -111,7 +114,11 @@ export class CustomersPage implements OnInit {
   protected readonly payForm = this.fb.nonNullable.group({ amount: [0, [Validators.required, Validators.min(0.01)]], method: ['Cash'], accountNumber: [''], payerName: [''] });
 
   ngOnInit() {
-    void this.list.load();
+    // Arriving from Debtors ("Record payment"): show that customer and open the payment box.
+    const qp = this.route.snapshot.queryParamMap;
+    const q = qp.get('q'); const payId = Number(qp.get('pay')) || 0;
+    if (q) { this.list.search.set(q); this.searchText.set(q); }
+    void this.list.load().then(() => { const c = payId ? this.list.items().find(x => x.id === payId) : null; if (c && c.balance > 0) this.openPay(c); });
     void this.api2.companyProfile().then(p => { this.banks.set(p.banks); this.defaultRebate = p.defaultRebatePerUnit ?? 0; }).catch(e => this.accountError.set(messageOf(e)));
   }
 

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Inventory.Api.Controllers;
 
@@ -18,6 +19,8 @@ public sealed record WebChatRequest(string SessionId, string Message, string? Ti
 /// <param name="At">Server time of this reply; pass it back to <c>updates</c> as <c>since</c>.</param>
 public sealed record WebChatResponse(string Reply, string? CheckoutUrl, string? QuotationNumber, IReadOnlyList<string>? Replies = null, bool AwaitingPayment = false, DateTime? At = null);
 public sealed record WebChatUpdates(IReadOnlyList<string> Messages, bool AwaitingPayment, DateTime At);
+/// <summary>One product on the website's shop: what it is, today's retail price, and whether stock is running low. Exact stock counts stay private.</summary>
+public sealed record ShopItem(int Id, string Name, string Unit, decimal Price, bool Few, bool HasImage);
 
 /// <summary>
 /// The chat on the landing page. Which engine answers is a setting (SalesAssistant:Engine): "ai" (the default, the AI sales assistant the site has used so far)
@@ -40,6 +43,36 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
             : twilio.Value.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(CompanyKey, StringComparison.OrdinalIgnoreCase))?.From;
         var digits = new string((from ?? "").Where(char.IsDigit).ToArray());
         return digits.Length >= 8 ? digits : null;
+    }
+
+    /// <summary>The landing page's shop: in-stock products with today's retail price, read from the same stock the chat sells from. Cached for a minute.</summary>
+    [HttpGet("products"), AllowAnonymous]
+    public async Task<IReadOnlyList<ShopItem>> Products([FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "public, max-age=60";
+        HttpContext.Items[RequestCompany.OverrideItem] = CompanyKey;
+        return (await cache.GetOrCreateAsync("shop:" + CompanyKey, async e =>
+        {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1);
+            var sp = HttpContext.RequestServices;
+            var cat = await sp.GetRequiredService<StockAvailabilityService>().CatalogueAsync(null, Inventory.Domain.PriceTiers.Retailer, ct);
+            var withImage = (await sp.GetRequiredService<IBusinessDbContext>().ProductImages.AsNoTracking().Select(i => i.ProductId).ToListAsync(ct)).ToHashSet();
+            return cat.Where(p => p.Available > 0 && p.Price > 0).OrderBy(p => p.Name)
+                .Select(p => new ShopItem(p.Id, p.Name, p.Unit, p.Price, p.Available <= 5, withImage.Contains(p.Id))).ToList();
+        }))!;
+    }
+
+    /// <summary>A product's photo for the shop (only for active products). Cached by browsers for a day.</summary>
+    [HttpGet("products/{id:int}/image"), AllowAnonymous]
+    public async Task<IActionResult> ProductImage(int id, CancellationToken ct)
+    {
+        HttpContext.Items[RequestCompany.OverrideItem] = CompanyKey;
+        var db = HttpContext.RequestServices.GetRequiredService<IBusinessDbContext>();
+        var img = await (from i in db.ProductImages.AsNoTracking() join p in db.Products.AsNoTracking() on i.ProductId equals p.Id
+                         where i.ProductId == id && p.IsActive select new { i.Data, i.ContentType }).FirstOrDefaultAsync(ct);
+        if (img is null) return NotFound();
+        Response.Headers.CacheControl = "public, max-age=86400";
+        return File(img.Data, img.ContentType);
     }
 
     [HttpPost("message"), AllowAnonymous, RequestSizeLimit(65536), EnableRateLimiting(Policies.WebChatRateLimit)]

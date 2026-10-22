@@ -32,6 +32,7 @@ const BUILT: NavGroup[] = [
     { label: 'Quotations', path: '/quotations', icon: 'file' },
     { label: 'Waybills', path: '/waybills', icon: 'supplier' },
     { label: 'Customers', path: '/customers', icon: 'customer', adminOnly: true },
+      { label: 'Debtors', path: '/debtors', icon: 'cash', adminOnly: true },
     { label: 'Campaigns', path: '/campaigns', icon: 'spark', adminOnly: true, preview: true },
     { label: 'Suppliers', path: '/suppliers', icon: 'supplier', adminOnly: true },
     { label: 'Purchases', path: '/purchases', icon: 'purchase', adminOnly: true },
