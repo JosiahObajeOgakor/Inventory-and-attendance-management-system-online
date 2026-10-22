@@ -52,5 +52,18 @@ public class DebtorsAndShopTests(ApiFixture api)
         Assert.Equal(11500m, dog.GetProperty("price").GetDecimal());
         Assert.False(dog.TryGetProperty("available", out _));                                   // exact stock stays private
         Assert.Equal(HttpStatusCode.NotFound, (await api.Client().GetAsync($"/api/webchat/products/{dog.GetProperty("id").GetInt32()}/image")).StatusCode);
+
+        // the sister store has its own shelf; a store that isn't listed is simply not there
+        Assert.True((await api.Client().GetAsync("/api/webchat/products?store=candid")).IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.Client().GetAsync("/api/webchat/products?store=k9cravings")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.Client().GetAsync("/api/webchat/products?store=inventory_identity")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_website_knows_both_stores_and_where_each_takes_orders()
+    {
+        var stores = (await api.Client().GetFromJsonAsync<JsonElement>("/api/webchat/stores")).EnumerateArray().ToList();
+        Assert.Equal(new[] { "chewypets", "candid" }, stores.Select(s => s.GetProperty("key").GetString()).ToArray());
+        Assert.All(stores, s => Assert.False(string.IsNullOrEmpty(s.GetProperty("name").GetString())));
     }
 }

@@ -1,8 +1,9 @@
-import { Component, ElementRef, afterNextRender, viewChild } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core';
 import { ChatWidget } from './chat/chat-widget';
 import { Nutrition } from './sections/nutrition/nutrition';
 import { ProductList } from './sections/product-list/product-list';
-import { Shop } from './sections/shop/shop';
+import { StoresSection } from './sections/stores/stores';
+import { Stores } from './core/stores';
 import { Team } from './sections/team/team';
 import { Testimonials } from './sections/testimonials/testimonials';
 import { RevealDirective } from './core/reveal.directive';
@@ -12,7 +13,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 
 @Component({
   selector: 'app-root',
-  imports: [ChatWidget, Nutrition, ProductList, Shop, Team, Testimonials, RevealDirective],
+  imports: [ChatWidget, Nutrition, ProductList, StoresSection, Team, Testimonials, RevealDirective],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -21,6 +22,9 @@ export class App {
   protected readonly crateWhatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order a collapsible cage.");
   protected readonly whatsappDisplay = whatsappDisplay();
   protected readonly year = new Date().getFullYear();
+  private readonly stores = inject(Stores);
+  protected readonly main = computed(() => this.stores.find('chewypets') ?? null);
+  protected readonly candid = computed(() => this.stores.find('candid') ?? null);
 
   private readonly heroVideo = viewChild.required<ElementRef<HTMLVideoElement>>('heroVideo');
   private readonly backyard = viewChild.required<ElementRef<HTMLVideoElement>>('backyard');

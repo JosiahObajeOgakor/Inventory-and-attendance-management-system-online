@@ -204,6 +204,8 @@ main {
   text-decoration-thickness: 2px;
   text-underline-offset: 6px;
 }
+.hero__link { display: inline-flex; align-items: center; gap: 0.5rem; }
+.window__alt { display: block; margin-top: 1rem; }
 .hero__link:hover {
   color: var(--orange-bright);
 }
@@ -462,9 +464,13 @@ main {
   max-width: var(--max);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
   gap: 2.5rem;
 }
+@media (max-width: 1000px) {
+  .footer__grid { grid-template-columns: 1fr 1fr; }
+}
+.footer__contact { font-style: normal; line-height: 1.5; }
 @media (max-width: 760px) {
   .footer__grid { grid-template-columns: 1fr; gap: 2rem; }
 }
@@ -537,6 +543,13 @@ main {
   transition: background 0.15s ease, transform 0.15s ease;
 }
 .footer__top:hover { background: var(--orange-bright); transform: translateY(-2px); }
+
+// The sister-store panel shows the Candid Purrfect logo whole, on its own colour, instead of cropping it like a photo.
+.duo__panel--brand {
+  background: var(--cream);
+  img { object-fit: contain; padding: 12% 18% 34%; }
+  .duo__scrim { background: linear-gradient(0deg, rgba(23, 11, 34, 0.95) 12%, rgba(23, 11, 34, 0.2) 48%, transparent 70%); }
+}
 
 // The Candid Purrfect panel carries a full sentence, not a short headline.
 .duo__intro {

@@ -19,6 +19,7 @@
 
 // Small floating labels scattered around the watermark word, like tags pinned to a board.
 .products__scatter {
+  display: none;   // the rotated sticker pills read as clutter next to the shop; retired
   position: relative;
   z-index: 1;
   height: 0;

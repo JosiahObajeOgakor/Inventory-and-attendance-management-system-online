@@ -38,17 +38,17 @@
 
     <div class="hero__content">
       <h1 class="hero__title">
-        <span class="hero__line">Bowls licked</span>
-        <span class="hero__line hero__line--accent">clean.</span>
+        <span class="hero__line">Complete nutrition,</span>
+        <span class="hero__line hero__line--accent">every stage.</span>
       </h1>
-      <p class="hero__sub">Complete dog food, puppy to senior. Order it in one WhatsApp message.</p>
+      <p class="hero__sub">Premium dog food from puppy to senior, produced and packed in Nigeria. See what's in stock and order in minutes.</p>
 
       <div class="hero__actions">
-        <a class="btn btn--whatsapp hero__cta" [href]="whatsappHref" target="_blank" rel="noopener">
+        <a class="btn btn--accent hero__cta" href="#shop">Shop what's in stock</a>
+        <a class="hero__link" [href]="whatsappHref" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
-          Order on WhatsApp
+          Chat with us on WhatsApp
         </a>
-        <a class="hero__link" href="#range">See the range</a>
       </div>
     </div>
   </section>
@@ -63,7 +63,7 @@
 
   <app-product-list />
 
-  <app-shop />
+  <app-stores />
 
   <!-- New product line: collapsible cages -->
   <section id="crates" class="crates">
@@ -94,31 +94,29 @@
     <div class="window__inner reveal" appReveal>
       <p class="eyebrow">Fed right, full of play</p>
       <h2 class="window__title">Good food results <br />in happy pets.</h2>
-      <a class="btn btn--whatsapp btn--lg" [href]="whatsappHref" target="_blank" rel="noopener">Order on WhatsApp</a>
+      <a class="btn btn--accent btn--lg" href="#shop">Shop what's in stock</a>
     </div>
   </section>
 
   <div class="sheet">
   <!-- Image duo: dogs / cats, one brand family -->
   <section id="purrfect" class="duo">
-    <a class="duo__panel reveal" appReveal [href]="whatsappHref" target="_blank" rel="noopener">
-      <p class="watermark duo__num" aria-hidden="true">01</p>
+    <a class="duo__panel reveal" appReveal href="#shop">
       <img src="/chewy-bag-puppy.jpg" alt="Chewy Pet dog food" loading="lazy" />
       <div class="duo__scrim"></div>
       <div class="duo__body">
-        <p class="eyebrow">For dogs</p>
-        <h3>Every breed, every stage — Chewy Pet</h3>
-        <span class="duo__link">Order on WhatsApp &rarr;</span>
+        <p class="eyebrow">Chewy Pet</p>
+        <h3>Our own complete dog food, every breed and stage</h3>
+        <span class="duo__link">Shop Chewy Pet &rarr;</span>
       </div>
     </a>
-    <a class="duo__panel reveal" appReveal [href]="whatsappHref" target="_blank" rel="noopener">
-      <p class="watermark duo__num" aria-hidden="true">02</p>
-      <img src="/candid-purrfect-logo.jpeg" alt="Candid Purrfect" loading="lazy" />
+    <a class="duo__panel duo__panel--brand reveal" appReveal href="#candid">
+      <img src="/candid-purrfect-logo.jpeg" alt="Candid Purrfect logo" loading="lazy" />
       <div class="duo__scrim"></div>
       <div class="duo__body">
-        <p class="eyebrow">Candid Purrfect</p>
-        <h3 class="duo__intro">You can as well ask us about other dog foods and accessories on this page via WhatsApp, and we'll serve you almost immediately.</h3>
-        <span class="duo__link">Ask us on WhatsApp &rarr;</span>
+        <p class="eyebrow">Our sister store</p>
+        <h3>Candid Purrfect: more brands, cat food, treats and accessories</h3>
+        <span class="duo__link">Visit Candid Purrfect &rarr;</span>
       </div>
     </a>
   </section>
@@ -156,6 +154,7 @@
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Zm5.84 14.2c-.25.7-1.45 1.34-2 1.42-.51.08-1.15.11-1.86-.12-.43-.13-.98-.32-1.69-.62-2.97-1.28-4.9-4.26-5.05-4.46-.15-.2-1.2-1.6-1.2-3.05 0-1.45.76-2.17 1.03-2.46.27-.29.6-.37.8-.37h.57c.18 0 .43-.07.67.51.25.6.84 2.07.91 2.22.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.44.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.69 2.11 1.16 1.04 2.14 1.36 2.44 1.51.3.15.48.13.66-.08.18-.2.76-.88.96-1.19.2-.3.4-.25.67-.15.28.1 1.76.83 2.06.98.3.15.5.22.57.35.08.13.08.75-.17 1.44Z"/></svg>
       Chat with Chewy Pet
     </a>
+    <a class="hero__link window__alt" href="#shop">or browse what's in stock</a>
     </div>
   </section>
 </main>
@@ -165,33 +164,44 @@
     <div class="footer__brand">
       <div class="footer__brand-row">
         <img src="logo.png" alt="Chewy Pet" width="32" height="32" />
-        <span>ChewyPets Farm &amp; Feeds Co. Ltd</span>
+        <span>Chewy Pet</span>
       </div>
-      <p>Where healthy bowls come first.</p>
+      <p>Complete dog food for every life stage, by ChewyPets Farm &amp; Feeds Company Ltd.</p>
+      <a class="btn btn--whatsapp footer__subscribe" [href]="whatsappHref" target="_blank" rel="noopener">Chat with us on WhatsApp</a>
     </div>
 
-    <div class="footer__col">
+    <nav class="footer__col" aria-label="Explore">
       <p class="footer__heading">Explore</p>
-      <a href="#range">Range</a>
-    <a href="#shop">Shop</a>
+      <a href="#shop">Shop</a>
+      <a href="#range">Our range</a>
       <a href="#crates">Cages</a>
       <a href="#why">Why Chewy Pet</a>
       <a href="#team">Team</a>
       <a href="#reviews">Reviews</a>
-      <a href="#purrfect">Candid Purrfect</a>
-      <a href="/inventory/">Staff login</a>
-    </div>
+    </nav>
 
     <div class="footer__col">
-      <p class="footer__heading">Stay in the loop</p>
-      <p class="footer__note">Real orders, real answers — no forms, no wait.</p>
-      <a class="btn btn--whatsapp footer__subscribe" [href]="whatsappHref" target="_blank" rel="noopener">Message us on WhatsApp</a>
+      <p class="footer__heading">Our stores</p>
+      <a href="#shop">Chewy Pet</a>
+      <a href="#candid">Candid Purrfect (sister store)</a>
+      @if (candid()?.phone; as p) { <a [href]="'tel:' + p">Candid Purrfect: {{ p }}</a> }
+      <a href="/inventory/">Staff sign-in</a>
     </div>
+
+    <address class="footer__col footer__contact">
+      <p class="footer__heading">Contact</p>
+      @if (main(); as m) {
+        @if (m.address) { <span>{{ m.address }}, Lagos</span> }
+        @if (m.phone) { <a [href]="'tel:' + m.phone">{{ m.phone }}</a> }
+        @if (m.email) { <a [href]="'mailto:' + m.email">{{ m.email }}</a> }
+      }
+      <span>WhatsApp {{ whatsappDisplay }}</span>
+    </address>
   </div>
 
   <div class="footer__bottom">
-    <span>&copy; {{ year }} ChewyPets Farm &amp; Feeds Co. Ltd. All rights reserved.</span>
-    <span>{{ whatsappDisplay }}</span>
+    <span>&copy; {{ year }} ChewyPets Farm &amp; Feeds Company Ltd. All rights reserved.</span>
+    <span>Candid Purrfect Pets Company Ltd is a sister company.</span>
     <a class="footer__top" href="#top" aria-label="Back to top">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </a>

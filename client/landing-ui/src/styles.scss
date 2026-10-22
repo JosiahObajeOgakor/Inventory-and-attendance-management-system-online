@@ -137,6 +137,18 @@ button {
   background: rgba(23, 11, 34, 0.05);
   border-color: rgba(23, 11, 34, 0.45);
 }
+// Solid primary on light sections; the accent variant is for dark sections (hero, windows).
+.btn--primary {
+  background: var(--ink);
+  color: #fff;
+}
+.btn--primary:hover { background: var(--violet-deep); transform: translateY(-2px); }
+.btn--accent {
+  background: var(--orange);
+  color: var(--ink);
+  box-shadow: 0 10px 26px -10px rgba(244, 128, 30, 0.6);
+}
+.btn--accent:hover { background: var(--orange-bright); transform: translateY(-2px); }
 .btn--lg {
   padding: 1.1rem 2rem;
   font-size: 1.1rem;
@@ -215,6 +227,7 @@ section {
   -webkit-text-stroke: 1.5px rgba(23, 11, 34, 0.09);
   pointer-events: none;
   user-select: none;
+  display: none;   // retired for a calmer, more corporate page; kept here so a section can opt back in
 }
 // A photo card with a bottom scrim, eyebrow badge and title overlay — used for the
 // nutrition row, the dogs/cats duo band and the team grid.

@@ -20,7 +20,9 @@ public sealed record WebChatRequest(string SessionId, string Message, string? Ti
 public sealed record WebChatResponse(string Reply, string? CheckoutUrl, string? QuotationNumber, IReadOnlyList<string>? Replies = null, bool AwaitingPayment = false, DateTime? At = null);
 public sealed record WebChatUpdates(IReadOnlyList<string> Messages, bool AwaitingPayment, DateTime At);
 /// <summary>One product on the website's shop: what it is, today's retail price, and whether stock is running low. Exact stock counts stay private.</summary>
-public sealed record ShopItem(int Id, string Name, string Unit, decimal Price, bool Few, bool HasImage);
+public sealed record ShopItem(int Id, string Name, string Unit, decimal Price, bool Few, bool HasImage, string? Category = null);
+/// <summary>A store the website shows: who it is, the WhatsApp number its orders go to, and its public contact details.</summary>
+public sealed record ShopStore(string Key, string Name, string LegalName, string? WhatsApp, string? Phone, string? Email, string? Address, string? Website);
 
 /// <summary>
 /// The chat on the landing page. Which engine answers is a setting (SalesAssistant:Engine): "ai" (the default, the AI sales assistant the site has used so far)
@@ -29,7 +31,7 @@ public sealed record ShopItem(int Id, string Name, string Unit, decimal Price, b
 /// to the landing page's own brand (WebChat:CompanyKey, default "chewypets").
 /// </summary>
 [ApiController, Route("api/webchat")]
-public class WebChatController(IConfiguration config, Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.WhatsApp.TwilioOptions> twilio) : ControllerBase
+public class WebChatController(IConfiguration config, Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.WhatsApp.TwilioOptions> twilio, Inventory.Infrastructure.Persistence.CompanyRegistry registry) : ControllerBase
 {
     private string CompanyKey => config["WebChat:CompanyKey"] is { Length: > 0 } k ? k : "chewypets";
 
@@ -45,28 +47,68 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
         return digits.Length >= 8 ? digits : null;
     }
 
-    /// <summary>The landing page's shop: in-stock products with today's retail price, read from the same stock the chat sells from. Cached for a minute.</summary>
-    [HttpGet("products"), AllowAnonymous]
-    public async Task<IReadOnlyList<ShopItem>> Products([FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct)
+    /// <summary>The businesses whose stock the website shows (Shop:Stores, default the landing brand then Candid Purrfect). Never anything a visitor names freely.</summary>
+    private IReadOnlyList<string> StoreKeys =>
+        (config["Shop:Stores"] is { Length: > 0 } s ? s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [CompanyKey, "candid"])
+            .Where(k => registry.Find(k) is not null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    private string? Store(string? store) => string.IsNullOrWhiteSpace(store) ? CompanyKey : StoreKeys.FirstOrDefault(k => k.Equals(store, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The stores the website can show, with the WhatsApp number each one takes orders on and its public contact details (as printed on its invoices).</summary>
+    [HttpGet("stores"), AllowAnonymous]
+    public async Task<IReadOnlyList<ShopStore>> Stores([FromServices] IMemoryCache cache, CancellationToken ct)
     {
+        Response.Headers.CacheControl = "public, max-age=300";
+        return (await cache.GetOrCreateAsync("shop:stores", async e =>
+        {
+            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            var list = new List<ShopStore>();
+            foreach (var key in StoreKeys)
+            {
+                var info = registry.Find(key)!;
+                await using var db = registry.CreateFor(info);
+                var p = await db.CompanyProfiles.AsNoTracking().FirstOrDefaultAsync(ct);
+                var phone = Digits(p?.Phone);
+                // The landing brand's orders go to the number its sales assistant answers on; a sister store's to its own phone.
+                var whatsapp = key.Equals(CompanyKey, StringComparison.OrdinalIgnoreCase) ? WhatsAppDigits() ?? phone : phone;
+                list.Add(new ShopStore(key, info.DisplayName, p?.LegalName ?? info.LegalName, whatsapp, p?.Phone, p?.Email, p?.Address, info.Website));
+            }
+            return list;
+        }))!;
+    }
+
+    private static string? Digits(string? phone)
+    {
+        var d = new string((phone ?? "").Where(char.IsDigit).ToArray());
+        if (d.Length == 11 && d[0] == '0') d = "234" + d[1..];                 // 0703… -> 234703…
+        return d.Length >= 10 ? d : null;
+    }
+
+    /// <summary>A store's shop: in-stock products with today's retail price and category, read from the same stock the chat sells from. Cached for a minute.</summary>
+    [HttpGet("products"), AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<ShopItem>>> Products([FromQuery] string? store, [FromServices] IMemoryCache cache, CancellationToken ct)
+    {
+        if (Store(store) is not { } key) return NotFound();
         Response.Headers.CacheControl = "public, max-age=60";
-        HttpContext.Items[RequestCompany.OverrideItem] = CompanyKey;
-        return (await cache.GetOrCreateAsync("shop:" + CompanyKey, async e =>
+        HttpContext.Items[RequestCompany.OverrideItem] = key;
+        return (await cache.GetOrCreateAsync("shop:" + key, async e =>
         {
             e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1);
             var sp = HttpContext.RequestServices;
+            var db = sp.GetRequiredService<IBusinessDbContext>();
             var cat = await sp.GetRequiredService<StockAvailabilityService>().CatalogueAsync(null, Inventory.Domain.PriceTiers.Retailer, ct);
-            var withImage = (await sp.GetRequiredService<IBusinessDbContext>().ProductImages.AsNoTracking().Select(i => i.ProductId).ToListAsync(ct)).ToHashSet();
+            var withImage = (await db.ProductImages.AsNoTracking().Select(i => i.ProductId).ToListAsync(ct)).ToHashSet();
+            var categories = await (from p in db.Products.AsNoTracking() join c in db.Categories.AsNoTracking() on p.CategoryId equals c.Id select new { p.Id, c.Name }).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
             return cat.Where(p => p.Available > 0 && p.Price > 0).OrderBy(p => p.Name)
-                .Select(p => new ShopItem(p.Id, p.Name, p.Unit, p.Price, p.Available <= 5, withImage.Contains(p.Id))).ToList();
+                .Select(p => new ShopItem(p.Id, p.Name, p.Unit, p.Price, p.Available <= 5, withImage.Contains(p.Id), categories.GetValueOrDefault(p.Id))).ToList();
         }))!;
     }
 
     /// <summary>A product's photo for the shop (only for active products). Cached by browsers for a day.</summary>
     [HttpGet("products/{id:int}/image"), AllowAnonymous]
-    public async Task<IActionResult> ProductImage(int id, CancellationToken ct)
+    public async Task<IActionResult> ProductImage(int id, [FromQuery] string? store, CancellationToken ct)
     {
-        HttpContext.Items[RequestCompany.OverrideItem] = CompanyKey;
+        if (Store(store) is not { } key) return NotFound();
+        HttpContext.Items[RequestCompany.OverrideItem] = key;
         var db = HttpContext.RequestServices.GetRequiredService<IBusinessDbContext>();
         var img = await (from i in db.ProductImages.AsNoTracking() join p in db.Products.AsNoTracking() on i.ProductId equals p.Id
                          where i.ProductId == id && p.IsActive select new { i.Data, i.ContentType }).FirstOrDefaultAsync(ct);
@@ -74,7 +116,6 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
         Response.Headers.CacheControl = "public, max-age=86400";
         return File(img.Data, img.ContentType);
     }
-
     [HttpPost("message"), AllowAnonymous, RequestSizeLimit(65536), EnableRateLimiting(Policies.WebChatRateLimit)]
     public async Task<WebChatResponse> Message(WebChatRequest r, CancellationToken ct)
     {
