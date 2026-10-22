@@ -19,6 +19,7 @@ public partial class BusinessDbContext
             e.Property(x => x.TaxId).HasMaxLength(60).IsRequired();
             e.Property(x => x.DefaultVatRate).HasPrecision(5, 2);
             e.Property(x => x.DefaultRebateRatePct).HasPrecision(5, 2);
+            e.Property(x => x.DefaultRebatePerUnit).HasPrecision(12, 2);
             e.HasMany(x => x.Banks).WithOne().HasForeignKey(x => x.CompanyProfileId).OnDelete(DeleteBehavior.Cascade);
         });
         b.Entity<CompanyBank>(e =>
@@ -51,6 +52,9 @@ public partial class BusinessDbContext
             e.Property(x => x.PriceTier).HasMaxLength(20).IsRequired();
             e.Property(x => x.Status).HasMaxLength(20).IsRequired();
             e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.DeliveryAddress).HasMaxLength(250);
+            e.Property(x => x.DeliveryZone).HasMaxLength(60);
+            e.Property(x => x.DeliveryFee).HasPrecision(12, 2);
             e.HasIndex(x => x.QuotationNumber).IsUnique();
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.ConvertedInvoiceId).OnDelete(DeleteBehavior.Restrict);
@@ -143,7 +147,6 @@ public partial class BusinessDbContext
             e.Property(x => x.DocType).HasMaxLength(20).IsRequired();
             e.Property(x => x.DocNumber).HasMaxLength(60);
             e.Property(x => x.CustomerName).HasMaxLength(150);
-            e.Property(x => x.Provider).HasMaxLength(20).IsRequired();
             e.Property(x => x.ExternalId).HasMaxLength(80);
             e.Property(x => x.AccountNumber).HasMaxLength(30);
             e.Property(x => x.BankName).HasMaxLength(60);
@@ -156,10 +159,24 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.PaidAt).HasPrecision(6);
             e.Property(x => x.NotifiedAt).HasPrecision(6);
+            e.Property(x => x.AdminNotifiedAt).HasPrecision(6);
+            e.Property(x => x.RiderNotifiedAt).HasPrecision(6);
+            e.Property(x => x.Provider).HasMaxLength(20).IsRequired().HasDefaultValue(PaymentProviders.Paystack);
+            e.Property(x => x.ProviderReference).HasMaxLength(100);
+            e.HasIndex(x => new { x.Provider, x.ProviderReference });
             e.HasIndex(x => new { x.DocType, x.DocId, x.Status });
-            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled')"));
+            e.ToTable("payment_links", t => t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled','Cancelled')"));
         });
 
+
+        b.Entity<DeliveryZone>(e =>
+        {
+            e.ToTable("delivery_zones");
+            e.Property(x => x.Name).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Fee).HasPrecision(12, 2);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.HasData(new DeliveryZone { Id = 1, Name = "Lagos", Fee = 3000m, IsActive = true });
+        });
 
         b.Entity<PriceChange>(e =>
         {
@@ -197,19 +214,6 @@ public partial class BusinessDbContext
             e.HasOne<ChatConversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        b.Entity<SupplierPayment>(e =>
-        {
-            e.ToTable("supplier_payments");
-            e.Property(x => x.Amount).HasPrecision(14, 2);
-            e.Property(x => x.Method).HasMaxLength(20).IsRequired();
-            e.Property(x => x.BankName).HasMaxLength(80);
-            e.Property(x => x.AccountName).HasMaxLength(150);
-            e.Property(x => x.AccountNumber).HasMaxLength(40);
-            e.Property(x => x.PaymentDate).HasPrecision(6);
-            e.HasIndex(x => x.PurchaseOrderId);
-            e.HasIndex(x => x.SupplierId);
-        });
-
         b.Entity<Campaign>(e =>
         {
             e.ToTable("campaigns");
@@ -235,6 +239,115 @@ public partial class BusinessDbContext
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
             e.HasIndex(x => new { x.CampaignId, x.CreatedAt });
+        });
+
+        b.Entity<InboundMessage>(e =>
+        {
+            e.ToTable("inbound_messages");
+            e.Property(x => x.Channel).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Sender).HasMaxLength(100).IsRequired();
+            e.Property(x => x.ExternalId).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Text).HasMaxLength(4096);
+            e.Property(x => x.ButtonId).HasMaxLength(100);
+            e.Property(x => x.Status).HasMaxLength(10).IsRequired();
+            e.Property(x => x.ReplyJson).HasColumnType("text");
+            e.Property(x => x.LastError).HasMaxLength(500);
+            e.Property(x => x.NextAttemptAt).HasPrecision(6);
+            e.Property(x => x.LockedUntil).HasPrecision(6);
+            e.Property(x => x.ReceivedAt).HasPrecision(6);
+            e.Property(x => x.ProcessedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.Channel, x.ExternalId }).IsUnique();   // a redelivered webhook can't be stored twice
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });            // the worker's "what's due" query
+            e.HasIndex(x => new { x.Sender, x.Status });                   // one customer's messages stay in order
+        });
+
+        b.Entity<SupplierItem>(e =>
+        {
+            e.ToTable("supplier_items");
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.HasIndex(x => new { x.SupplierId, x.ProductId }).IsUnique();
+            e.HasOne<Supplier>().WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Supplies stand alone: no ledger row, no stock movement, and deleting one leaves the rest of the system untouched.
+        b.Entity<Supply>(e =>
+        {
+            e.ToTable("supplies");
+            e.Property(x => x.Reference).HasMaxLength(60);
+            e.Property(x => x.PaymentStatus).HasMaxLength(20);
+            e.Property(x => x.PaymentMethod).HasMaxLength(30);
+            e.Property(x => x.Note).HasMaxLength(400);
+            e.Property(x => x.TotalAmount).HasPrecision(14, 2);
+            e.Property(x => x.AmountPaid).HasPrecision(14, 2);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => x.Reference).IsUnique();
+            e.HasIndex(x => new { x.SupplierId, x.SupplyDate });
+            e.HasIndex(x => x.SupplyDate);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.SupplyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // A supplier's own goods: their names, their pack sizes, their prices. No link to products or stock.
+        b.Entity<SupplierProduct>(e =>
+        {
+            e.ToTable("supplier_products");
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Size).HasMaxLength(40);
+            e.Property(x => x.Unit).HasMaxLength(20);
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.SupplierId, x.Name });
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            // Deleting a product must not delete a supplier's item; the link simply forgets itself.
+            e.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<SupplyItem>(e =>
+        {
+            e.ToTable("supply_items");
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Size).HasMaxLength(40);
+            e.Property(x => x.Unit).HasMaxLength(20);
+            e.Property(x => x.UnitCost).HasPrecision(12, 2);
+            e.Property(x => x.LineTotal).HasPrecision(14, 2);
+            e.HasIndex(x => x.SupplierProductId);
+            // The item may be removed from the supplier's list later; the line keeps its own name, size and unit, so history still reads right.
+            e.HasOne<SupplierProduct>().WithMany().HasForeignKey(x => x.SupplierProductId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<SupplierPayment>(e =>
+        {
+            e.ToTable("supplier_payments");
+            e.Property(x => x.Amount).HasPrecision(12, 2);
+            e.Property(x => x.Method).HasMaxLength(30);
+            e.Property(x => x.Reference).HasMaxLength(40);
+            e.Property(x => x.PaidAt).HasPrecision(6);
+            e.Property(x => x.BankName).HasMaxLength(80);
+            e.Property(x => x.AccountName).HasMaxLength(150);
+            e.Property(x => x.AccountNumber).HasMaxLength(40);
+            e.HasIndex(x => new { x.SupplierId, x.PaidAt });
+            e.HasIndex(x => x.PurchaseOrderId);
+            e.HasOne<Supplier>().WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ProductImage>(e =>
+        {
+            e.ToTable("product_images");
+            e.HasKey(x => x.ProductId);
+            e.Property(x => x.ProductId).ValueGeneratedNever();
+            e.Property(x => x.ContentType).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Data).HasColumnType("mediumblob").IsRequired();
+            e.Property(x => x.UpdatedAt).HasPrecision(6);
+            e.HasOne<Product>().WithOne().HasForeignKey<ProductImage>(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<ExpenseCategory>(e =>
+        {
+            e.ToTable("expense_categories");
+            e.Property(x => x.Name).HasMaxLength(40).IsRequired();
+            e.HasIndex(x => x.Name).IsUnique();
         });
     }
 }

@@ -60,7 +60,7 @@ public class CampaignTests(MySqlFixture mysql)
         var tx = Wire.Tx(db);
         var quotes = new QuotationService(db, tx, Clock, co, SalesFor(db), new NoUsers());
         var admin = new RecordingNotifier(); var va = new FakeVirtualAccounts(); var ai = new CountingModel(aiJson); var sender = new RecordingSender(); var email = new FakeEmail();
-        var pay = new PaymentLinkService(db, tx, Clock, co, new FakeGateway(false), admin, new CustomerPaymentService(db, tx, Clock), quotes, va);
+        var pay = new PaymentLinkService(db, tx, Clock, co, new PaymentGateways([new FakeGateway(false)]), admin, new CustomerPaymentService(db, tx, Clock), quotes, va);
         var chatOpts = Options.Create(new SalesAssistantOptions());
         var campOpts = new CampaignOptions { AdminName = "Ada Obi", AdminPhone = "09150464707", AdminEmail = "admin@example.com", PublicBaseUrl = "https://shop.example", SecretKey = "test-secret" };
         configure?.Invoke(campOpts);

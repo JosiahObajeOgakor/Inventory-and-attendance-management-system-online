@@ -327,7 +327,7 @@ public class FinanceAndPriceBookTests(MySqlFixture mysql)
         await using (var db = NewContext(cs)) { await SalesFor(db).SaveAsync(Sale(seed, 2), Clerk, null); }
         await using var r = NewContext(cs);
         var res = await Wire.Rebates(r).RedeemAsync(seed.CustomerId, Wire.Admin);
-        Assert.Equal(345m, res.Amount);   // 1% of 11,500 + 1% of 23,000
+        Assert.Equal(300m, res.Amount);   // ₦100 per unit × (1 + 2) units
         await Assert.ThrowsAsync<BusinessRuleException>(() => Wire.Rebates(r).RedeemAsync(seed.CustomerId, Wire.Admin));
         await using var check = NewContext(cs);
         Assert.All(await check.RebateEntries.ToListAsync(), e => Assert.Equal("Redeemed", e.Status));
@@ -339,10 +339,16 @@ public class FinanceAndPriceBookTests(MySqlFixture mysql)
         var cs = await mysql.NewSchemaAsync();
         await using var db = NewContext(cs);
         var svc = new ExpenseService(db, new SystemClock());
-        await Assert.ThrowsAsync<FluentValidation.ValidationException>(() => svc.CreateAsync(new ExpenseInput("Snacks", null, 100, null), Wire.Admin, default));
+        // A category has to exist first (built in, or added by the business)…
+        await Assert.ThrowsAsync<BusinessRuleException>(() => svc.CreateAsync(new ExpenseInput("Snacks", null, 100, null), Wire.Admin, default));
         await Assert.ThrowsAsync<FluentValidation.ValidationException>(() => svc.CreateAsync(new ExpenseInput("Rent", null, 0, null), Wire.Admin, default));
         var id = await svc.CreateAsync(new ExpenseInput("Rent", null, 250000, "Shop"), Wire.Admin, default);
         Assert.True(id > 0);
+        // …and once added, it can be used; adding it twice is refused.
+        Assert.Equal("Snacks", await svc.AddCategoryAsync(" Snacks ", Wire.Admin, default));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => svc.AddCategoryAsync("snacks", Wire.Admin, default));
+        Assert.True(await svc.CreateAsync(new ExpenseInput("Snacks", null, 100, null), Wire.Admin, default) > 0);
+        Assert.Contains(await svc.CategoriesAsync(default), c => c is { Name: "Fuel", Custom: false });
     }
 
     [Fact]

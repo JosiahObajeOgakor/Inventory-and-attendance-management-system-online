@@ -33,7 +33,10 @@ public sealed class PurchaseRequest
 public sealed record PurchaseResult(int PurchaseOrderId, string PoNumber, decimal Subtotal, decimal VatAmount, decimal Total,
     decimal Outstanding, string Status, decimal PreviousBalance, decimal AppliedToPreviousBalance, decimal RemainingBalance);
 
-public sealed class PurchaseRequestValidator : AbstractValidator<PurchaseRequest>
+/// <summary><paramref name="AppliedToOrders"/> is what went against unpaid orders; the rest (if any) cleared an opening balance with no order behind it.</summary>
+public sealed record SupplierPaymentResult(string Reference, decimal Amount, decimal AppliedToOrders, decimal BalanceNow, int OrdersPaid);
+
+public sealed class PurchaseRequestValidator: AbstractValidator<PurchaseRequest>
 {
     public PurchaseRequestValidator()
     {
@@ -87,25 +90,22 @@ public sealed class PurchaseService(
 
         var previous = supplier.Balance;
         var totals = DocumentCalculator.Purchase(req.Lines.Select(l => (l.Quantity, l.UnitCost)), req.VatRate);
-        var split = PaymentWaterfall.ForNewDocument(previous, totals.Total, req.PaidNow);
+        // Credit we hold with this supplier (a negative balance, left by an edited order we had overpaid) is used first.
+        var creditUsed = previous < 0 ? Math.Min(-previous, totals.Total) : 0m;
+        var split = PaymentWaterfall.ForNewDocument(Math.Max(previous, 0m), totals.Total - creditUsed, req.PaidNow);
+        var paidOnNew = creditUsed + split.AppliedToNew;
+        var status = PaymentStatuses.For(paidOnNew, totals.Total);
         var account = paymentAccounts is null ? null : await paymentAccounts.ResolveAsync(req.PaymentMethod, req.AccountNumber, split.PaidNow, ct);
 
         var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.PurchaseOrders.AnyAsync(p => p.PoNumber == n, c), ct);
         var order = new PurchaseOrder
         {
             PoNumber = number, SupplierId = supplier.Id, OrderDate = orderDate, Status = PurchaseStatuses.Pending,
-            PaymentStatus = split.Status, TotalAmount = totals.Total, AmountPaid = split.AppliedToNew, CreatedByUserId = user.Id,
+            PaymentStatus = status, TotalAmount = totals.Total, AmountPaid = paidOnNew, CreatedByUserId = user.Id,
             Items = req.Lines.Select(l => new PurchaseOrderItem { ProductId = l.ProductId, Quantity = l.Quantity, UnitCost = l.UnitCost }).ToList(),
         };
         db.PurchaseOrders.Add(order);
         await db.SaveChangesAsync(ct);
-        if (split.AppliedToNew > 0)
-            db.SupplierPayments.Add(new SupplierPayment
-            {
-                PurchaseOrderId = order.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = split.AppliedToNew,
-                Method = req.PaymentMethod, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
-                AccountNumber = account?.AccountNumber,
-            });
 
         // Overflow pays older orders, oldest first (P2).
         var appliedToOld = 0m;
@@ -120,15 +120,11 @@ public sealed class PurchaseService(
                 var old = open.First(o => o.Id == a.DocumentId);
                 old.AmountPaid += a.Amount;
                 old.PaymentStatus = old.AmountPaid >= old.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
-                db.SupplierPayments.Add(new SupplierPayment
-                {
-                    PurchaseOrderId = old.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = a.Amount,
-                    Method = req.PaymentMethod, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
-                    AccountNumber = account?.AccountNumber,
-                });
+                db.SupplierPayments.Add(PaymentRow(supplier.Id, old.Id, a.Amount, req.PaymentMethod, number, user, account));
             }
             appliedToOld = applied;
         }
+        if (split.AppliedToNew > 0) db.SupplierPayments.Add(PaymentRow(supplier.Id, order.Id, split.AppliedToNew, req.PaymentMethod, number, user, account));
 
         supplier.Balance = supplier.Balance - split.PaidNow + totals.Total;
 
@@ -143,7 +139,7 @@ public sealed class PurchaseService(
         await db.SaveChangesAsync(ct);
 
         return new PurchaseResult(order.Id, number, totals.Subtotal, totals.VatAmount, totals.Total, split.Outstanding,
-            split.Status, previous, appliedToOld, previous - appliedToOld + split.Outstanding);
+            status, previous, appliedToOld, creditUsed > 0 ? supplier.Balance : previous - appliedToOld + split.Outstanding);
     }
 
     /// <summary>
@@ -203,17 +199,57 @@ public sealed class PurchaseService(
             order.AmountPaid = order.TotalAmount;
             order.PaymentStatus = PaymentStatuses.Paid;
             supplier.Balance -= outstanding;
-            db.SupplierPayments.Add(new SupplierPayment
-            {
-                PurchaseOrderId = order.Id, SupplierId = supplier.Id, PaymentDate = clock.UtcNow, Amount = outstanding,
-                Method = method, PaidByUserId = user.Id, BankName = account?.BankName, AccountName = account?.AccountName,
-                AccountNumber = account?.AccountNumber,
-            });
             db.Ledger.Add(SupplierLedger(clock.BusinessToday, supplier, LedgerEntryTypes.Debit, outstanding, order.PoNumber));
-            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PURCHASE_PAID", Entity = "PurchaseOrder", EntityId = order.Id.ToString(), At = clock.UtcNow, Detail = $"{order.PoNumber} ₦{outstanding:N2} via {method}" });
+            db.SupplierPayments.Add(PaymentRow(supplier.Id, order.Id, outstanding, method, order.PoNumber, user, account));
+            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PURCHASE_PAID", Entity = "PurchaseOrder", EntityId = order.Id.ToString(), At = clock.UtcNow, Detail = $"{order.PoNumber} ₦{outstanding:N2}" });
             await db.SaveChangesAsync(inner);
             return true;
         }, ct);
+
+    /// <summary>
+    /// "Pay supplier": any amount up to what we owe them, spread over their unpaid orders oldest first (the mirror of a customer payment).
+    /// Returns the reference the payment is filed under.
+    /// </summary>
+    public Task<SupplierPaymentResult> RecordPaymentAsync(int supplierId, decimal amount, string method, CurrentUser user, CancellationToken ct = default) =>
+        tx.RunAsync(async inner =>
+        {
+            if (amount <= 0) throw new BusinessRuleException("Enter an amount greater than zero.");
+            method = string.IsNullOrWhiteSpace(method) ? "Cash" : method.Trim();
+            if (method.Length > 30) throw new BusinessRuleException("Payment method is too long.");
+            var supplier = await db.Suppliers
+                .FromSqlInterpolated($"SELECT * FROM suppliers WHERE Id = {supplierId} FOR UPDATE")
+                .SingleOrDefaultAsync(inner) ?? throw new NotFoundException("Supplier");
+            if (supplier.Balance <= 0) throw new BusinessRuleException($"You don't owe {supplier.Name} anything.");
+            if (amount > supplier.Balance) throw new BusinessRuleException($"That is more than you owe {supplier.Name} (₦{supplier.Balance:N2}).");
+
+            var open = await db.PurchaseOrders
+                .FromSqlInterpolated($"SELECT * FROM purchase_orders WHERE SupplierId = {supplierId} AND PaymentStatus <> 'Paid' AND Status <> 'Cancelled' ORDER BY OrderDate, Id FOR UPDATE")
+                .ToListAsync(inner);
+            var reference = $"PAY-{clock.BusinessToday:yyyyMMdd}-{clock.UtcNow:HHmmss}";
+            var (apps, applied) = PaymentWaterfall.Spread(open.Select(o => new OpenDocument(o.Id, o.TotalAmount, o.AmountPaid)), amount);
+            foreach (var a in apps)
+            {
+                var po = open.First(o => o.Id == a.DocumentId);
+                po.AmountPaid += a.Amount;
+                po.PaymentStatus = po.AmountPaid >= po.TotalAmount ? PaymentStatuses.Paid : PaymentStatuses.Partial;
+                db.SupplierPayments.Add(PaymentRow(supplier.Id, po.Id, a.Amount, method, reference, user));
+            }
+            // The balance can include debt with no open order behind it (opening balances brought over from the old system): what the orders
+            // didn't absorb still reduces what we owe, it just isn't tied to a bill.
+            supplier.Balance -= amount;
+            db.Ledger.Add(SupplierLedger(clock.BusinessToday, supplier, LedgerEntryTypes.Debit, amount, reference));
+            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "SUPPLIER_PAYMENT", Entity = "Supplier", EntityId = supplierId.ToString(), At = clock.UtcNow, Detail = $"{reference} ₦{amount:N2} via {method} ({apps.Count} order(s))" });
+            await db.SaveChangesAsync(inner);
+            return new SupplierPaymentResult(reference, amount, applied, supplier.Balance, apps.Count);
+        }, ct);
+
+    /// <param name="account">The company account the money left (bank transfers), copied onto the payment.</param>
+    private SupplierPayment PaymentRow(int supplierId, int orderId, decimal amount, string method, string reference, CurrentUser user, AccountRef? account = null) => new()
+    {
+        SupplierId = supplierId, PurchaseOrderId = orderId, Amount = amount, PaidAt = clock.UtcNow,
+        Method = string.IsNullOrWhiteSpace(method) ? "Cash" : method.Length > 30 ? method[..30] : method, Reference = reference, PaidByUserId = user.Id,
+        BankName = account?.BankName, AccountName = account?.AccountName, AccountNumber = account?.AccountNumber,
+    };
 
     private static LedgerEntry SupplierLedger(DateOnly date, Supplier s, string type, decimal amount, string reference) => new()
     {

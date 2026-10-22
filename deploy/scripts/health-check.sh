@@ -1,43 +1,57 @@
 #!/usr/bin/env bash
-# Runs every 5 minutes (inventory-healthcheck.timer). Checks: services, API health, disk, RAM, TLS certificate expiry,
-# backup freshness. On any problem it sends ONE alert (webhook and/or email) per failure set, and re-alerts hourly.
-# Config /etc/inventory/monitor.env:  DOMAIN=inventory.example.com  ALERT_WEBHOOK=https://hc-ping.com/<uuid>/fail  ALERT_EMAIL=you@example.com
+# Every 5 minutes (inventory-healthcheck.timer, as inventory-backup). Checks the services, the API, the public site, disk, memory,
+# the TLS certificate, backup and restore-test freshness, the WhatsApp inbox, and that MySQL is never exposed.
+# On a problem: alert (email + WhatsApp, via inventory-alert), repeated hourly while it lasts, and an all-clear when it's fixed.
+# Config: /etc/inventory/monitor.env  DOMAIN=chewypetsfeeds.com  INBOX_SCHEMAS="inventory_chewypets inventory_candid"
+#         (+ /etc/inventory/alert.env HEARTBEAT_URL: pinged when healthy, so an external service notices if this server goes silent)
 set -uo pipefail
 source /etc/inventory/monitor.env
+source /etc/inventory/alert.env 2>/dev/null || true
 STATE=/var/lib/inventory-backup
 problems=()
 
-for svc in mysql inventory-api nginx; do
-  systemctl is-active --quiet "$svc" || problems+=("service $svc is not running")
-done
+for svc in mysql inventory-api nginx; do systemctl is-active --quiet "$svc" || problems+=("service $svc is not running"); done
 
 body=$(curl -fsS -m 10 http://127.0.0.1:5000/api/health 2>/dev/null || true)
-[ "$body" = '{"status":"healthy"}' ] || problems+=("API health endpoint not healthy")
+[ "$body" = '{"status":"healthy"}' ] || problems+=("API health check failed")
 
-disk=$(df --output=pcent / | tail -1 | tr -dc '0-9');       [ "${disk:-0}" -lt 85 ] || problems+=("disk ${disk}% full")
-avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo);    [ "${avail_kb:-0}" -gt 400000 ] || problems+=("low memory: $((avail_kb/1024)) MB available")
-
-# TLS certificate days left (needs the public 443 to answer; skipped if DOMAIN unset)
 if [ -n "${DOMAIN:-}" ]; then
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "https://$DOMAIN/" || true)
+  [ "$code" = 200 ] || problems+=("public site https://$DOMAIN answered $code")
   end=$(echo | openssl s_client -servername "$DOMAIN" -connect "$DOMAIN:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
   if [ -n "$end" ]; then days=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 )); [ "$days" -gt 14 ] || problems+=("TLS certificate expires in $days day(s)")
-  else problems+=("could not read TLS certificate for $DOMAIN"); fi
+  else problems+=("could not read the TLS certificate for $DOMAIN"); fi
 fi
 
-# Last successful backup must be < 26 h old
-if [ -f "$STATE/last_success" ]; then age=$(( $(date +%s) - $(cat "$STATE/last_success") )); [ "$age" -lt 93600 ] || problems+=("last successful backup is $((age/3600)) h old")
-else problems+=("no successful backup recorded yet"); fi
+disk=$(df --output=pcent / | tail -1 | tr -dc '0-9');    [ "${disk:-0}" -lt 85 ] || problems+=("disk ${disk}% full")
+avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo); [ "${avail_kb:-0}" -gt 300000 ] || problems+=("low memory: $((avail_kb/1024)) MB free")
 
-# Never expose MySQL: 3306 must be listening on loopback only.
-if ss -ltn 2>/dev/null | awk '{print $4}' | grep -E '(^|:)3306$' | grep -vE '^(127\.0\.0\.1|\[::1\]):3306$' | grep -q .; then problems+=("MySQL is listening on a non-loopback address!"); fi
+if [ -f "$STATE/last_success" ]; then a=$(( $(date +%s) - $(cat "$STATE/last_success") )); [ "$a" -lt 93600 ] || problems+=("last good backup is $((a/3600)) h old")
+else problems+=("no successful backup yet"); fi
+if [ -f "$STATE/last_restore_test" ]; then a=$(( $(date +%s) - $(cat "$STATE/last_restore_test") )); [ "$a" -lt 777600 ] || problems+=("last good restore test is $((a/86400)) days old")
+fi
 
-if [ ${#problems[@]} -eq 0 ]; then rm -f "$STATE/alert_sent"; exit 0; fi
+# WhatsApp inbox: customers waiting > 10 min, or messages that failed for good in the last hour.
+for s in ${INBOX_SCHEMAS:-}; do
+  read -r stuck failed < <(mysql --defaults-extra-file=/etc/inventory/backup.cnf -N -e \
+    "SELECT SUM(Status='Pending' AND ReceivedAt < UTC_TIMESTAMP() - INTERVAL 10 MINUTE), SUM(Status='Failed' AND ProcessedAt > UTC_TIMESTAMP() - INTERVAL 1 HOUR) FROM \`$s\`.inbound_messages" 2>/dev/null || echo "? ?")
+  [ "${stuck:-0}" = "?" ] && { problems+=("cannot read the WhatsApp inbox in $s"); continue; }
+  [ "${stuck:-0}" = NULL ] && stuck=0; [ "${failed:-0}" = NULL ] && failed=0
+  [ "${stuck:-0}" -eq 0 ] || problems+=("$stuck WhatsApp message(s) waiting over 10 min in $s")
+  [ "${failed:-0}" -eq 0 ] || problems+=("$failed WhatsApp message(s) could not be answered in the last hour in $s")
+done
 
-msg="Inventory server $(hostname): ${problems[*]}"
+if ss -ltn 2>/dev/null | awk '{print $4}' | grep -E '(^|:)3306$' | grep -vE '^(127\.0\.0\.1|\[::1\]):3306$' | grep -q .; then problems+=("MySQL is listening on a public address!"); fi
+
+if [ ${#problems[@]} -eq 0 ]; then
+  [ -n "${HEARTBEAT_URL:-}" ] && curl -fsS -m 10 "$HEARTBEAT_URL" >/dev/null 2>&1
+  if [ -f "$STATE/alert_sent" ]; then rm -f "$STATE/alert_sent"; /usr/local/bin/inventory-alert "Resolved" "All checks are passing again."; fi
+  exit 0
+fi
+
+msg=$(printf '%s; ' "${problems[@]}")
 echo "$msg" >&2
 if [ ! -f "$STATE/alert_sent" ] || [ -n "$(find "$STATE/alert_sent" -mmin +60 2>/dev/null)" ]; then
-  [ -n "${ALERT_WEBHOOK:-}" ] && curl -fsS -m 10 --data-urlencode "msg=$msg" "$ALERT_WEBHOOK" >/dev/null 2>&1
-  [ -n "${ALERT_EMAIL:-}" ] && command -v mail >/dev/null && echo "$msg" | mail -s "Inventory alert" "$ALERT_EMAIL"
-  touch "$STATE/alert_sent"
+  /usr/local/bin/inventory-alert "Server problem" "$msg" && touch "$STATE/alert_sent"
 fi
 exit 1

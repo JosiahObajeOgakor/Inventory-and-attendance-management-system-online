@@ -1,11 +1,12 @@
 [Unit]
-Description=Inventory MySQL backup (encrypted, off-VM)
-After=mysql.service
+Description=Inventory MySQL backup (encrypted with age, uploaded to Cloudflare R2)
+After=mysql.service network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=inventory-backup
 Group=inventory-backup
 ExecStart=/usr/local/bin/inventory-backup
-# OCI CLI reads its config from the backup user's ~/.oci (an API key limited to the backup bucket).
+# R2 credentials come from /etc/inventory/backup.env (an R2 token limited to the backup bucket).
 Nice=10

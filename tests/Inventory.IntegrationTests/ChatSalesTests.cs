@@ -94,7 +94,7 @@ public class ChatSalesTests(MySqlFixture mysql)
         var quotes = new QuotationService(db, tx, clock, co, SalesFor(db), new NoUsers());
         var admin = new RecordingNotifier(); var va = new FakeVirtualAccounts(); var ai = new CountingModel(aiJson); var sender = new RecordingSender();
         var alerts = new RecordingAlerts();
-        var pay = new PaymentLinkService(db, tx, clock, co, gateway ?? new FakeGateway(false), admin, new CustomerPaymentService(db, tx, clock), quotes, va, withAlerts ? alerts : null);
+        var pay = new PaymentLinkService(db, tx, clock, co, new PaymentGateways([gateway ?? new FakeGateway(false)]), admin, new CustomerPaymentService(db, tx, clock), quotes, va, withAlerts ? alerts : null);
         var opts = Options.Create(new SalesAssistantOptions());
         var texts = new ChatOrderText(db, co);
         var flow = new ChatFlowService(db, new ChatConversationService(db, clock), new CustomerLookupService(db), quotes, pay, new StockAvailabilityService(db, co, clock, opts),

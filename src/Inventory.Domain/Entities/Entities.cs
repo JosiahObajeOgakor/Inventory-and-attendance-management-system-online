@@ -133,7 +133,10 @@ public class Customer
     public string? Email { get; set; }
     public string CustomerType { get; set; } = CustomerTypes.Retailer;
     public string? TaxId { get; set; }
+    /// <summary>Legacy: rebates used to be a percentage of each sale. Kept for old data; <see cref="RebatePerUnit"/> is what accrues now.</summary>
     public decimal RebateRatePct { get; set; } = 1.0m;
+    /// <summary>Rebate in naira earned per unit (bag) bought, on every non-walk-in sale. 0 = no rebate.</summary>
+    public decimal RebatePerUnit { get; set; }
     public decimal CreditLimit { get; set; }
     /// <summary>What this customer owes (maintained running total).</summary>
     public decimal Balance { get; set; }
@@ -171,6 +174,10 @@ public class Invoice
     public DateTime? VoidedAt { get; set; }
     public int? VoidedByUserId { get; set; }
     public string? VoidReason { get; set; }
+    public string? DeliveryAddress { get; set; }
+    public string? DeliveryZone { get; set; }
+    /// <summary>Included in <see cref="TotalAmount"/>, after VAT. Not goods revenue.</summary>
+    public decimal DeliveryFee { get; set; }
     public List<InvoiceItem> Items { get; set; } = [];
     public List<Payment> Payments { get; set; } = [];
 }
@@ -202,22 +209,6 @@ public class Payment
     public string? AccountNumber { get; set; }
     /// <summary>Who sent it (the name the customer paid under), when known.</summary>
     public string? PayerName { get; set; }
-}
-
-/// <summary>Money paid OUT to a supplier against a purchase order, and which of the company's own accounts it was sent from.</summary>
-public class SupplierPayment
-{
-    public int Id { get; set; }
-    public int PurchaseOrderId { get; set; }
-    public int SupplierId { get; set; }
-    public DateTime PaymentDate { get; set; }
-    public decimal Amount { get; set; }
-    public string Method { get; set; } = "Cash";
-    /// <summary>The company account the money left (bank transfers).</summary>
-    public string? BankName { get; set; }
-    public string? AccountName { get; set; }
-    public string? AccountNumber { get; set; }
-    public int PaidByUserId { get; set; }
 }
 
 /// <summary>Kept denormalised on purpose: survives deletion of the document (S10).</summary>

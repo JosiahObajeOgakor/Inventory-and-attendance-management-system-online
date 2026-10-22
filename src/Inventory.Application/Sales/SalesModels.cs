@@ -25,10 +25,16 @@ public sealed class SaleRequest
     /// <summary>Who sent the money, if it was not the customer themselves ("Josiah paid for Ngozi"). Defaults to the customer's name.</summary>
     public string? PayerName { get; set; }
     public decimal DiscountPct { get; set; }
+    /// <summary>A fixed naira discount instead of a percentage ("₦2,000 off"). When set (&gt; 0) it wins over <see cref="DiscountPct"/>.</summary>
+    public decimal? DiscountAmount { get; set; }
     /// <summary>0 when VAT isn't being charged.</summary>
     public decimal VatRate { get; set; }
     public decimal PaidNow { get; set; }
     public DateOnly? DueDate { get; set; }
+    /// <summary>Added to the total after VAT. Zero for pickup / in-store sales.</summary>
+    public decimal DeliveryFee { get; set; }
+    public string? DeliveryZone { get; set; }
+    public string? DeliveryAddress { get; set; }
     public List<SaleLineDto> Lines { get; set; } = [];
 }
 
@@ -47,8 +53,12 @@ public sealed class SaleRequestValidator : AbstractValidator<SaleRequest>
         RuleFor(x => x.PriceTier).Must(PriceTiers.IsValid).WithMessage("Unknown price tier.");
         RuleFor(x => x.PaymentMethod).Must(m => PaymentMethods.Contains(m)).WithMessage("Unknown payment method.");
         RuleFor(x => x.DiscountPct).InclusiveBetween(0, 100);
+        RuleFor(x => x.DiscountAmount).GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue);
         RuleFor(x => x.VatRate).InclusiveBetween(0, 100);
         RuleFor(x => x.PaidNow).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DeliveryFee).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DeliveryZone).MaximumLength(60);
+        RuleFor(x => x.DeliveryAddress).MaximumLength(250);
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one product line.");
         RuleForEach(x => x.Lines).ChildRules(l =>
         {

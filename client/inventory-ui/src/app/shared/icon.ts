@@ -34,6 +34,7 @@ const PATHS: Record<string, string> = {
   gift: 'M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7c-2-4-6-3-5 0M12 7c2-4 6-3 5 0',
   settings: 'M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1M15 5v4M9 10v4M17 15v4',
   barcode: 'M4 5v14M7 5v14M11 5v14M14 5v14M17 5v14M20 5v14',
+  send: 'M21 3L10 14M21 3l-7 18-4-7-7-4z',
   spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
 };
 

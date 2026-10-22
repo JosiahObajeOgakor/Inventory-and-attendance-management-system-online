@@ -31,7 +31,7 @@ public class SalesTests(MySqlFixture mysql)
         Assert.Equal(("Debit", 14725m), (ledger.EntryType, ledger.Amount));
         Assert.Equal(r.InvoiceNumber, ledger.Reference);
         Assert.Equal(10000m, (await check.Payments.SingleAsync()).Amount);
-        Assert.Equal(230m, (await check.RebateEntries.SingleAsync()).Amount);   // 1% of net sales 23,000 (total − VAT)
+        Assert.Equal(200m, (await check.RebateEntries.SingleAsync()).Amount);   // ₦100 per unit × 2 units
         Assert.Single(await check.AuditLogs.ToListAsync());
     }
 

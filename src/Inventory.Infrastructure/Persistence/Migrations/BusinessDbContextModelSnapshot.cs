@@ -272,8 +272,7 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime(6)");
 
                     b.Property<string>("Detail")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Entity")
                         .IsRequired()
@@ -997,6 +996,10 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("varchar(250)");
 
+                    b.Property<decimal>("DefaultRebatePerUnit")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
                     b.Property<decimal>("DefaultRebateRatePct")
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)");
@@ -1115,6 +1118,10 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("varchar(5)");
 
+                    b.Property<decimal>("RebatePerUnit")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
                     b.Property<decimal>("RebateRatePct")
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)");
@@ -1126,6 +1133,41 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("customers", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.DeliveryZone", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Fee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("delivery_zones", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Fee = 3000m,
+                            IsActive = true,
+                            Name = "Lagos"
+                        });
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.DepreciationRun", b =>
@@ -1338,6 +1380,25 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("expenses", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.ExpenseCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("expense_categories", (string)null);
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.FixedAsset", b =>
@@ -1788,6 +1849,78 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("idempotency_records", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.InboundMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ButtonId")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ReplyJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Sender")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Text")
+                        .HasMaxLength(4096)
+                        .HasColumnType("varchar(4096)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Channel", "ExternalId")
+                        .IsUnique();
+
+                    b.HasIndex("Sender", "Status");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("inbound_messages", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.Invoice", b =>
                 {
                     b.Property<int>("Id")
@@ -1807,6 +1940,18 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasMaxLength(250)
+                        .HasColumnType("varchar(250)");
+
+                    b.Property<decimal>("DeliveryFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("DeliveryZone")
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
 
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(14, 2)
@@ -2155,6 +2300,10 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("varchar(30)");
 
+                    b.Property<DateTime?>("AdminNotifiedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
                     b.Property<decimal>("Amount")
                         .HasPrecision(14, 2)
                         .HasColumnType("decimal(14,2)");
@@ -2210,13 +2359,23 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Provider")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
+                        .HasColumnType("varchar(20)")
+                        .HasDefaultValue("paystack");
+
+                    b.Property<string>("ProviderReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
 
                     b.Property<string>("Reference")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("varchar(80)");
+
+                    b.Property<DateTime?>("RiderNotifiedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -2235,11 +2394,13 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.HasIndex("Reference")
                         .IsUnique();
 
+                    b.HasIndex("Provider", "ProviderReference");
+
                     b.HasIndex("DocType", "DocId", "Status");
 
                     b.ToTable("payment_links", null, t =>
                         {
-                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled')");
+                            t.HasCheckConstraint("CK_payment_links_status", "Status IN ('Pending','Paid','PaidUnfulfilled','Cancelled')");
                         });
                 });
 
@@ -2435,6 +2596,29 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("products", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.ProductImage", b =>
+                {
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("mediumblob");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("ProductId");
+
+                    b.ToTable("product_images", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.ProductSerial", b =>
                 {
                     b.Property<int>("Id")
@@ -2585,6 +2769,18 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("CustomerId")
                         .HasColumnType("int");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasMaxLength(250)
+                        .HasColumnType("varchar(250)");
+
+                    b.Property<decimal>("DeliveryFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.Property<string>("DeliveryZone")
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
 
                     b.Property<decimal>("DiscountAmount")
                         .HasPrecision(14, 2)
@@ -2852,6 +3048,32 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("suppliers", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("SupplierId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("supplier_items", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.SupplierPayment", b =>
                 {
                     b.Property<int>("Id")
@@ -2867,8 +3089,8 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasColumnType("varchar(40)");
 
                     b.Property<decimal>("Amount")
-                        .HasPrecision(14, 2)
-                        .HasColumnType("decimal(14,2)");
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
 
                     b.Property<string>("BankName")
                         .HasMaxLength(80)
@@ -2876,18 +3098,23 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Method")
                         .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<DateTime>("PaidAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
 
                     b.Property<int>("PaidByUserId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("PaymentDate")
-                        .HasPrecision(6)
-                        .HasColumnType("datetime(6)");
-
                     b.Property<int>("PurchaseOrderId")
                         .HasColumnType("int");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
 
                     b.Property<int>("SupplierId")
                         .HasColumnType("int");
@@ -2896,9 +3123,167 @@ namespace Inventory.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PurchaseOrderId");
 
-                    b.HasIndex("SupplierId");
+                    b.HasIndex("SupplierId", "PaidAt");
 
                     b.ToTable("supplier_payments", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierProduct", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<int?>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("SupplierId", "Name");
+
+                    b.ToTable("supplier_products", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.Supply", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AddedToStock")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("AmountPaid")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(400)
+                        .HasColumnType("varchar(400)");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<string>("PaymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SupplyDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<int?>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Reference")
+                        .IsUnique();
+
+                    b.HasIndex("SupplyDate");
+
+                    b.HasIndex("SupplierId", "SupplyDate");
+
+                    b.ToTable("supplies", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplyItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("decimal(14,2)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<int?>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(40)
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<int?>("SupplierProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SupplyId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("decimal(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierProductId");
+
+                    b.HasIndex("SupplyId");
+
+                    b.ToTable("supply_items", (string)null);
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.TaxFiling", b =>
@@ -3305,6 +3690,15 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.ProductImage", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.Product", null)
+                        .WithOne()
+                        .HasForeignKey("Inventory.Domain.Entities.ProductImage", "ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.ProductSerial", b =>
                 {
                     b.HasOne("Inventory.Domain.Entities.Product", null)
@@ -3415,6 +3809,77 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierItem", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Inventory.Domain.Entities.Supplier", null)
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierPayment", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.PurchaseOrder", null)
+                        .WithMany()
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Inventory.Domain.Entities.Supplier", null)
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplierProduct", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.Product", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Inventory.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.Supply", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.SupplyItem", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.SupplierProduct", null)
+                        .WithMany()
+                        .HasForeignKey("SupplierProductId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Inventory.Domain.Entities.Supply", null)
+                        .WithMany("Items")
+                        .HasForeignKey("SupplyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.Warehouse", b =>
                 {
                     b.HasOne("Inventory.Domain.Entities.Branch", null)
@@ -3460,6 +3925,11 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.Quotation", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.Supply", b =>
                 {
                     b.Navigation("Items");
                 });

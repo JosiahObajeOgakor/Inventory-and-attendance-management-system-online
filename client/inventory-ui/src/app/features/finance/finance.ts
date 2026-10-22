@@ -5,6 +5,7 @@ import { Icon } from '../../shared/icon';
 import { PagedList } from '../../shared/paged-list';
 import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
 
+const EARLIEST = new Date(2020, 0, 1);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 @Component({
@@ -34,10 +35,23 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
           <div class="card kpi"><span class="eyebrow">Gross profit</span><div class="value money">{{ s.grossProfit | naira }}</div></div>
           <div class="card kpi" [class.warn]="s.netProfit < 0"><span class="eyebrow">Profit after expenses</span><div class="value money">{{ s.netProfit | naira }}</div><div class="sub">Expenses: {{ s.expenses | naira }}</div></div>
         </div>
-        <div class="grid cols-3 gap">
-          <div class="card kpi"><span class="eyebrow">Customers owe us</span><div class="value money">{{ s.accountsReceivable | naira }}</div></div>
-          <div class="card kpi"><span class="eyebrow">We owe suppliers</span><div class="value money">{{ s.accountsPayable | naira }}</div></div>
-          <div class="card kpi"><span class="eyebrow">Rebates accrued, not yet redeemed</span><div class="value money">{{ s.rebatesAvailable | naira }}</div></div>
+        <!-- the buying side of the same month, so the page covers what the business spends as well as what it earns -->
+        <div class="grid cols-4 gap">
+          <div class="card kpi"><span class="eyebrow">Bought from suppliers</span><div class="value money">{{ s.purchasesThisMonth | naira }}</div>
+            <div class="sub">Paid out this month: {{ s.paidToSuppliers | naira }}</div></div>
+          <div class="card kpi" [class.warn]="s.purchasesUnpaid > 0"><span class="eyebrow">Unpaid on this month’s purchases</span>
+            <div class="value money">{{ s.purchasesUnpaid | naira }}</div></div>
+          <div class="card kpi"><span class="eyebrow">Stock at cost</span><div class="value money">{{ s.inventoryValue | naira }}</div>
+            <div class="sub">What is on the shelves now</div></div>
+          <div class="card kpi"><span class="eyebrow">Rebates accrued, not yet redeemed</span><div class="value money">{{ s.rebatesAvailable | naira }}</div>
+            <div class="sub">Owed to customers as goods</div></div>
+        </div>
+
+        <div class="grid cols-2 gap">
+          <div class="card kpi"><span class="eyebrow">Customers owe us</span><div class="value money">{{ s.accountsReceivable | naira }}</div>
+            <div class="sub">Everything unpaid on their sales</div></div>
+          <div class="card kpi" [class.warn]="s.accountsPayable > 0"><span class="eyebrow">We owe suppliers</span><div class="value money">{{ s.accountsPayable | naira }}</div>
+            <div class="sub">Purchase records and older orders together</div></div>
         </div>
       }
 
@@ -84,7 +98,9 @@ export class FinancePage implements OnInit {
 
   protected readonly months = (() => {
     const out: { value: string; label: string }[] = []; const now = new Date();
-    for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ value: `${d.getFullYear()}-${d.getMonth() + 1}`, label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }); }
+    // Every month from now back to January 2020, newest first.
+    for (let d = new Date(now.getFullYear(), now.getMonth(), 1); d >= EARLIEST; d = new Date(d.getFullYear(), d.getMonth() - 1, 1))
+      out.push({ value: `${d.getFullYear()}-${d.getMonth() + 1}`, label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` });
     return out;
   })();
   protected readonly selectedMonth = signal(this.months[0].value);

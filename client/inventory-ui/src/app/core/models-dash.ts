@@ -1,6 +1,6 @@
 export interface Kpi { current: number; previous: number; changePct: number | null; }
 export interface DayPoint { date: string; revenue: number; collected: number; grossProfit: number; expenses: number; }
-export interface MonthPoint { year: number; month: number; revenue: number; grossProfit: number; expenses: number; }
+export interface MonthPoint { year: number; month: number; revenue: number; grossProfit: number; expenses: number; cogs: number; purchases: number; }
 export interface WarehouseStock { id: number; name: string; units: number; costValue: number; retailValue: number; products: number; lowBatches: number; expiredUnits: number; expiringSoonUnits: number; }
 export interface CustomerMonth { year: number; month: number; sales: number; grossProfit: number; profitability: number; }
 export interface CustomerHero { id: number; name: string; ranking: string; openBalance: number; months: CustomerMonth[]; }
@@ -11,6 +11,8 @@ export interface Overview {
   asOf: string; revenue: Kpi; grossProfit: Kpi; netProfit: Kpi; losses: Kpi; collected: Kpi; inventoryValue: number; customers: number; newCustomersThisMonth: number;
   receivablesTotal: number; overdueTotal: number; days: DayPoint[]; months: MonthPoint[]; warehouses: WarehouseStock[]; topCustomers: CustomerHero[];
   topProducts: ProductMover[]; slowMovers: ProductMover[]; signals: Signal[];
+  /** What the goods sold cost us, and what we bought from suppliers — this month vs last. */
+  cogs: Kpi | null; purchases: Kpi | null; payablesTotal: number; suppliersOwed: number;
 }
 export interface CalendarData { year: number; month: number; due: DueItem[]; overdue: DueItem[]; }
 export interface Advice { title: string; body: string; priority: 'high' | 'medium' | 'low'; }

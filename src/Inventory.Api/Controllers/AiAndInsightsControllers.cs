@@ -3,7 +3,9 @@ using Inventory.Api.Infrastructure;
 using Inventory.Application.Abstractions;
 using Inventory.Application.Ai;
 using Inventory.Application.Analytics;
+using Inventory.Application.Alerts;
 using Inventory.Application.Dashboard;
+using Inventory.Application.Documents;
 using Inventory.Application.Email;
 using Inventory.Infrastructure.Localization;
 using Inventory.Infrastructure.Persistence;
@@ -31,12 +33,34 @@ public class AiController(ICurrentUser cu, AssistantService assistant, InsightSe
     public Task<InsightSet> Insights([FromQuery] bool refresh, CancellationToken ct) => insights.GetAsync(refresh, ct);
 }
 
+public sealed record SendAlertsRequest(string? Email, string? WhatsApp);
+
+/// <summary>
+/// The daily digest — what has run out, what expires soon, who owes money, and which customers are overdue to buy again. It is sent by itself
+/// each morning; these endpoints are for looking at it now, or having it sent again on demand.
+/// </summary>
+[ApiController, Route("api/alerts"), Authorize(Policy = Policies.Admin)]
+public class AlertsController(ICurrentUser cu, BusinessAlertService alerts) : AppController(cu)
+{
+    [HttpGet]
+    public Task<BusinessAlerts> Today(CancellationToken ct) => alerts.BuildAsync(ct);
+
+    /// <summary>Sends today's digest now, to the business mailbox and WhatsApp number unless another is given.</summary>
+    [HttpPost("send")]
+    public async Task<object> Send(SendAlertsRequest r, CancellationToken ct) => new { message = await alerts.SendAsync(r.Email, r.WhatsApp, ct) };
+}
+
 [ApiController, Route("api/dashboard"), Authorize(Policy = Policies.Admin)]
 public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q, ChatInsightsQueries chat) : AppController(cu)
 {
     /// <summary>What the WhatsApp / website sales assistant brought in over the last N days.</summary>
     [HttpGet("chat")]
     public Task<ChatSummary> Chat([FromQuery] int days = 30, CancellationToken ct = default) => chat.GetAsync(days, ct);
+
+    /// <summary>Customers overdue to buy again, judged against each one's own rhythm.</summary>
+    [HttpGet("reorder-due")]
+    public Task<List<ReorderDue>> ReorderDue([FromQuery] int max, [FromServices] ReorderDueQueries q2, CancellationToken ct) =>
+        q2.DueAsync(max <= 0 ? 10 : max, ct);
 
     [HttpGet("overview")]
     public Task<Overview> Overview([FromQuery] int days = 30, CancellationToken ct = default) => q.GetAsync(days, ct);
@@ -47,10 +71,41 @@ public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q, Cha
 
 /// <summary>Email a quotation or the price list with the PDF attached. Staff can send; the template preview shows exactly what the customer will get.</summary>
 [ApiController, Route("api/email")]
-public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSender sender) : AppController(cu)
+public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSender sender, DocumentSendService whatsapp) : AppController(cu)
 {
+    /// <summary><c>configured</c> = email can be sent; <c>whatsApp</c> = this business's WhatsApp number can send documents.</summary>
     [HttpGet("status"), Authorize(Policy = Policies.Staff)]
-    public object Status() => new { configured = sender.IsConfigured };
+    public object Status() => new { configured = sender.IsConfigured, whatsApp = whatsapp.WhatsAppReady };
+
+    // ---- a sale's receipt, to the customer (anyone who can sell can send it)
+    [HttpPost("receipts/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
+    public Task<EmailPreview> PreviewReceipt(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewReceiptAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("receipts/{id:int}/send"), Authorize(Policy = Policies.Staff)]
+    public async Task<EmailSent> SendReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendReceiptAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("receipts/{id:int}/whatsapp"), Authorize(Policy = Policies.Staff)]
+    public async Task<DocumentSent> WhatsAppReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.ReceiptToWhatsAppAsync(id, r.To, Me, ct);
+
+    // ---- a purchase from a supplier's own items, to that supplier
+    [HttpPost("supplies/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    public Task<EmailPreview> PreviewSupply(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewSupplyAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("supplies/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    public async Task<EmailSent> SendSupply(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendSupplyAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("supplies/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    public async Task<DocumentSent> WhatsAppSupply(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.SupplyToWhatsAppAsync(id, r.To, Me, ct);
+
+    // ---- a purchase order, to the supplier (purchasing is for managers and the CEO)
+    [HttpPost("purchases/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    public Task<EmailPreview> PreviewPurchase(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewPurchaseAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("purchases/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    public async Task<EmailSent> SendPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendPurchaseAsync(id, r.To, r.Note, Me, ct);
+
+    [HttpPost("purchases/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    public async Task<DocumentSent> WhatsAppPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.PurchaseToWhatsAppAsync(id, r.To, Me, ct);
 
     [HttpPost("quotations/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
     public Task<EmailPreview> PreviewQuotation(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewQuotationAsync(id, r.To, r.Note, Me, ct);
@@ -92,9 +147,10 @@ public class AnalyticsController(ICurrentUser cu, AnalyticsService svc) : AppCon
 }
 
 public sealed record ArchiveRequest(DateOnly Cutoff, string Confirm);
+public sealed record ClearHistoryRequest(string[]? What, string Confirm);
 
 /// <summary>Database size and archive. Administrators only; archiving is destructive, so it needs the word ARCHIVE typed and refuses recent dates.</summary>
-[ApiController, Route("api/admin/archive"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/admin/archive"), Authorize(Policy = Policies.Ceo)]
 public class ArchiveController(ICurrentUser cu, ArchiveService svc) : AppController(cu)
 {
     [HttpGet("usage")]
@@ -109,6 +165,19 @@ public class ArchiveController(ICurrentUser cu, ArchiveService svc) : AppControl
         if (!string.Equals(r.Confirm?.Trim(), "ARCHIVE", StringComparison.Ordinal))
             return BadRequest(new ProblemDetails { Status = 400, Title = "Type ARCHIVE to confirm." });
         return Ok(await svc.ArchiveAsync(r.Cutoff, Me, ct));
+    }
+
+    /// <summary>How many records clearing these kinds of history would remove. <paramref name="what"/>: sales, quotations, purchases, expenses, finance, payroll, stock-movements, activity.</summary>
+    [HttpGet("clear-preview")]
+    public Task<List<ArchivePreviewRow>> ClearPreview([FromQuery] string[] what, CancellationToken ct) => svc.ClearPreviewAsync(what, ct);
+
+    /// <summary>Clears all history of the chosen kinds (copied to a ZIP first). Needs the word CLEAR typed.</summary>
+    [HttpPost("clear")]
+    public async Task<IActionResult> Clear(ClearHistoryRequest r, CancellationToken ct)
+    {
+        if (!string.Equals(r.Confirm?.Trim(), "CLEAR", StringComparison.Ordinal))
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Type CLEAR to confirm." });
+        return Ok(await svc.ClearAsync(r.What ?? [], Me, ct));
     }
 
     [HttpGet("files")]
@@ -145,14 +214,15 @@ public class LanguageController(LanguageCatalogue catalogue) : ControllerBase
 /// (which must be one this server created), and a server-to-server confirmation from Paystack of the amount. Company routing comes from the reference prefix.
 /// </summary>
 [ApiController, Route("api/paystack")]
-public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGateway gateway, CompanyRegistry registry, ILogger<PaystackWebhookController> log) : ControllerBase
+public class PaystackWebhookController(Inventory.Application.Payments.PaymentGateways gateways, CompanyRegistry registry, ILogger<PaystackWebhookController> log) : ControllerBase
 {
     [HttpPost("webhook"), AllowAnonymous, RequestSizeLimit(65536)]
     public async Task<IActionResult> Webhook(CancellationToken ct)
     {
         string raw;
         using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
-        if (!gateway.IsValidSignature(raw, Request.Headers["x-paystack-signature"].FirstOrDefault())) return Unauthorized();
+        var gateway = gateways.Get(Inventory.Domain.Entities.PaymentProviders.Paystack);
+        if (gateway is null || !gateway.IsValidSignature(raw, Request.Headers["x-paystack-signature"].FirstOrDefault())) return Unauthorized();
 
         string? evt = null, reference = null;
         try { var root = System.Text.Json.Nodes.JsonNode.Parse(raw); evt = root?["event"]?.GetValue<string>(); reference = root?["data"]?["reference"]?.GetValue<string>(); }
@@ -165,9 +235,68 @@ public class PaystackWebhookController(Inventory.Application.Payments.IPaymentGa
         var result = await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>().SettleAsync(reference, ct);
         log.LogInformation("Paystack webhook: applied={Applied} already={Already}", result.Applied, result.AlreadySettled);
         if (result.Applied)
-            await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentFollowUpService>().SendReceiptIfPossibleAsync(result, ct);
-        // An order started in a chat is confirmed in that chat, whichever way it was paid.
+            await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.OrderDispatchService>().CompleteAsync(result, ct);
+        // An order started in the WhatsApp (Twilio) or website chat is confirmed in that same chat, whichever way it was paid.
         await HttpContext.RequestServices.GetRequiredService<Inventory.Application.SalesAssistant.Chat.ChatPaymentNotifier>().NotifyAsync(result, ct);
+        return Ok();
+    }
+}
+
+/// <summary>
+/// AlatPay calls this (one URL per company: /api/alatpay/webhook/{companyKey}) when a payment completes. Its body names AlatPay's transaction, not
+/// our payment link, so it is used as a signed doorbell: after the signature checks out, every pending AlatPay link of that company is re-checked
+/// with AlatPay's own status endpoint and the paid ones are settled. Nothing is ever marked paid from the webhook body itself.
+/// </summary>
+[ApiController, Route("api/alatpay")]
+public class AlatPayWebhookController(Inventory.Application.Payments.PaymentGateways gateways, CompanyRegistry registry, Inventory.Application.Abstractions.IClock clock,
+    ILogger<AlatPayWebhookController> log) : ControllerBase
+{
+    [HttpPost("webhook/{companyKey}"), AllowAnonymous, RequestSizeLimit(65536)]
+    public async Task<IActionResult> Webhook(string companyKey, CancellationToken ct)
+    {
+        string raw;
+        using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
+        var gateway = gateways.Get(Inventory.Domain.Entities.PaymentProviders.AlatPay);
+        if (gateway is null || !gateway.IsValidSignature(raw, Request.Headers["x-signature"].FirstOrDefault())) return Unauthorized();
+        if (registry.Find(companyKey) is null) { log.LogWarning("AlatPay webhook for an unknown company"); return Ok(); }
+        HttpContext.Items[RequestCompany.OverrideItem] = companyKey;
+
+        var pay = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>();
+        var dispatch = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.OrderDispatchService>();
+        var chat = HttpContext.RequestServices.GetRequiredService<Inventory.Application.SalesAssistant.Chat.ChatPaymentNotifier>();
+        var settled = await pay.SettlePendingAsync(Inventory.Domain.Entities.PaymentProviders.AlatPay, clock.UtcNow.AddDays(-3), ct);
+        foreach (var result in settled) { await dispatch.CompleteAsync(result, ct); await chat.NotifyAsync(result, ct); }
+        log.LogInformation("AlatPay webhook: settled {Count}", settled.Count);
+        return Ok();   // always 200 once the signature is valid, so AlatPay stops retrying
+    }
+
+    /// <summary>
+    /// The same doorbell without the company in the URL (as registered for the chat's single-use bank accounts): the body's OrderId is our own reference,
+    /// which starts with the company key, so it is routed by that. Nothing is marked paid from the body: the link is checked with AlatPay first.
+    /// </summary>
+    [HttpPost("webhook"), AllowAnonymous, RequestSizeLimit(65536)]
+    public async Task<IActionResult> Webhook(CancellationToken ct)
+    {
+        string raw;
+        using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
+        var gateway = gateways.Get(Inventory.Domain.Entities.PaymentProviders.AlatPay);
+        if (gateway is null || !gateway.IsValidSignature(raw, Request.Headers["x-signature"].FirstOrDefault())) return Unauthorized();
+        string? orderId;
+        try
+        {
+            var root = System.Text.Json.Nodes.JsonNode.Parse(raw);
+            var data = root?["Value"]?["Data"] ?? root?["value"]?["data"] ?? root?["Data"] ?? root?["data"];
+            orderId = (data?["OrderId"] ?? data?["orderId"])?.ToString();
+        }
+        catch (System.Text.Json.JsonException) { return BadRequest(); }
+        var key = orderId?.Split('-')[0];
+        if (key is null || registry.Find(key) is null) { log.LogWarning("AlatPay webhook without a known company"); return Ok(); }
+        HttpContext.Items[RequestCompany.OverrideItem] = key;
+        var pay = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.PaymentLinkService>();
+        var result = await pay.SettleAsync(orderId!, ct);
+        if (result.Applied) await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Payments.OrderDispatchService>().CompleteAsync(result, ct);
+        await HttpContext.RequestServices.GetRequiredService<Inventory.Application.SalesAssistant.Chat.ChatPaymentNotifier>().NotifyAsync(result, ct);
+        log.LogInformation("AlatPay webhook (bank account): applied={Applied} already={Already} unfulfilled={Unfulfilled}", result.Applied, result.AlreadySettled, result.Unfulfilled);
         return Ok();
     }
 }

@@ -29,7 +29,12 @@ public sealed class ProductInput
     public decimal? FiberPct { get; set; }
     public decimal? MoisturePct { get; set; }
     public string? NutritionSummary { get; set; }
+
+    /// <summary>The suppliers who supply this product (it goes on each one's item list). Null = leave the links as they are.</summary>
+    public List<int>? SupplierIds { get; set; }
 }
+
+public sealed record ProductSupplierDto(int SupplierId, string Supplier, decimal UnitCost);
 
 public sealed class NewProductRequest
 {
@@ -86,6 +91,7 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
             await db.SaveChangesAsync(inner);
             // A scanned supplier code is kept; an unlabelled product gets an in-store one, which needs the new id.
             product.Barcode ??= Barcodes.MintInternalBarcode(product.Id);
+            await LinkSuppliersAsync(product, p.SupplierIds, inner);
 
             if (req.OpeningQuantity > 0)
             {
@@ -134,34 +140,87 @@ public sealed class ProductService(IBusinessDbContext db, TransactionRunner tx, 
         p.Barcode = barcode; p.TracksSerial = input.TracksSerial;
         p.Species = input.Species; p.LifeStage = input.LifeStage; p.ProteinPct = input.ProteinPct; p.FatPct = input.FatPct;
         p.FiberPct = input.FiberPct; p.MoisturePct = input.MoisturePct; p.NutritionSummary = input.NutritionSummary;
+        await LinkSuppliersAsync(p, input.SupplierIds, ct);
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_UPDATED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Who supplies this product, with what they usually charge for it.</summary>
+    public async Task<List<ProductSupplierDto>> SuppliersAsync(int id, CancellationToken ct = default) =>
+        await (from si in db.SupplierItems.AsNoTracking().Where(x => x.ProductId == id)
+               join s in db.Suppliers.AsNoTracking() on si.SupplierId equals s.Id
+               orderby s.Name
+               select new ProductSupplierDto(s.Id, s.Name, si.UnitCost)).ToListAsync(ct);
+
     /// <summary>
-    /// Delete (Admin). Never removes stock silently (defect D3): a product with any history is deactivated; a
-    /// product with none is deleted only if it holds no stock. Returns true when it was hard-deleted.
+    /// Puts the product on exactly these suppliers' item lists. A new link starts at the product's cost price; an existing link keeps the cost the
+    /// supplier's list already has.
+    /// </summary>
+    private async Task LinkSuppliersAsync(Product product, List<int>? supplierIds, CancellationToken ct)
+    {
+        if (supplierIds is null) return;
+        var wanted = supplierIds.Where(x => x > 0).Distinct().ToList();
+        if (await db.Suppliers.CountAsync(s => wanted.Contains(s.Id), ct) != wanted.Count) throw new NotFoundException("Supplier");
+        var existing = product.Id == 0 ? [] : await db.SupplierItems.Where(x => x.ProductId == product.Id).ToListAsync(ct);
+        db.SupplierItems.RemoveRange(existing.Where(e => !wanted.Contains(e.SupplierId)));
+        foreach (var sid in wanted.Where(sid => existing.All(e => e.SupplierId != sid)))
+            db.SupplierItems.Add(new SupplierItem { SupplierId = sid, ProductId = product.Id, UnitCost = product.CostPrice });
+    }
+
+    // ---- product photo (printed on the catalog sent to customers)
+    public async Task SetImageAsync(int id, byte[] data, CurrentUser user, CancellationToken ct = default)
+    {
+        if (data.Length > Company.CompanyProfileService.MaxImageBytes) throw new BusinessRuleException("That image is larger than 2 MB. Use a smaller file.");
+        var type = Company.CompanyProfileService.Sniff(data) ?? throw new BusinessRuleException("Only PNG or JPEG images can be used.");
+        var p = await db.Products.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Product");
+        var img = await db.ProductImages.SingleOrDefaultAsync(x => x.ProductId == id, ct);
+        if (img is null) db.ProductImages.Add(img = new ProductImage { ProductId = id });
+        img.ContentType = type; img.Data = data; img.UpdatedAt = clock.UtcNow;
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_IMAGE_SET", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task<ProductImage?> ImageAsync(int id, CancellationToken ct = default) => db.ProductImages.AsNoTracking().SingleOrDefaultAsync(x => x.ProductId == id, ct);
+
+    public async Task RemoveImageAsync(int id, CurrentUser user, CancellationToken ct = default)
+    {
+        var img = await db.ProductImages.SingleOrDefaultAsync(x => x.ProductId == id, ct);
+        if (img is null) return;
+        db.ProductImages.Remove(img);
+        db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_IMAGE_REMOVED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Deletes a product from the stock records permanently (CEO): its batches and whatever they hold, its stock movements, serial numbers,
+    /// price history and supplier item links go with it. A product still printed on a sale, purchase or quotation can't be removed without
+    /// breaking that document, so it is refused with the count — delete those documents (or clear that history) first. The audit log keeps
+    /// what was deleted. Always returns true (hard-deleted).
     /// </summary>
     public Task<bool> DeleteAsync(int id, CurrentUser user, CancellationToken ct = default) =>
         tx.RunAsync(async inner =>
         {
             var p = await db.Products.SingleOrDefaultAsync(x => x.Id == id, inner) ?? throw new NotFoundException("Product");
-            var referenced = await db.InvoiceItems.AnyAsync(i => i.ProductId == id, inner)
-                             || await db.PurchaseOrderItems.AnyAsync(i => i.ProductId == id, inner)
-                             || await db.StockMovements.AnyAsync(m => m.ProductId == id, inner);
-            var onHand = await db.StockBatches.Where(b => b.ProductId == id).SumAsync(b => (int?)b.QuantityOnHand, inner) ?? 0;
-            if (onHand > 0) throw new BusinessRuleException($"\"{p.Name}\" still has {onHand:N0} in stock. Adjust or sell the stock first.");
-
-            bool hardDeleted;
-            if (referenced) { p.IsActive = false; hardDeleted = false; }
-            else
+            var sales = await db.InvoiceItems.Where(i => i.ProductId == id).Select(i => i.InvoiceId).Distinct().CountAsync(inner);
+            var purchases = await db.PurchaseOrderItems.Where(i => i.ProductId == id).Select(i => i.PurchaseOrderId).Distinct().CountAsync(inner);
+            var quotes = await db.QuotationItems.Where(i => i.ProductId == id).Select(i => i.QuotationId).Distinct().CountAsync(inner);
+            if (sales + purchases + quotes > 0)
             {
-                db.StockBatches.RemoveRange(await db.StockBatches.Where(b => b.ProductId == id).ToListAsync(inner));
-                db.Products.Remove(p);
-                hardDeleted = true;
+                var on = new[] { (sales, "sale"), (purchases, "purchase"), (quotes, "quotation") }.Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}{(x.Item1 == 1 ? "" : "s")}");
+                throw new BusinessRuleException($"\"{p.Name}\" is on {string.Join(", ", on)}. Delete those first (or clear that history on the Database storage page), then delete the product.");
             }
-            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = hardDeleted ? "PRODUCT_DELETED" : "PRODUCT_DEACTIVATED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow, Detail = p.Sku });
+            var onHand = await db.StockBatches.Where(b => b.ProductId == id).SumAsync(b => (int?)b.QuantityOnHand, inner) ?? 0;
+
+            await db.StockMovements.Where(m => m.ProductId == id).ExecuteDeleteAsync(inner);
+            await db.ProductSerials.Where(s => s.ProductId == id).ExecuteDeleteAsync(inner);
+            await db.PriceChanges.Where(c => c.ProductId == id).ExecuteDeleteAsync(inner);
+            await db.SupplierItems.Where(s => s.ProductId == id).ExecuteDeleteAsync(inner);
+            await db.ProductImages.Where(s => s.ProductId == id).ExecuteDeleteAsync(inner);
+            await db.StockBatches.Where(b => b.ProductId == id).ExecuteDeleteAsync(inner);
+            db.Products.Remove(p);
+            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "PRODUCT_DELETED", Entity = "Product", EntityId = id.ToString(), At = clock.UtcNow,
+                Detail = $"{p.Sku} {p.Name}" + (onHand > 0 ? $" — {onHand:N0} unit(s) in stock removed" : "") });
             await db.SaveChangesAsync(inner);
-            return hardDeleted;
+            return true;
         }, ct);
 }

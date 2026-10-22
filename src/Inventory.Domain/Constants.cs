@@ -2,11 +2,21 @@ namespace Inventory.Domain;
 
 public static class RoleNames
 {
+    /// <summary>The CEO: everything, including deleting records, clearing history and managing people and roles.</summary>
     public const string Admin = "ADMIN";
+    /// <summary>Supervises clerks; adds and edits records like the CEO but cannot delete. The CEO can make a clerk manager (and back) at any time.</summary>
+    public const string Manager = "MANAGER";
     public const string Clerk = "CLERK";
+    public static readonly string[] All = [Admin, Manager, Clerk];
     /// <summary>Legacy role names in the SQL Server data, mapped on import.</summary>
     public const string LegacyAdmin = "Admin";
     public const string LegacyClerk = "Warehouse Clerk";
+}
+
+/// <summary>How far back records can be dated, reported and exported.</summary>
+public static class BusinessDates
+{
+    public static readonly DateOnly Earliest = new(2020, 1, 1);
 }
 
 public static class PriceTiers
@@ -65,6 +75,12 @@ public static class MovementReferences
     public const string OpeningBalance = "OpeningBalance";
     /// <summary>New: reversal of a voided invoice.</summary>
     public const string InvoiceVoid = "InvoiceVoid";
+    /// <summary>Stock returned because a sale was deleted (the sale itself no longer exists; the movement keeps its old id and number).</summary>
+    public const string InvoiceDelete = "InvoiceDelete";
+    /// <summary>New: stock moved because a sale's lines were edited (IN = units handed back, OUT = extra units taken).</summary>
+    public const string InvoiceEdit = "InvoiceEdit";
+    /// <summary>New: stock moved because a received purchase's lines were edited.</summary>
+    public const string PurchaseEdit = "PurchaseEdit";
 }
 
 public static class LedgerAccountTypes

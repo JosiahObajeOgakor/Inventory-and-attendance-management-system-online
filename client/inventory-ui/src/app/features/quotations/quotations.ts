@@ -41,7 +41,7 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
                   <button type="button" class="btn btn-sm" (click)="emailing.set(q)">Email</button>
                   @if (q.status === 'Open') {
                     <button type="button" class="btn btn-sm btn-primary" (click)="openConvert(q)">Make a sale</button>
-                    @if (auth.isAdmin()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(q)">Delete</button> }
+                    @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(q)">Delete</button> }
                   } @else if (q.convertedInvoiceId) { <a class="btn btn-sm" [routerLink]="['/sales', q.convertedInvoiceId]">View sale</a> }
                 </td>
               </tr>

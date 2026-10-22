@@ -15,13 +15,14 @@ public sealed record WebChatRequest(string SessionId, string Message);
 /// <param name="Replies">The same messages one by one, so the page can show them as separate bubbles.</param>
 /// <param name="AwaitingPayment">True while a payment account has been given and not yet paid: the page then checks <c>updates</c> for the confirmation.</param>
 /// <param name="At">Server time of this reply; pass it back to <c>updates</c> as <c>since</c>.</param>
-public sealed record WebChatResponse(string Reply, string? CheckoutUrl, string? QuotationNumber, IReadOnlyList<string> Replies, bool AwaitingPayment, DateTime At);
+public sealed record WebChatResponse(string Reply, string? CheckoutUrl, string? QuotationNumber, IReadOnlyList<string>? Replies = null, bool AwaitingPayment = false, DateTime? At = null);
 public sealed record WebChatUpdates(IReadOnlyList<string> Messages, bool AwaitingPayment, DateTime At);
 
 /// <summary>
-/// The chat on the landing page. It runs the SAME conversation engine as WhatsApp (word-based, the AI only as a last resort, AlatPay bank account inside the chat),
-/// so a sale behaves identically on both. There is no phone number on the web, so the customer is asked for their WhatsApp number once; identity is otherwise a
-/// browser-generated session id. The company is fixed to the landing page's own brand (WebChat:CompanyKey, default "chewypets").
+/// The chat on the landing page. Which engine answers is a setting (SalesAssistant:Engine): "ai" (the default, the AI sales assistant the site has used so far)
+/// or "flow" (the word-based conversation also used on the Twilio WhatsApp number: AI only as a last resort, AlatPay bank account inside the chat, quotations,
+/// delivery questions, Yoruba/Igbo/Hausa/Pidgin). There is no phone number on the web, so identity is a browser-generated session id. The company is fixed
+/// to the landing page's own brand (WebChat:CompanyKey, default "chewypets").
 /// </summary>
 [ApiController, Route("api/webchat")]
 public class WebChatController(IConfiguration config, Microsoft.Extensions.Options.IOptions<Inventory.Infrastructure.WhatsApp.TwilioOptions> twilio) : ControllerBase
@@ -34,7 +35,8 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
 
     private string? WhatsAppDigits()
     {
-        var from = twilio.Value.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(CompanyKey, StringComparison.OrdinalIgnoreCase))?.From;
+        var from = config["WebChat:WhatsAppNumber"] is { Length: > 0 } set ? set
+            : twilio.Value.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(CompanyKey, StringComparison.OrdinalIgnoreCase))?.From;
         var digits = new string((from ?? "").Where(char.IsDigit).ToArray());
         return digits.Length >= 8 ? digits : null;
     }
@@ -44,6 +46,12 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
     {
         var session = ValidSession(r.SessionId);
         HttpContext.Items[RequestCompany.OverrideItem] = CompanyKey;
+        if (!SalesAssistantEngine.UsesFlow(config))
+        {
+            var assistant = HttpContext.RequestServices.GetRequiredService<Inventory.Application.SalesAssistant.SalesAssistantService>();
+            var ai = await assistant.AskAsync(ChatChannels.WebChat, session, r.Message, ct);
+            return new WebChatResponse(ai.Text, ai.CheckoutUrl, ai.QuotationNumber, [ai.Text], false, DateTime.UtcNow);
+        }
         var flow = HttpContext.RequestServices.GetRequiredService<ChatFlowService>();
         var reply = await flow.HandleAsync(ChatChannels.WebChat, session, "", r.Message ?? "", ct);
         var state = await StateAsync(session, ct);

@@ -9,11 +9,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Application.Payments;
 
+/// <param name="Reference">The processor's own reference for this charge (equal to ours for Paystack; AlatPay issues its own).</param>
 public sealed record GatewayCharge(string Url, string Reference);
 public sealed record GatewayVerification(bool Success, long AmountKobo, string Currency, string? Channel);
-public sealed record PayLink(string Url, decimal Amount, string Reference);
+public sealed record PayLink(string Url, decimal Amount, string Reference, string Provider);
 public sealed record SettleResult(bool Applied, bool AlreadySettled, string Message, int? InvoiceId = null, int? CustomerId = null, string? CustomerPhone = null,
-    string? Reference = null, decimal? Shortfall = null, bool Unfulfilled = false, decimal? Paid = null, string? InvoiceNumber = null);
+    string? Provider = null, string? Reference = null, decimal? Shortfall = null, bool Unfulfilled = false, decimal? Paid = null, string? InvoiceNumber = null);
 
 public sealed record VirtualAccount(string AccountNumber, string BankName, string TransactionId, DateTime ExpiresAt);
 /// <summary>What the processor says about one bank-transfer attempt. AmountSent is what actually arrived (null until something did).</summary>
@@ -30,16 +31,32 @@ public interface IVirtualAccountGateway
     bool IsValidSignature(string rawBody, string? signature);
 }
 
-/// <summary>The card / transfer / USSD processor. Implemented over Paystack in Infrastructure; the Application layer never sees a key.</summary>
+/// <summary>A card / transfer / USSD processor (Paystack, AlatPay). Implemented in Infrastructure; the Application layer never sees a key.</summary>
 public interface IPaymentGateway
 {
+    /// <summary>One of <see cref="PaymentProviders"/>.</summary>
+    string Provider { get; }
     bool IsConfigured { get; }
-    /// <summary>Paystack needs an email on every charge; when the customer has none this address is used so a link can still be made.</summary>
+    /// <summary>Processors need an email on every charge; when the customer has none this address is used so a link can still be made.</summary>
     string FallbackEmail { get; }
     Task<GatewayCharge> InitializeAsync(string email, long amountKobo, string reference, IReadOnlyDictionary<string, string> metadata, CancellationToken ct);
-    /// <summary>Asks the processor itself whether this reference was paid, and how much. A webhook is never trusted on its own word.</summary>
-    Task<GatewayVerification?> VerifyAsync(string reference, CancellationToken ct);
+    /// <summary>Asks the processor itself whether this (processor) reference was paid, and how much. A webhook is never trusted on its own word.</summary>
+    Task<GatewayVerification?> VerifyAsync(string providerReference, CancellationToken ct);
     bool IsValidSignature(string rawBody, string? signature);
+}
+
+/// <summary>Every registered processor, looked up by name.</summary>
+public sealed class PaymentGateways(IEnumerable<IPaymentGateway> all)
+{
+    private readonly IReadOnlyList<IPaymentGateway> list = all.ToList();
+
+    public IPaymentGateway? Get(string? provider) => list.FirstOrDefault(g => g.Provider == provider);
+
+    /// <summary>The configured processors, Paystack first (it's the one printed on documents).</summary>
+    public IReadOnlyList<string> Configured =>
+        list.Where(g => g.IsConfigured).Select(g => g.Provider).OrderBy(p => p == PaymentProviders.Paystack ? 0 : 1).ToList();
+
+    public bool IsConfigured(string? provider) => Get(provider)?.IsConfigured == true;
 }
 
 /// <summary>Tells the owner something happened (an invoice was paid). Email always; SMS when a provider is configured.</summary>
@@ -57,34 +74,62 @@ public static class PaymentDocTypes
 /// <summary>
 /// One online-payment link per document and amount. A quotation carries a link for its total and an invoice one for what is still owed on it,
 /// printed as a clickable button in the PDF. When the customer pays, the processor calls us back; we confirm with the processor, record the
-/// payment against the invoice exactly once, and tell the admin who paid.
-/// The chat assistant uses the same table with <see cref="AlatProvider"/>: instead of a URL the customer gets a single-use bank account number inside WhatsApp.
+/// payment against the invoice exactly once, and tell the admin who paid. Works the same for every processor (Paystack, AlatPay).
+/// The chat assistant also uses this table for AlatPay's single-use bank accounts (<see cref="PaymentLink.ExternalId"/> set): instead of a URL the customer
+/// gets an account number inside WhatsApp.
 /// </summary>
-public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, IPaymentGateway gateway,
+public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, PaymentGateways gateways,
     IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations, IVirtualAccountGateway? virtualAccounts = null, ISaleAlerts? alerts = null)
 {
-    public const string AlatProvider = "AlatPay";
+    /// <summary>The AlatPay provider name as stored on links (same constant the payment pages use).</summary>
+    public const string AlatProvider = PaymentProviders.AlatPay;
     private static readonly TimeSpan Reuse = TimeSpan.FromHours(12);
+    /// <summary>Metadata key a gateway reads as "send the customer back here after paying"; it is not stored on the processor's side.</summary>
+    public const string ReturnUrlKey = "return_url";
 
-    public bool Enabled => gateway.IsConfigured;
+    public bool Enabled => Providers.Count > 0;
     public bool VirtualAccountsEnabled => virtualAccounts is { IsConfigured: true };
 
-    /// <summary>The link for this document at this exact amount, creating it if needed. Null when payments aren't set up or nothing is owed.</summary>
-    public async Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, CancellationToken ct)
+    /// <summary>
+    /// The processors this business can take payment through: set up on the server AND allowed for the business (Companies:PaymentProviders).
+    /// Both businesses share the AlatPay account; Paystack is ChewyPets' account, so Candid Purrfect doesn't offer it until it has its own.
+    /// Everything that offers a way to pay — the pay page, the QR code, the PDF button, the sales assistant — reads this list.
+    /// </summary>
+    public IReadOnlyList<string> Providers =>
+        gateways.Configured.Where(p => company.PaymentProviders is not { } allowed || allowed.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The link for this document at this exact amount on the business's default processor — the fallback printed on documents.</summary>
+    public Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, CancellationToken ct) =>
+        GetOrCreateAsync(docType, docId, docNumber, amount, customerEmail, customerName, Providers.FirstOrDefault(), ct);
+
+    /// <summary>The link for this document at this exact amount on the chosen processor, creating it if needed. Null when that processor isn't set up or nothing is owed.</summary>
+    public async Task<PayLink?> GetOrCreateAsync(string docType, int docId, string docNumber, decimal amount, string? customerEmail, string customerName, string? provider, CancellationToken ct,
+        string? returnUrl = null)
     {
-        if (!gateway.IsConfigured || amount <= 0) return null;
+        var gateway = gateways.Get(provider);
+        if (gateway is null || !gateway.IsConfigured || amount <= 0 || !Providers.Contains(gateway.Provider)) return null;   // not offered by this business
         var cutoff = clock.UtcNow - Reuse;
-        var existing = await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == docType && l.DocId == docId && l.Status == PaymentLinkStatuses.Pending && l.Provider == "Paystack" && l.Amount == amount && l.CreatedAt > cutoff)
+        var existing = await db.PaymentLinks.AsNoTracking()
+            .Where(l => l.DocType == docType && l.DocId == docId && l.Provider == gateway.Provider && l.ExternalId == null && l.Status == PaymentLinkStatuses.Pending && l.Amount == amount && l.CreatedAt > cutoff)
             .OrderByDescending(l => l.Id).FirstOrDefaultAsync(ct);
-        if (existing is not null) return new PayLink(existing.Url, existing.Amount, existing.Reference);
+        if (existing is not null) return new PayLink(existing.Url, existing.Amount, existing.Reference, existing.Provider);
 
         var email = ValidEmail(customerEmail) ? customerEmail!.Trim() : gateway.FallbackEmail;
         var reference = $"{company.Key}-{docType[0]}{docId}-{clock.UtcNow:yyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}";
-        var charge = await gateway.InitializeAsync(email, (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero), reference,
-            new Dictionary<string, string> { ["company"] = company.Key, ["docType"] = docType, ["docId"] = docId.ToString(), ["docNumber"] = docNumber, ["customer"] = customerName }, ct);
-        db.PaymentLinks.Add(new PaymentLink { Reference = reference, DocType = docType, DocId = docId, DocNumber = docNumber, CustomerName = customerName, Amount = amount, Url = charge.Url, Status = PaymentLinkStatuses.Pending, CreatedAt = clock.UtcNow });
+        // Both businesses may share one processor account, so every charge says which business it is for (Paystack shows these on the transaction).
+        var metadata = new Dictionary<string, string>
+        {
+            ["company"] = company.Key, ["business"] = company.LegalName, ["docType"] = docType, ["docId"] = docId.ToString(), ["docNumber"] = docNumber, ["customer"] = customerName,
+        };
+        if (!string.IsNullOrWhiteSpace(returnUrl)) metadata[ReturnUrlKey] = returnUrl;
+        var charge = await gateway.InitializeAsync(email, (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero), reference, metadata, ct);
+        db.PaymentLinks.Add(new PaymentLink
+        {
+            Reference = reference, Provider = gateway.Provider, ProviderReference = charge.Reference, DocType = docType, DocId = docId, DocNumber = docNumber,
+            CustomerName = customerName, Amount = amount, Url = charge.Url, Status = PaymentLinkStatuses.Pending, CreatedAt = clock.UtcNow,
+        });
         await db.SaveChangesAsync(ct);
-        return new PayLink(charge.Url, amount, reference);
+        return new PayLink(charge.Url, amount, reference, gateway.Provider);
     }
 
     /// <summary>
@@ -96,7 +141,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         if (virtualAccounts is not { IsConfigured: true } || amount <= 0) return null;
         var now = clock.UtcNow;
         var existing = await db.PaymentLinks.AsNoTracking()
-            .Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == quotationId && l.Provider == AlatProvider && l.Status == PaymentLinkStatuses.Pending && l.Amount == amount && l.ExpiresAt > now.AddMinutes(5))
+            .Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == quotationId && l.ExternalId != null && l.Status == PaymentLinkStatuses.Pending && l.Amount == amount && l.ExpiresAt > now.AddMinutes(5))
             .OrderByDescending(l => l.Id).FirstOrDefaultAsync(ct);
         if (existing is not null) return new PayAccount(existing.AccountNumber!, existing.BankName ?? "", existing.Amount, existing.ExpiresAt!.Value, existing.Reference);
 
@@ -104,7 +149,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         var reference = $"{company.Key}-Q{quotationId}-{now:yyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}";
         var parts = (string.IsNullOrWhiteSpace(customerName) ? "Customer" : customerName.Trim()).Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var first = parts[0]; var last = parts.Length > 1 ? parts[1] : parts[0];
-        var mail = ValidEmail(email) ? email!.Trim() : gateway.FallbackEmail;
+        var mail = ValidEmail(email) ? email!.Trim() : (gateways.Get(PaymentProviders.Paystack) ?? gateways.Get(PaymentProviders.AlatPay))?.FallbackEmail ?? "payments@invalid.example";
         var account = await virtualAccounts.CreateAsync(reference, amount, $"{company.LegalName} order {quotationNumber}", first, last, mail, phone, ct);
         db.PaymentLinks.Add(new PaymentLink
         {
@@ -128,7 +173,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         var branch = inv.WarehouseId is int wid ? await (from w in db.Warehouses.AsNoTracking() join b in db.Branches.AsNoTracking() on w.BranchId equals b.Id where w.Id == wid select b.Name).FirstOrDefaultAsync(ct) : null;
         var conv = link.DocType == PaymentDocTypes.Quotation ? await db.ChatConversations.AsNoTracking().FirstOrDefaultAsync(c => c.QuotationId == link.DocId, ct) : null;
         var via = conv is null ? "Payment link" : conv.Channel == ChatChannels.WhatsApp ? "WhatsApp" : "Website chat";
-        var into = link.Provider == AlatProvider && !string.IsNullOrEmpty(link.AccountNumber) ? $"{link.BankName} {link.AccountNumber}" : link.Provider;
+        var into = !string.IsNullOrEmpty(link.ExternalId) && !string.IsNullOrEmpty(link.AccountNumber) ? $"{link.BankName} {link.AccountNumber}" : PaymentProviders.DisplayName(link.Provider);
         if (conv is not null)
         {
             db.ChatEvents.Add(new ChatEvent { At = clock.UtcNow, Channel = conv.Channel, Kind = ChatEventKinds.Sale, ConversationId = conv.Id, CustomerId = customer.Id, Amount = inv.TotalAmount, Reference = inv.InvoiceNumber });
@@ -143,12 +188,43 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
 
     /// <summary>For a bank transfer into an AlatPay virtual account: that account (bank, account name, number) is the one the money arrived in. Paystack card/link payments have none.</summary>
     private AccountRef? ReceivingAccount(PaymentLink l) =>
-        l.Provider == AlatProvider && !string.IsNullOrEmpty(l.AccountNumber) ? new AccountRef(l.BankName ?? "AlatPay", company.LegalName, l.AccountNumber) : null;
+        !string.IsNullOrEmpty(l.ExternalId) && !string.IsNullOrEmpty(l.AccountNumber) ? new AccountRef(l.BankName ?? "AlatPay", company.LegalName, l.AccountNumber) : null;
 
     private static bool ValidEmail(string? e) => !string.IsNullOrWhiteSpace(e) && e.Contains('@') && e.Contains('.') && !e.Any(char.IsWhiteSpace);
 
     /// <summary>
-    /// Called when the processor says a reference was paid. Confirms with the processor, then (in one transaction) marks the link paid and applies the
+    /// Re-checks every still-pending link on this processor created since <paramref name="since"/> and settles the ones the processor shows as paid.
+    /// Used when a processor's webhook can't name the link (AlatPay), and by the periodic safety net for missed webhooks.
+    /// </summary>
+    public async Task<IReadOnlyList<SettleResult>> SettlePendingAsync(string? provider, DateTime since, CancellationToken ct)
+    {
+        var refs = await db.PaymentLinks.AsNoTracking()
+            .Where(l => l.Status == PaymentLinkStatuses.Pending && l.CreatedAt > since && (provider == null || l.Provider == provider))
+            .OrderBy(l => l.Id).Select(l => l.Reference).Take(200).ToListAsync(ct);
+        var applied = new List<SettleResult>();
+        foreach (var r in refs)
+        {
+            var result = await SettleAsync(r, ct);
+            if (result.Applied) applied.Add(result);
+        }
+        return applied;
+    }
+
+    /// <summary>Re-checks the pending links for one document (a customer saying "I've paid"). Returns the result that settled it, if any.</summary>
+    public async Task<SettleResult?> SettleDocumentAsync(string docType, int docId, CancellationToken ct)
+    {
+        var refs = await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == docType && l.DocId == docId && l.Status == PaymentLinkStatuses.Pending)
+            .OrderByDescending(l => l.Id).Select(l => l.Reference).ToListAsync(ct);
+        foreach (var r in refs)
+        {
+            var result = await SettleAsync(r, ct);
+            if (result.Applied) return result;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Called when a processor says a reference was paid. Confirms with that processor, then (in one transaction) marks the link paid and applies the
     /// money to the invoice. Safe to call any number of times: a second call finds the link already paid and does nothing.
     /// </summary>
     public async Task<SettleResult> SettleAsync(string reference, CancellationToken ct)
@@ -157,21 +233,47 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         if (link is null) return new SettleResult(false, false, "Unknown reference.");
         if (link.Status is PaymentLinkStatuses.Paid or PaymentLinkStatuses.PaidUnfulfilled) return new SettleResult(false, true, "Already recorded.", Reference: reference);
 
+        var processor = PaymentProviders.DisplayName(link.Provider);
         GatewayVerification? v;
-        if (link.Provider == AlatProvider)
+        if (!string.IsNullOrEmpty(link.ExternalId))
         {
-            if (virtualAccounts is null || string.IsNullOrEmpty(link.ExternalId)) return new SettleResult(false, false, "No processor reference to check.", Reference: reference);
+            // The chat's single-use bank account (AlatPay virtual account): ask AlatPay what actually arrived on that transfer.
+            if (virtualAccounts is null) return new SettleResult(false, false, "No processor to check this bank transfer with.", Reference: reference);
             var t = await virtualAccounts.VerifyAsync(link.ExternalId, ct);
             if (t is null || !t.Completed) return new SettleResult(false, false, "The processor does not show this payment as successful.", Reference: reference);
             var sent = t.AmountSent ?? t.Amount;
             if (sent < link.Amount) return new SettleResult(false, false, $"Underpaid: ₦{sent:N2} of ₦{link.Amount:N2}.", Reference: reference, Shortfall: link.Amount - sent, Paid: sent);
             v = new GatewayVerification(true, (long)Math.Round(sent * 100m, MidpointRounding.AwayFromZero), "NGN", "bank_transfer");
         }
-        else v = await gateway.VerifyAsync(reference, ct);
+        else
+        {
+            var gateway = gateways.Get(link.Provider);
+            if (gateway is null) return new SettleResult(false, false, "That payment processor isn't set up on this server.", Reference: reference);
+            v = await gateway.VerifyAsync(link.ProviderReference ?? link.Reference, ct);
+        }
         if (v is null || !v.Success) return new SettleResult(false, false, "The processor does not show this payment as successful.", Reference: reference);
         if (!string.Equals(v.Currency, "NGN", StringComparison.OrdinalIgnoreCase)) return new SettleResult(false, false, "Unexpected currency.", Reference: reference);
         var paid = v.AmountKobo / 100m;
-        var system = new CurrentUser(0, link.Provider, "SYSTEM");
+        var system = new CurrentUser(0, processor, "SYSTEM");
+
+        // Paid on a link whose sale was deleted: there is nothing to attach it to, so it's recorded on the link (once) and the admin is told to refund it.
+        if (link.Status == PaymentLinkStatuses.Cancelled)
+        {
+            var first = await tx.RunAsync(async inner =>
+            {
+                var l = await db.PaymentLinks.FromSqlInterpolated($"SELECT * FROM payment_links WHERE Reference = {reference} FOR UPDATE").SingleAsync(inner);
+                if (l.PaidAt is not null) return false;
+                l.PaidAt = clock.UtcNow; l.PaidAmount = paid; l.Channel = v.Channel;
+                db.AuditLogs.Add(new AuditLog { UserId = null, UserName = processor, Action = "PAYMENT_ON_DELETED_SALE", Entity = l.DocType, EntityId = l.DocId.ToString(), At = clock.UtcNow,
+                    Detail = $"{l.DocNumber} ₦{paid:N2} by {l.CustomerName} via {processor} — the sale had been deleted; refund needed" });
+                await db.SaveChangesAsync(inner);
+                return true;
+            }, ct);
+            if (first)
+                try { await notifier.NotifyAsync($"{company.LegalName}: refund needed", $"₦{paid:N2} was paid via {processor} by {link.CustomerName} for {link.DocNumber}, which had been deleted. Please refund it from your {processor} dashboard.", ct); }
+                catch (Exception) { /* recorded in the activity log above */ }
+            return new SettleResult(false, true, "Paid on a deleted sale — refund needed.");
+        }
 
         string? summary = null; var already = false;
         int? invoiceId = null; int? custId = null; string? custPhone = null; string? invoiceNumber = null;
@@ -184,7 +286,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 var note = "";
                 if (l.DocType == PaymentDocTypes.Invoice)
                 {
-                    var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(l.DocId, paid, l.Provider, system, inner, ReceivingAccount(l));
+                    var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(l.DocId, paid, processor, system, inner, ReceivingAccount(l));
                     if (leftover > 0) note = $" ₦{leftover:N2} more than was owed on the invoice: refund or keep as credit.";
                     if (applied == 0) note += " Nothing was owed on the invoice any more.";
                     var inv = await db.Invoices.AsNoTracking().SingleAsync(x => x.Id == l.DocId, inner);
@@ -198,8 +300,8 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                     if (warehouseId <= 0) throw new BusinessRuleException("This business has no warehouse yet, so the online order could not be converted.");
                     // "Card" is the closest of SaleRequestValidator's fixed PaymentMethods to an online gateway charge; the actual
                     // processor and channel are recorded on the Payment row and PaymentLink below.
-                    var sale = await quotations.ConvertWithinAsync(l.DocId, new ConvertQuoteRequest { WarehouseId = warehouseId, PaymentMethod = l.Provider == AlatProvider ? "Bank Transfer" : "Card", PaidNow = 0 }, system, inner);
-                    var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(sale.InvoiceId, paid, l.Provider, system, inner, ReceivingAccount(l));
+                    var sale = await quotations.ConvertWithinAsync(l.DocId, new ConvertQuoteRequest { WarehouseId = warehouseId, PaymentMethod = !string.IsNullOrEmpty(l.ExternalId) ? "Bank Transfer" : "Card", PaidNow = 0 }, system, inner);
+                    var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(sale.InvoiceId, paid, processor, system, inner, ReceivingAccount(l));
                     if (leftover > 0) note = $" ₦{leftover:N2} more than the total: refund or keep as credit.";
                     note += " Converted to a sale and stock has been deducted.";
                     invoiceId = sale.InvoiceId; custId = quote.CustomerId; invoiceNumber = sale.InvoiceNumber;
@@ -208,14 +310,14 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 custPhone = cust?.Phone;
                 l.Status = PaymentLinkStatuses.Paid; l.PaidAt = clock.UtcNow; l.PaidAmount = paid; l.Channel = v.Channel;
                 if (paid != l.Amount) note += $" (Link was for ₦{l.Amount:N2}.)";
-                db.AuditLogs.Add(new AuditLog { UserId = null, UserName = l.Provider, Action = "ONLINE_PAYMENT", Entity = l.DocType, EntityId = l.DocId.ToString(), At = clock.UtcNow, Detail = $"{l.DocNumber} ₦{paid:N2} by {l.CustomerName} via {v.Channel ?? l.Provider}" });
+                db.AuditLogs.Add(new AuditLog { UserId = null, UserName = processor, Action = "ONLINE_PAYMENT", Entity = l.DocType, EntityId = l.DocId.ToString(), At = clock.UtcNow, Detail = $"{l.DocNumber} ₦{paid:N2} by {l.CustomerName} via {processor}{(v.Channel is null ? "" : " (" + v.Channel + ")")}" });
                 await db.SaveChangesAsync(inner);
                 var waLink = string.IsNullOrWhiteSpace(custPhone) ? "" : $" Chat: https://wa.me/{CustomerLookupService.Normalize(custPhone)}";
-                summary = $"{(l.DocType == PaymentDocTypes.Invoice ? "Invoice" : "Quotation")} {l.DocNumber} has been paid: ₦{paid:N2} from {l.CustomerName}{(v.Channel is null ? "" : " by " + v.Channel)}.{note}{waLink}";
+                summary = $"{(l.DocType == PaymentDocTypes.Invoice ? "Invoice" : "Quotation")} {l.DocNumber} has been paid: ₦{paid:N2} from {l.CustomerName} via {processor}{(v.Channel is null ? "" : " (" + v.Channel + ")")}.{note}{waLink}";
                 return true;
             }, ct);
         }
-        catch (BusinessRuleException ex) when (link.Provider == AlatProvider && link.DocType == PaymentDocTypes.Quotation)
+        catch (BusinessRuleException ex) when (link.DocType == PaymentDocTypes.Quotation)
         {
             // The customer's money is already with the processor but the sale can't be completed (typically the stock went after the reservation lapsed).
             // Never lose track of it: park the link where a person will see it, and say so loudly.
@@ -224,11 +326,11 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 .SetProperty(l => l.Status, PaymentLinkStatuses.PaidUnfulfilled).SetProperty(l => l.PaidAt, clock.UtcNow).SetProperty(l => l.PaidAmount, paid).SetProperty(l => l.Channel, v.Channel), ct);
             var quote = await db.Quotations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == link.DocId, ct);
             var customer = quote is null ? null : await db.Customers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == quote.CustomerId, ct);
-            db.AuditLogs.Add(new AuditLog { UserId = null, UserName = link.Provider, Action = "ONLINE_PAYMENT_UNFULFILLED", Entity = link.DocType, EntityId = link.DocId.ToString(), At = clock.UtcNow, Detail = $"{link.DocNumber} ₦{paid:N2} from {link.CustomerName}: {ex.Message}" });
+            db.AuditLogs.Add(new AuditLog { UserId = null, UserName = processor, Action = "ONLINE_PAYMENT_UNFULFILLED", Entity = link.DocType, EntityId = link.DocId.ToString(), At = clock.UtcNow, Detail = $"{link.DocNumber} ₦{paid:N2} from {link.CustomerName}: {ex.Message}" });
             await db.SaveChangesAsync(ct);
             try { await notifier.NotifyAsync($"{company.LegalName}: PAID BUT NOT FULFILLED", $"Quotation {link.DocNumber}: ₦{paid:N2} was received from {link.CustomerName} but the sale could not be completed ({ex.Message}). Refund or fulfil by hand. Chat: https://wa.me/{CustomerLookupService.Normalize(customer?.Phone ?? "")}", ct); }
             catch (Exception) { /* the parked status above is the durable record */ }
-            return new SettleResult(false, false, ex.Message, null, customer?.Id, customer?.Phone, reference, null, true, paid);
+            return new SettleResult(false, false, ex.Message, null, customer?.Id, customer?.Phone, link.Provider, reference, null, true, paid);
         }
 
         if (already || summary is null) return new SettleResult(false, true, "Already recorded.", Reference: reference);
@@ -239,6 +341,6 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
             await db.PaymentLinks.Where(l => l.Reference == reference).ExecuteUpdateAsync(u => u.SetProperty(l => l.NotifiedAt, clock.UtcNow), ct);
         }
         catch (Exception) { /* the payment is recorded; a failed message is retried by nobody, so it stays visible as NotifiedAt = null */ }
-        return new SettleResult(true, false, summary, invoiceId, custId, custPhone, reference, null, false, paid, invoiceNumber);
+        return new SettleResult(true, false, summary, invoiceId, custId, custPhone, link.Provider, reference, null, false, paid, invoiceNumber);
     }
 }

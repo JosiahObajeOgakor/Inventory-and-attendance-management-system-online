@@ -1,0 +1,11 @@
+[Unit]
+Description=Inventory restore test every Sunday
+
+[Timer]
+# 04:30 Lagos time (03:30 UTC), after the nightly backup.
+OnCalendar=Sun *-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

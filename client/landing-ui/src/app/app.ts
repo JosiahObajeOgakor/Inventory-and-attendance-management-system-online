@@ -16,8 +16,7 @@ const BACKYARD_SRC = '/backyard.mp4';
   styleUrl: './app.scss',
 })
 export class App {
-  // A plain greeting plus what they want: the sales assistant answers a greeting-led first message with its welcome.
-  protected readonly whatsappHref = whatsappHref("Hi! I'd like to order dog food.");
+  protected readonly whatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order some dog food.");
   protected readonly crateWhatsappHref = whatsappHref("Hi Chewy Pet! I'd like to order a collapsible cage.");
   protected readonly whatsappDisplay = whatsappDisplay();
   protected readonly year = new Date().getFullYear();

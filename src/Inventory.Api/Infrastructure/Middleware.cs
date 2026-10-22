@@ -7,7 +7,10 @@ namespace Inventory.Api.Infrastructure;
 
 public static class Policies
 {
+    /// <summary>CEO or manager: management screens, adding and editing.</summary>
     public const string Admin = "Admin";
+    /// <summary>The CEO only: deleting, clearing history, people and roles.</summary>
+    public const string Ceo = "Ceo";
     public const string Staff = "Staff";
     public const string AuthRateLimit = "auth";
     public const string WhatsAppRateLimit = "whatsapp";
@@ -27,13 +30,13 @@ public sealed class CsrfHeaderMiddleware(RequestDelegate next)
     {
         var m = ctx.Request.Method;
         var unsafeMethod = !(HttpMethods.IsGet(m) || HttpMethods.IsHead(m) || HttpMethods.IsOptions(m));
-        // These webhooks are called by Paystack's/Meta's own servers, which cannot send our header. Both are protected by an HMAC signature instead
-        // (Paystack: asking it to confirm the payment too; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
+        // These webhooks are called by Paystack's/AlatPay's/Meta's own servers, which cannot send our header. All are protected by an HMAC signature instead
+        // (Paystack/AlatPay: also asking the processor to confirm the payment; Meta: the signature alone, since there is nothing else to confirm an inbound message against).
         var webhook = ctx.Request.Path.Equals("/api/paystack/webhook", StringComparison.OrdinalIgnoreCase)
                    || ctx.Request.Path.Equals("/api/whatsapp/webhook", StringComparison.OrdinalIgnoreCase)
-                   // Twilio (HMAC-SHA1 over URL+fields with the auth token) and AlatPay (HMAC-SHA256 over the body, then confirmed with AlatPay itself).
+                   // Twilio (HMAC-SHA1 over URL+fields with the auth token) and AlatPay (HMAC-SHA256 over the body, then confirmed with AlatPay itself; one URL per company).
                    || ctx.Request.Path.Equals("/api/twilio/whatsapp", StringComparison.OrdinalIgnoreCase)
-                   || ctx.Request.Path.Equals("/api/alatpay/webhook", StringComparison.OrdinalIgnoreCase)
+                   || ctx.Request.Path.StartsWithSegments("/api/alatpay/webhook", StringComparison.OrdinalIgnoreCase)
                    // One-click unsubscribe (RFC 8058) is POSTed by the recipient's mail app, which cannot send our header; the signed link is the proof.
                    || ctx.Request.Path.Equals("/api/marketing/unsubscribe", StringComparison.OrdinalIgnoreCase);
         // The public site (/api/site/{company}/...): anonymous HTML forms (register for an event, post to the forum, sign a document, answer a survey). They carry no

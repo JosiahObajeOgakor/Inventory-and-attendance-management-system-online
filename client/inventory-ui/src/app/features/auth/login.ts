@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
 import { Auth } from '../../core/auth.service';
+import { Loading } from '../../core/loading.service';
 import { CompanyChoice } from '../../core/models';
 
 @Component({
@@ -80,6 +81,7 @@ export class Login implements OnInit {
   private readonly api = inject(Api);
   private readonly auth = inject(Auth);
   private readonly router = inject(Router);
+  private readonly loading = inject(Loading);
 
   protected readonly companies = signal<CompanyChoice[]>([]);
   protected readonly busy = signal(false);
@@ -105,6 +107,7 @@ export class Login implements OnInit {
     if (this.form.invalid || this.busy()) return;
     this.busy.set(true); this.error.set('');
     const v = this.form.getRawValue();
+    this.loading.label.set('Signing in');   // the global spinner shows this while the sign-in call and first screen load
     try {
       const me = await this.auth.login(v.username, v.password, v.company);
       await this.router.navigateByUrl(me.mustChangePassword ? '/change-password' : '/dashboard');

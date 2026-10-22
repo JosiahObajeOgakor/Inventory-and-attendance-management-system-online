@@ -13,7 +13,10 @@ import { APPS, APP_GROUPS } from '../core/product-catalog';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
-interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; needs?: 'hasPriceLists'; /** A record-keeping app: offered only when the server has it switched on for this business. */ app?: string; /** A newer feature being tested with K9 Cravings: visible everywhere, usable only there. */ preview?: boolean; }
+/** Module-level so it survives the shell being destroyed and re-created (e.g. on a business switch). */
+let checkInAskedFor: string | null = null;
+
+interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; ceoOnly?: boolean; needs?: 'hasPriceLists'; /** A record-keeping app: offered only when the server has it switched on for this business. */ app?: string; /** A newer feature being tested with K9 Cravings: visible everywhere, usable only there. */ preview?: boolean; }
 interface NavGroup { title: string; icon: string; items: NavItem[]; }
 
 const BUILT: NavGroup[] = [
@@ -48,13 +51,13 @@ const BUILT: NavGroup[] = [
   ] },
   { title: 'People', icon: 'users', items: [
     { label: 'Team', path: '/team', icon: 'clock', adminOnly: true },
-    { label: 'People & access', path: '/users', icon: 'users', adminOnly: true },
+    { label: 'People & access', path: '/users', icon: 'users', ceoOnly: true },
   ] },
   { title: 'System', icon: 'settings', items: [
     { label: 'Company & documents', path: '/company', icon: 'settings', adminOnly: true },
     { label: 'Branches', path: '/branches', icon: 'stock', adminOnly: true, preview: true },
     { label: 'Activity log', path: '/activity', icon: 'audit', adminOnly: true },
-    { label: 'Database storage', path: '/storage', icon: 'stock', adminOnly: true },
+    { label: 'Database storage', path: '/storage', icon: 'stock', ceoOnly: true },
   ] },
 ];
 
@@ -93,7 +96,7 @@ export class Shell {
   protected readonly navOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly groups = computed(() =>
-    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || !this.auth.flags().hasNewFeatures || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
+    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.ceoOnly || this.auth.isCeo()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || !this.auth.flags().hasNewFeatures || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
   /** True for a newer feature in a business that doesn't have it yet. */
   protected locked(i: NavItem): boolean { return !!i.preview && !this.auth.flags().hasNewFeatures; }
   protected readonly initials = computed(() => (this.auth.me()?.fullName ?? '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
@@ -102,25 +105,31 @@ export class Shell {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   });
 
-  // ---- accordion: one group open at a time. Opening one closes the others; until the person chooses, the group that holds the page they are on is the open one.
+  // ---- accordion: ONE group open at a time. It's the group holding the current page, until the person opens another one
+  // (which closes the rest) or closes it. Moving to a page re-opens that page's group, so you always see where you are.
   private readonly url = signal(this.router.url);
-  /** undefined = follow the current page; a title = the group the person opened; null = they closed it and want none open. */
-  private readonly openTitle = signal<string | null | undefined>(undefined);
-  private readonly holder = computed(() => this.groups().find(g => g.items.some(i => this.url().startsWith(i.path)))?.title ?? 'Counter');
+  /** undefined = follow the current page; null = everything closed; a title = that group open. */
+  private readonly chosen = signal<string | null | undefined>(undefined);
+  private readonly currentGroup = computed(() =>
+    this.groups().find(g => g.items.some(i => this.url().startsWith(i.path)))?.title ?? this.groups()[0]?.title ?? null);
   protected isOpen(g: NavGroup): boolean {
-    const o = this.openTitle();
-    return o === undefined ? this.holder() === g.title : o === g.title;
+    const c = this.chosen();
+    return (c === undefined ? this.currentGroup() : c) === g.title;
   }
-  protected toggle(g: NavGroup): void { this.openTitle.set(this.isOpen(g) ? null : g.title); }
+  protected toggle(g: NavGroup): void {
+    this.chosen.set(this.isOpen(g) ? null : g.title);
+  }
+
   // ---- logo: the business's uploaded logo when it has one, else the bundled one; changes when the business is switched
   private readonly uploaded = signal(false);
   private readonly logoBroken = signal(false);
   protected readonly logoStamp = signal(Date.now());
-  protected readonly logoSrc = computed(() => (this.logoBroken() ? '' : this.uploaded() ? '/api/company/assets/logo?v=' + this.logoStamp() : '/logo-' + this.auth.company() + '.jpeg'));
+  protected readonly logoSrc = computed(() => (this.logoBroken() ? '' : this.uploaded() ? '/api/company/assets/logo?v=' + this.logoStamp() : 'logo-' + this.auth.company() + '.jpeg'));
   protected logoFailed() { this.logoBroken.set(true); }
 
   constructor() {
-    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) { this.url.set(this.router.url); this.openTitle.set(undefined); } });
+    this.router.events.subscribe(e => { if (e instanceof NavigationEnd) { this.url.set(this.router.url); this.chosen.set(undefined); } });
+    try { localStorage.removeItem('nav-open'); } catch { /* private mode */ }   // the old "many groups open" memory
     effect(() => {
       const key = this.auth.company(); if (!this.auth.me()) return;
       untracked(async () => {
@@ -134,15 +143,25 @@ export class Shell {
       if (!this.auth.me() || !this.auth.isAdmin()) { this.enabledApps.set([]); return; }
       this.http.get<string[]>('/api/apps/enabled').subscribe({ next: a => this.enabledApps.set(a), error: () => this.enabledApps.set([]) });
     });
-    // A clerk is asked to clock on once per day, when they first arrive.
-    effect(() => { if (this.auth.me() && !this.auth.isAdmin()) void this.askCheckIn(); });
+    // A clerk is asked to clock on once per day, when they first arrive. The request runs untracked: an HTTP call started inside an effect
+    // would otherwise make the effect depend on the spinner's own state and re-fire on every show/hide (an endless loading loop on a slow line).
+    // At most once per person per day: the effect re-runs whenever `me` is replaced (and the shell can be rebuilt), and each re-run
+    // used to fire another /api/attendance/today.
+    effect(() => {
+      const me = this.auth.me();
+      if (!me || this.auth.isCeo()) return;
+      const key = me.username + '|' + new Date().toDateString();
+      if (checkInAskedFor === key) return;
+      checkInAskedFor = key;
+      untracked(() => void this.askCheckIn(key));
+    });
   }
 
-  private async askCheckIn() {
+  private async askCheckIn(key: string) {
     try {
-      const key = 'declined-' + new Date().toDateString();
-      if (sessionStorage.getItem(key)) return;
+      if (sessionStorage.getItem('declined-' + new Date().toDateString()) || sessionStorage.getItem('clocked-' + key)) return;
       if ((await this.api2.attendanceToday()).checkIns === 0) this.checkinOpen.set(true);
+      else sessionStorage.setItem('clocked-' + key, '1');
     } catch { /* attendance must never block the counter */ }
   }
 

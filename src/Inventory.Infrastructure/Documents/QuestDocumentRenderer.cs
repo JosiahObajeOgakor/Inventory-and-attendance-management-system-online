@@ -38,7 +38,9 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         }
     }
 
-    private static string Accent(string companyKey) => companyKey == "candid" ? "#6A2C5B" : "#1F6B4F";
+    /// <summary>Every business's documents print in one fixed plum (ChewyPets used to be green).</summary>
+    private const string Plum = "#6A2C5B";
+    private static string Accent(string companyKey) => Plum;
     private static string N2(decimal v) => v.ToString("N2", CultureInfo.InvariantCulture);
     private static string Money(decimal v) => "₦" + N2(v);
     private static string D(DateOnly d) => d.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
@@ -57,35 +59,75 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         catch { return null; }
     }
 
-    private static Branding Clean(Branding b) => b with { Logo = Usable(b.Logo), Signature = Usable(b.Signature), WaybillStamp = Usable(b.WaybillStamp) };
+    /// <summary>
+    /// A stamp uploaded on the Company page wins; otherwise the business's own stamp that ships with the app (Assets/ → Documents/Stamps),
+    /// so no receipt, quotation, waybill or price list ever goes out unstamped.
+    /// </summary>
+    private static Branding Clean(Branding b) => b with
+    {
+        Logo = Usable(b.Logo),
+        Signature = Usable(b.Signature) ?? DefaultStamp(b.CompanyKey, waybill: false),
+        WaybillStamp = Usable(b.WaybillStamp) ?? DefaultStamp(b.CompanyKey, waybill: true),
+    };
+
+    private static readonly Dictionary<string, byte[]?> Stamps = [];
+
+    /// <summary>The bundled stamp: "&lt;company&gt;-stamp.png" (receipts etc.) or "&lt;company&gt;-waybill.png"; a business with only a waybill stamp uses it everywhere.</summary>
+    internal static byte[]? DefaultStamp(string companyKey, bool waybill)
+    {
+        lock (Stamps)
+        {
+            var key = $"{companyKey}|{waybill}";
+            if (Stamps.TryGetValue(key, out var hit)) return hit;
+            var names = waybill ? new[] { $"{companyKey}-waybill.png", $"{companyKey}-stamp.png" } : [$"{companyKey}-stamp.png", $"{companyKey}-waybill.png"];
+            byte[]? found = null;
+            var asm = typeof(QuestDocumentRenderer).Assembly;
+            foreach (var n in names)
+            {
+                using var s = asm.GetManifestResourceStream("Stamps." + n);
+                if (s is null) continue;
+                using var ms = new MemoryStream(); s.CopyTo(ms); found = ms.ToArray(); break;
+            }
+            return Stamps[key] = found;
+        }
+    }
 
     public byte[] Receipt(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    public byte[] PurchaseOrder(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    public byte[] Supply(SupplyDoc d) => SupplyDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Quotation(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] Waybill(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
     public byte[] PriceList(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GeneratePdf();
+    /// <summary>One continuous page rendered to a single PNG (no page breaks), sized for a phone screen and WhatsApp.</summary>
+    public byte[] PriceListPng(PriceListDoc d) =>
+        PriceListDocument(d with { Brand = Clean(d.Brand) }, continuous: true).GenerateImages(new ImageGenerationSettings { RasterDpi = 144, ImageFormat = ImageFormat.Png }).First();
 
     // Page images (PNG) for design review and tests: the same documents, rasterised.
     private static readonly ImageGenerationSettings Preview = new() { RasterDpi = 110 };
-    public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d).GenerateImages(Preview).ToList();
-    public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> ReceiptImages(ReceiptDoc d) => ReceiptDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> PurchaseOrderImages(PurchaseOrderDoc d) => PurchaseOrderDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> SupplyImages(SupplyDoc d) => SupplyDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> QuotationImages(QuotationDoc d) => QuotationDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> WaybillImages(WaybillDoc d) => WaybillDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
+    public IReadOnlyList<byte[]> PriceListImages(PriceListDoc d) => PriceListDocument(d with { Brand = Clean(d.Brand) }).GenerateImages(Preview).ToList();
 
     // ------------------------------------------------------------------------------------------------ receipt
     private static IDocument ReceiptDocument(ReceiptDoc r) => Compose(doc => doc.Page(page =>
     {
         var accent = Accent(r.Brand.CompanyKey);
         Frame(page, r.Brand, $"{r.Brand.Name}   ·   Receipt {r.Number}   ·   computer-generated {r.GeneratedAt:dd MMM yyyy HH:mm}");
+        // Always ONE page. The layout is budgeted so a typical receipt (12 lines for ChewyPets, 15 for Candid Purrfect, which sells many products)
+        // prints at full size; ScaleToFit is only the safety net for an unusually long one.
         page.Content().ScaleToFit().Column(col =>
         {
+            var compact = Compact(r.Brand);
             Letterhead(col, r.Brand, accent, "SALES RECEIPT", [("Invoice no.", r.Number), ("Date", D(r.Date)), ("Status", r.Status.ToUpperInvariant())]);
             Panels(col, accent,
-                ("Bill to", [("Customer", r.Customer.Name, true), ("Contact", r.Customer.Contact, false), ("Address", r.Customer.Address, false), ("Phone", r.Customer.Phone, false),
-                             ("Email", r.Customer.Email, false), ("Tax ID", r.Customer.TaxId, false), ("Ranking", r.Customer.Ranking, false)]),
+                ("Bill to", [("Customer", r.Customer.Name, true), ("Contact", r.Customer.Contact, false), ("Phone", r.Customer.Phone, false), ("Address", r.Customer.Address, false)]),
                 ("Sale details", [("Price tier", r.PriceTier, false), ("Warehouse", r.Warehouse, false), ("Payment", r.PaymentMethod, false), ("Served by", r.ServedBy, false),
                                   ("Due date", r.DueDate is { } dd ? D(dd) : "", true)]));
 
-            ItemTable(col, accent, r.Lines);
+            ItemTable(col, accent, r.Lines, compact);
 
             var totals = new List<(string, string, int)> { ("Subtotal", Money(r.Subtotal), 0) };
             if (r.DiscountAmount > 0) totals.Add(($"Discount ({r.DiscountPct:0.##}%)", "−" + Money(r.DiscountAmount), 0));
@@ -108,12 +150,98 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             if (r.OwedElsewhere > 0) notes.Add(($"This customer also owes {Money(r.OwedElsewhere)} from earlier purchases — please collect the full amount owed where possible.", true));
             notes.Add(($"Rebate balance with us: {Money(r.RebateAvailable)} (redeemable as goods)", false));
             Totals(col, accent, totals, notes);
-            if (r.BalanceDue > 0) PayBlock(col, accent, r.PayUrl, r.BalanceDue);
+            if (r.BalanceDue > 0) PayBlock(col, accent, r.PayUrl, r.BalanceDue, r.ScanPayUrl);
 
-            BankTable(col, accent, r.Brand.Banks);
-            Barcode(col, r.Number, "Scan to look this receipt up  ·  " + r.Number);
-            StampBlock(col, r.Brand.Signature, "Authorised signature & company stamp");
-            col.Item().PaddingTop(8).AlignCenter().Text("Thanks for your patronage.").FontSize(9).FontColor(Muted).Italic();
+            BankAndStamp(col, accent, r.Brand.Banks, r.Brand.Signature);
+            ConnectBand(col, r.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thanks for your patronage.").FontSize(8.5f).FontColor(Muted).Italic();
+        });
+    }));
+
+    // ------------------------------------------------------------------------------------------------ purchase from a supplier (their copy)
+    private static IDocument SupplyDocument(SupplyDoc s) => Compose(doc => doc.Page(page =>
+    {
+        var accent = Accent(s.Brand.CompanyKey);
+        Frame(page, s.Brand, $"{s.Brand.Name}   ·   Purchase {s.Number}   ·   computer-generated {s.GeneratedAt:dd MMM yyyy HH:mm}");
+        page.Content().ScaleToFit().Column(col =>
+        {
+            Letterhead(col, s.Brand, accent, "PURCHASE RECORD", [("Reference", s.Number), ("Date", D(s.Date)), ("Payment", s.PaymentStatus.ToUpperInvariant())]);
+            Panels(col, accent,
+                ("Supplier", [("Name", s.Supplier.Name, true), ("Contact", s.Supplier.Contact, false), ("Phone", s.Supplier.Phone, false), ("Address", s.Supplier.Address, false)]),
+                ("Details", [("Recorded by", s.RecordedBy, false), ("Items", s.Lines.Count.ToString(), false),
+                             ("Total units", s.Lines.Sum(l => l.Qty).ToString("N0"), false)]));
+
+            // The supplier's own items, named and packed the way they quote them.
+            col.Item().PaddingTop(4).Text("ITEMS SUPPLIED").Bold().FontSize(8.5f).FontColor(accent);
+            col.Item().PaddingTop(3).Table(t =>
+            {
+                t.ColumnsDefinition(c => { c.ConstantColumn(26); c.RelativeColumn(); c.ConstantColumn(64); c.ConstantColumn(48); c.ConstantColumn(46); c.ConstantColumn(76); c.ConstantColumn(84); });
+                foreach (var h in new[] { "#", "Item", "Pack size", "Unit", "Qty", "Price", "Amount" })
+                {
+                    var hc = t.Cell().Element(HeadCell(accent));
+                    (h is "Qty" or "Price" or "Amount" ? hc.AlignRight() : hc).Text(h).Bold().FontSize(8.5f);
+                }
+                foreach (var l in s.Lines)
+                {
+                    t.Cell().Element(BodyCell).Text(l.No.ToString());
+                    t.Cell().Element(BodyCell).Text(l.Name);
+                    t.Cell().Element(BodyCell).Text(l.Size ?? "—");
+                    t.Cell().Element(BodyCell).Text(l.Unit);
+                    t.Cell().Element(BodyCell).AlignRight().Text(l.Qty.ToString("N0"));
+                    t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Price));
+                    t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Amount));
+                }
+            });
+
+            var totals = new List<(string, string, int)> { ("TOTAL", Money(s.Total), 1), ("Paid", Money(s.Paid), 0) };
+            totals.Add(("Still owed (this purchase)", Money(s.BalanceDue), s.BalanceDue > 0 ? 2 : 0));
+            if (s.OwedElsewhere > 0)
+            {
+                totals.Add(("Owed on earlier purchases", Money(s.OwedElsewhere), 2));
+                totals.Add(("TOTAL WE OWE YOU", Money(s.BalanceDue + s.OwedElsewhere), 2));
+            }
+            var notes = new List<(string, bool)> { ($"{s.Lines.Count} item(s) · {s.Lines.Sum(l => l.Qty):N0} unit(s)", false) };
+            if (!string.IsNullOrWhiteSpace(s.Note)) notes.Add((s.Note!, false));
+            notes.Add(s.BalanceDue > 0 ? ($"We have paid {Money(s.Paid)}; {Money(s.BalanceDue)} is still to be paid.", true) : ("Fully paid. Thank you.", false));
+            notes.Add(("Please check this against your own invoice and tell us of any difference.", false));
+            Totals(col, accent, totals, notes);
+            SignOff(col, s.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, s.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thank you for your supply.").FontSize(8.5f).FontColor(Muted).Italic();
+        });
+    }));
+
+    // ------------------------------------------------------------------------------------------------ purchase order (sent to the supplier)
+    private static IDocument PurchaseOrderDocument(PurchaseOrderDoc p) => Compose(doc => doc.Page(page =>
+    {
+        var accent = Accent(p.Brand.CompanyKey);
+        Frame(page, p.Brand, $"{p.Brand.Name}   ·   Purchase {p.Number}   ·   computer-generated {p.GeneratedAt:dd MMM yyyy HH:mm}");
+        page.Content().ScaleToFit().Column(col =>
+        {
+            Letterhead(col, p.Brand, accent, "PURCHASE ORDER", [("Order no.", p.Number), ("Date", D(p.Date)), ("Payment", p.PaymentStatus.ToUpperInvariant())]);
+            Panels(col, accent,
+                ("Supplier", [("Name", p.Supplier.Name, true), ("Contact", p.Supplier.Contact, false), ("Phone", p.Supplier.Phone, false), ("Address", p.Supplier.Address, false)]),
+                ("Order details", [("Status", p.Status, false), ("Prepared by", p.PreparedBy, false), ("Lines", p.Lines.Count.ToString(), false),
+                                   ("Total units", p.Lines.Sum(l => l.Qty).ToString("N0"), false)]));
+            ItemTable(col, accent, p.Lines, Compact(p.Brand));
+
+            var totals = new List<(string, string, int)> { ("Subtotal", Money(p.Subtotal), 0) };
+            if (p.VatAmount > 0) totals.Add(("VAT", Money(p.VatAmount), 0));
+            totals.Add(("ORDER TOTAL", Money(p.Total), 1));
+            totals.Add(("Paid on this order", Money(p.Paid), 0));
+            totals.Add(("Still owed (this order)", Money(p.BalanceDue), p.BalanceDue > 0 ? 2 : 0));
+            if (p.OwedElsewhere > 0)
+            {
+                totals.Add(("Owed on earlier orders", Money(p.OwedElsewhere), 2));
+                totals.Add(("TOTAL WE OWE YOU (all orders)", Money(p.BalanceDue + p.OwedElsewhere), 2));
+            }
+            var notes = new List<(string, bool)> { ($"{p.Lines.Count} product line(s) · {p.Lines.Sum(l => l.Qty):N0} unit(s)", false) };
+            notes.Add(p.BalanceDue > 0 ? ($"We have paid {Money(p.Paid)} of this order; {Money(p.BalanceDue)} is still to be paid.", true) : ("This order is fully paid. Thank you.", false));
+            notes.Add(("Please check the quantities and prices against your invoice and let us know of any difference.", false));
+            Totals(col, accent, totals, notes);
+            SignOff(col, p.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, p.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thank you for your supply.").FontSize(8.5f).FontColor(Muted).Italic();
         });
     }));
 
@@ -126,19 +254,19 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         {
             Letterhead(col, q.Brand, accent, "QUOTATION", [("Quotation no.", q.Number), ("Date", D(q.Date)), ("Status", q.Status.ToUpperInvariant())]);
             Panels(col, accent,
-                ("Quoted to", [("Customer", q.Customer.Name, true), ("Contact", q.Customer.Contact, false), ("Address", q.Customer.Address, false), ("Phone", q.Customer.Phone, false),
-                               ("Email", q.Customer.Email, false), ("Ranking", q.Customer.Ranking, false)]),
+                ("Quoted to", [("Customer", q.Customer.Name, true), ("Contact", q.Customer.Contact, false), ("Phone", q.Customer.Phone, false), ("Address", q.Customer.Address, false)]),
                 ("Quote details", [("Price tier", q.PriceTier, false), ("Prepared by", q.PreparedBy, false)]));
-            ItemTable(col, accent, q.Lines);
+            ItemTable(col, accent, q.Lines, Compact(q.Brand));
             var totals = new List<(string, string, int)> { ("Subtotal", Money(q.Subtotal), 0) };
             if (q.DiscountAmount > 0) totals.Add(($"Discount ({q.DiscountPct:0.##}%)", "−" + Money(q.DiscountAmount), 0));
             if (q.VatAmount > 0) totals.Add(($"VAT ({q.VatRate:0.##}%)", Money(q.VatAmount), 0));
             totals.Add(("TOTAL (quoted)", Money(q.Total), 1));
             Totals(col, accent, totals, [($"{q.Lines.Count} product line(s)", false),
                 ("This is a price quotation, not an invoice — no stock has been reserved and nothing is owed until it's converted to a sale.", true)]);
-            PayBlock(col, accent, q.PayUrl, q.Total);
-            Barcode(col, q.Number, "Scan to look this quotation up  ·  " + q.Number);
-            col.Item().PaddingTop(8).AlignCenter().Text("Thanks for your interest — let us know if you'd like to go ahead.").FontSize(9).FontColor(Muted).Italic();
+            PayBlock(col, accent, q.PayUrl, q.Total, q.ScanPayUrl);
+            SignOff(col, q.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, q.Brand, accent);
+            col.Item().PaddingTop(5).AlignCenter().Text("Thanks for your interest — let us know if you'd like to go ahead.").FontSize(9).FontColor(Muted).Italic();
         });
     }));
 
@@ -177,11 +305,14 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             });
             if (!string.IsNullOrWhiteSpace(w.Notes)) { col.Item().PaddingTop(8).Text("NOTES").Bold().FontSize(8.5f).FontColor(accent); col.Item().Text(w.Notes).FontSize(9); }
             Barcode(col, w.Number, "Scan to look this delivery up  ·  " + w.Number);
+            // The business's "confirmed and released" stamp sits immediately under the barcode.
+            if (w.Brand.WaybillStamp is { Length: > 0 } stamp)
+                col.Item().PaddingTop(6).AlignCenter().Height(118).Image(stamp).FitArea();
 
-            // "Dispatched by" is stamped by the business itself; the driver and the receiving customer sign for themselves.
-            col.Item().PaddingTop(14).Row(row =>
+            // The driver and the receiving customer sign for themselves; "Dispatched by" is signed by whoever loaded the goods.
+            col.Item().PaddingTop(10).Row(row =>
             {
-                row.RelativeItem().Element(c => SignatureBox(c, "Dispatched by", w.Brand.WaybillStamp));
+                row.RelativeItem().Element(c => SignatureBox(c, "Dispatched by", null));
                 row.ConstantItem(16);
                 row.RelativeItem().Element(c => SignatureBox(c, "Driver", null));
                 row.ConstantItem(16);
@@ -193,16 +324,18 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     }));
 
     // ------------------------------------------------------------------------------------------------ price list
-    private static IDocument PriceListDocument(PriceListDoc p) => Compose(doc => doc.Page(page =>
+    private static IDocument PriceListDocument(PriceListDoc p, bool continuous = false) => Compose(doc => doc.Page(page =>
     {
         var accent = Accent(p.Brand.CompanyKey);
-        Frame(page, p.Brand, $"{p.Brand.Name}   ·   Price list {p.Reference}   ·   generated {p.GeneratedAt:dd MMM yyyy HH:mm}");
+        var kind = p.Catalog ? "Catalog" : "Price list";
+        Frame(page, p.Brand, $"{p.Brand.Name}   ·   {kind} {p.Reference}   ·   generated {p.GeneratedAt:dd MMM yyyy HH:mm}", continuous);
         page.Content().Column(col =>
         {
-            var meta = new List<(string K, string V)> { ("Reference", p.Reference), ("Date", D(p.Date)), ("Price tier", p.Tier) };
+            var meta = new List<(string K, string V)> { ("Reference", p.Reference), ("Date", D(p.Date)), ("Price tier", TierLabel(p.Tier)) };
             if (!string.IsNullOrWhiteSpace(p.CustomerName)) meta.Add(("Prepared for", p.CustomerName!));
-            Letterhead(col, p.Brand, accent, "PRICE LIST", meta.ToArray());
-            foreach (var g in p.Lines.GroupBy(l => l.Category))
+            Letterhead(col, p.Brand, accent, p.Catalog ? "PRODUCT CATALOG" : "PRICE LIST", meta.ToArray());
+            if (p.Catalog) CatalogGrid(col, accent, p.Lines);
+            else foreach (var g in p.Lines.GroupBy(l => l.Category))
             {
                 col.Item().PaddingTop(8).Text(g.Key.ToUpperInvariant()).Bold().FontSize(8.5f).FontColor(accent);
                 col.Item().PaddingTop(2).Table(t =>
@@ -220,8 +353,48 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
             }
             col.Item().PaddingTop(10).Text("Prices are in naira and exclude VAT unless stated. Availability subject to stock.").FontSize(8).FontColor(Muted);
             BankTable(col, accent, p.Brand.Banks);
+            SignOff(col, p.Brand.Signature, "Authorised signature & company stamp");
+            ConnectBand(col, p.Brand, accent);
         });
     }));
+
+    private static string TierLabel(string tier) => tier switch { "Wholesaler" => "Wholesale", "Retailer" => "Retail", _ => tier };
+
+    /// <summary>The picture catalog: three cards a row, each with the product photo (or a lettered tile), name, pack, price and stock note.</summary>
+    private static void CatalogGrid(ColumnDescriptor col, string accent, IReadOnlyList<PriceListLine> lines)
+    {
+        col.Item().PaddingTop(4).Table(t =>
+        {
+            t.ColumnsDefinition(c => { c.RelativeColumn(); c.RelativeColumn(); c.RelativeColumn(); });
+            foreach (var l in lines)
+                t.Cell().Padding(4).Border(0.6f).BorderColor(Hairline).CornerRadius(6).Background("#FFFFFF").Padding(7).Column(card =>
+                {
+                    var img = Usable(l.Image);
+                    if (img is not null) card.Item().Height(118).AlignCenter().AlignMiddle().Image(img).FitArea();
+                    else card.Item().Height(118).Background(Tint(accent)).CornerRadius(4).AlignCenter().AlignMiddle()
+                        .Text(string.Concat(l.Product.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])))).Bold().FontSize(26).FontColor(accent);
+                    card.Item().PaddingTop(6).Text(l.Product).Bold().FontSize(9.5f).LineHeight(1.15f);
+                    card.Item().PaddingTop(1).Text($"{l.Unit}  ·  {l.Sku}").FontSize(7.5f).FontColor(Muted);
+                    card.Item().PaddingTop(4).Row(r =>
+                    {
+                        r.RelativeItem().AlignBottom().Text(Money(l.Price)).Bold().FontSize(13).FontColor(accent);
+                        r.AutoItem().AlignBottom().Text(l.InStock > 0 ? "In stock" : "On order").FontSize(7).FontColor(l.InStock > 0 ? "#2F7D4F" : Muted);
+                    });
+                });
+        });
+    }
+
+    /// <summary>A right-aligned signature line with the company stamp over it — used on every document that doesn't already carry one.</summary>
+    private static void SignOff(ColumnDescriptor col, byte[]? stamp, string caption)
+    {
+        col.Item().PaddingTop(6).AlignRight().Width(170).Column(c =>
+        {
+            if (stamp is { Length: > 0 }) c.Item().Height(86).AlignCenter().Image(stamp).FitArea();
+            else c.Item().Height(34);
+            c.Item().LineHorizontal(0.7f).LineColor(Ink);
+            c.Item().PaddingTop(2).AlignCenter().Text(caption).FontSize(7).FontColor(Muted);
+        });
+    }
 
     // ------------------------------------------------------------------------------------------------ shelf label
     public byte[] ShelfLabel(Branding brand, string productName, string sku, string barcode, decimal price)
@@ -244,9 +417,9 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
     }
 
     // ------------------------------------------------------------------------------------------------ building blocks
-    private static void Frame(PageDescriptor page, Branding brand, string footer)
+    private static void Frame(PageDescriptor page, Branding brand, string footer, bool continuous = false)
     {
-        page.Size(PageSizes.A4);
+        if (continuous) page.ContinuousSize(PageSizes.A4.Width); else page.Size(PageSizes.A4);
         page.Margin(34);
         page.DefaultTextStyle(x => x.FontFamily(Face).FontSize(9).FontColor(Ink));
         if (brand.Logo is { Length: > 0 } logo && WatermarkTile(logo) is { } tile)
@@ -304,12 +477,12 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
         {
             row.RelativeItem(1.25f).Row(left =>
             {
-                if (b.Logo is { Length: > 0 } logo) left.ConstantItem(90).MaxHeight(70).Image(logo).FitArea();
+                if (b.Logo is { Length: > 0 } logo) left.ConstantItem(80).MaxHeight(60).Image(logo).FitArea();
                 left.RelativeItem().PaddingLeft(b.Logo is { Length: > 0 } ? 12 : 0).Column(c =>
                 {
-                    c.Item().Text(b.Name).Bold().FontSize(15).FontColor(accent);
+                    c.Item().Text(b.Name).Bold().FontSize(14).FontColor(accent);
                     foreach (var line in new[] { b.Address, b.Phone, b.Email, string.IsNullOrWhiteSpace(b.TaxId) ? "" : "Tax ID: " + b.TaxId })
-                        if (!string.IsNullOrWhiteSpace(line)) c.Item().Text(line).FontSize(8.5f).FontColor(Muted);
+                        if (!string.IsNullOrWhiteSpace(line)) c.Item().Text(line).FontSize(8).FontColor(Muted);
                 });
             });
             row.ConstantItem(20);
@@ -321,8 +494,8 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
                     c.Item().Row(r => { r.ConstantItem(64).Text(k).FontSize(8.5f).FontColor(Muted); r.RelativeItem().AlignRight().Text(v).FontSize(8.5f).Bold(); });
             });
         });
-        col.Item().PaddingTop(8).LineHorizontal(2).LineColor(accent);
-        col.Item().Height(12);
+        col.Item().PaddingTop(6).LineHorizontal(2).LineColor(accent);
+        col.Item().Height(8);
     }
 
     private static void Panels(ColumnDescriptor col, string accent, params (string Title, (string K, string V, bool Bold)[] Rows)[] panels)
@@ -335,46 +508,54 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
                 var p = panels[i];
                 row.RelativeItem().Column(c =>
                 {
-                    c.Item().Text(p.Title.ToUpperInvariant()).Bold().FontSize(8.5f).FontColor(accent);
-                    c.Item().PaddingTop(2).LineHorizontal(0.5f).LineColor(Hairline);
-                    c.Item().Height(4);
+                    c.Item().Text(p.Title.ToUpperInvariant()).Bold().FontSize(8).FontColor(accent);
+                    c.Item().PaddingTop(1.5f).LineHorizontal(0.5f).LineColor(Hairline);
+                    c.Item().Height(3);
                     foreach (var (k, v, bold) in p.Rows.Where(r => !string.IsNullOrWhiteSpace(r.V)))
-                        c.Item().PaddingBottom(2).Row(r =>
+                        c.Item().PaddingBottom(1).Row(r =>
                         {
-                            r.ConstantItem(70).Text(k).FontSize(8.5f).FontColor(Muted);
-                            var t = r.RelativeItem().Text(v).FontSize(9);
+                            r.ConstantItem(58).Text(k).FontSize(8).FontColor(Muted);
+                            var t = r.RelativeItem().Text(v).FontSize(8.5f);
                             if (bold) t.Bold();
                         });
                 });
             }
         });
-        col.Item().Height(10);
+        col.Item().Height(7);
     }
+
+    /// <summary>
+    /// Candid Purrfect sells many products, so its documents use tighter item rows (15 lines fit a page at full size);
+    /// ChewyPets keeps the roomier, more premium rhythm (12 lines).
+    /// </summary>
+    private static bool Compact(Branding b) => b.CompanyKey == "candid";
 
     private static Func<IContainer, IContainer> HeadCell(string accent) => c => c.BorderBottom(1.2f).BorderColor(accent).PaddingVertical(3).PaddingHorizontal(3);
     private static IContainer BodyCell(IContainer c) => c.BorderBottom(0.5f).BorderColor(Hairline).PaddingVertical(3).PaddingHorizontal(3);
     private static IContainer FootCell(IContainer c) => c.BorderTop(1).BorderColor(Ink).PaddingVertical(3).PaddingHorizontal(3);
 
-    private static void ItemTable(ColumnDescriptor col, string accent, IReadOnlyList<DocLine> lines)
+    private static void ItemTable(ColumnDescriptor col, string accent, IReadOnlyList<DocLine> lines, bool compact = false)
     {
+        var pad = compact ? 1.8f : 2.6f; var size = compact ? 8.3f : 8.8f;
+        IContainer Cell(IContainer c) => c.BorderBottom(0.5f).BorderColor(Hairline).PaddingVertical(pad).PaddingHorizontal(3);
         col.Item().Table(t =>
         {
-            t.ColumnsDefinition(c => { c.ConstantColumn(24); c.RelativeColumn(); c.ConstantColumn(48); c.ConstantColumn(88); c.ConstantColumn(96); });
-            t.Cell().Element(HeadCell(accent)).Text("#").Bold().FontSize(8.5f);
-            t.Cell().Element(HeadCell(accent)).Text("Description").Bold().FontSize(8.5f);
-            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Qty").Bold().FontSize(8.5f);
-            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Unit price (₦)").Bold().FontSize(8.5f);
-            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Amount (₦)").Bold().FontSize(8.5f);
+            t.ColumnsDefinition(c => { c.ConstantColumn(22); c.RelativeColumn(); c.ConstantColumn(44); c.ConstantColumn(86); c.ConstantColumn(94); });
+            t.Cell().Element(HeadCell(accent)).Text("#").Bold().FontSize(8);
+            t.Cell().Element(HeadCell(accent)).Text("Description").Bold().FontSize(8);
+            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Qty").Bold().FontSize(8);
+            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Unit price (₦)").Bold().FontSize(8);
+            t.Cell().Element(HeadCell(accent)).AlignRight().Text("Amount (₦)").Bold().FontSize(8);
             foreach (var l in lines)
             {
-                t.Cell().Element(BodyCell).Text(l.No.ToString());
-                t.Cell().Element(BodyCell).Text(l.Description);
-                t.Cell().Element(BodyCell).AlignRight().Text(l.Qty.ToString("N0", CultureInfo.InvariantCulture));
-                t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Price));
-                t.Cell().Element(BodyCell).AlignRight().Text(N2(l.Amount));
+                t.Cell().Element(Cell).Text(l.No.ToString()).FontSize(size);
+                t.Cell().Element(Cell).Text(l.Description).FontSize(size);
+                t.Cell().Element(Cell).AlignRight().Text(l.Qty.ToString("N0", CultureInfo.InvariantCulture)).FontSize(size);
+                t.Cell().Element(Cell).AlignRight().Text(N2(l.Price)).FontSize(size);
+                t.Cell().Element(Cell).AlignRight().Text(N2(l.Amount)).FontSize(size);
             }
         });
-        col.Item().Height(8);
+        col.Item().Height(6);
     }
 
     /// <param name="style">0 normal, 1 grand total, 2 attention (amount still owed)</param>
@@ -407,19 +588,171 @@ public sealed class QuestDocumentRenderer : IDocumentRenderer
                 }
             });
         });
-        col.Item().Height(8);
+        col.Item().Height(5);
     }
 
-    /// <summary>A clickable button in the PDF that opens the customer's Paystack payment page for this exact amount.</summary>
-    private static void PayBlock(ColumnDescriptor col, string accent, string? url, decimal amount)
+    /// <summary>
+    /// A clickable button in the PDF. It opens our payment page, where the customer picks Paystack or AlatPay and pays what is owed at that
+    /// moment (or, on a server without a site address, a Paystack checkout directly).
+    /// </summary>
+    private static void PayBlock(ColumnDescriptor col, string accent, string? url, decimal amount, string? scanUrl = null)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps) return;
-        col.Item().PaddingTop(8).Hyperlink(url).Background(accent).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
+        var ownPage = u.AbsolutePath.StartsWith("/pay/", StringComparison.Ordinal);
+        var qr = !string.IsNullOrWhiteSpace(scanUrl) && scanUrl.StartsWith("https://", StringComparison.Ordinal) ? QrPng(scanUrl) : null;
+        col.Item().PaddingTop(4).Row(row =>
         {
-            c.Item().AlignCenter().Text($"PAY {Money(amount)} ONLINE — CLICK HERE").Bold().FontSize(11).FontColor("#FFFFFF");
-            c.Item().AlignCenter().Text("Card, bank transfer or USSD · secured by Paystack").FontSize(8).FontColor("#FFFFFF");
+            row.RelativeItem().AlignMiddle().Column(left =>
+            {
+                left.Item().Hyperlink(url).Background(accent).CornerRadius(6).PaddingVertical(7).PaddingHorizontal(12).Column(c =>
+                {
+                    c.Item().AlignCenter().Text($"PAY {Money(amount)} ONLINE — CLICK HERE").Bold().FontSize(11).FontColor("#FFFFFF");
+                    c.Item().AlignCenter().Text(ownPage ? "Card or bank transfer · secure online checkout" : "Card, bank transfer or USSD · secured by Paystack")
+                        .FontSize(8).FontColor("#FFFFFF");
+                });
+                // The address itself, for someone reading a printed copy (our own page's address is long and never typed, so it's shown shortened).
+                left.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(ownPage ? $"{u.Host}/pay" : url).FontSize(6.5f).FontColor(Muted);
+            });
+            if (qr is not null)
+            {
+                // Scan to pay: the phone camera opens an AlatPay checkout straight away, for what is owed at that moment.
+                row.ConstantItem(14);
+                row.ConstantItem(150).Border(0.8f).BorderColor(Hairline).CornerRadius(8).Padding(6).Row(q =>
+                {
+                    q.ConstantItem(58).Height(58).Hyperlink(scanUrl!).Image(qr).FitArea();
+                    q.RelativeItem().PaddingLeft(7).AlignMiddle().Column(t =>
+                    {
+                        t.Item().Text("SCAN TO PAY").Bold().FontSize(8.5f).LetterSpacing(0.05f).FontColor(accent);
+                        t.Item().PaddingTop(2).Text("Point your phone camera here to pay with AlatPay.").FontSize(7).FontColor(Muted).LineHeight(1.25f);
+                    });
+                });
+            }
         });
-        col.Item().PaddingTop(2).AlignCenter().Hyperlink(url).Text(url).FontSize(6.5f).FontColor(Muted);
+    }
+
+    /// <summary>A QR code (PNG) for a link; medium error correction so a slightly smudged print still scans. Null if it can't be made.</summary>
+    private static byte[]? QrPng(string text)
+    {
+        try
+        {
+            using var gen = new QRCoder.QRCodeGenerator();
+            using var data = gen.CreateQrCode(text, QRCoder.QRCodeGenerator.ECCLevel.M);
+            return new QRCoder.PngByteQRCode(data).GetGraphic(8, darkColorRgba: [0x16, 0x20, 0x2A, 0xFF], lightColorRgba: [0xFF, 0xFF, 0xFF, 0xFF], drawQuietZones: true);
+        }
+        catch { return null; }   // a symbol is a convenience; never lose the document over one
+    }
+
+    /// <summary>Platform badge (short mark + the platform's own colour) for the "follow us" chips. Letters, not logos: they print reliably.</summary>
+    private static (string Mark, string Colour) SocialBadge(string platform) => platform.Trim().ToLowerInvariant() switch
+    {
+        "facebook" => ("f", "#1877F2"),
+        "instagram" => ("IG", "#E1306C"),
+        "youtube" => ("YT", "#FF0000"),
+        "telegram" => ("TG", "#229ED9"),
+        "x" or "twitter" => ("X", "#111111"),
+        "tiktok" => ("TT", "#111111"),
+        _ => (platform.Length > 0 ? platform[..1].ToUpperInvariant() : "•", Ink),
+    };
+
+    /// <summary>A light wash of the business colour for panel backgrounds.</summary>
+    private static string Tint(string accent) => accent == "#6A2C5B" ? "#F5EEF3" : "#EEF5F1";
+
+    /// <summary>
+    /// The closing "shop online / follow us" band on receipts and quotations: the website (order any time, pay online) on the left,
+    /// the social accounts as tappable chips on the right. Every item is a live link in the PDF. Skipped for a business without either.
+    /// </summary>
+    private static void ConnectBand(ColumnDescriptor col, Branding b, string accent)
+    {
+        // Documents show the four everyday channels; YouTube and X stay in the settings but are left off paper to save space.
+        var socials = (b.Socials ?? []).Where(s => s.Platform.Trim().ToLowerInvariant() is not ("youtube" or "x" or "twitter")).ToList();
+        var site = string.IsNullOrWhiteSpace(b.Website) ? null : b.Website.Trim();
+        if (site is null && socials.Count == 0) return;
+        var siteLabel = site is null ? null : site.Replace("https://", "").Replace("http://", "").TrimEnd('/');
+
+        col.Item().PaddingTop(7).Background(Tint(accent)).CornerRadius(7).Border(0.6f).BorderColor(Hairline).PaddingVertical(7).PaddingHorizontal(10).Row(row =>
+        {
+            if (site is not null)
+            {
+                row.RelativeItem(1f).PaddingRight(10).AlignMiddle().Column(c =>
+                {
+                    c.Item().Text("SHOP & PAY ONLINE").Bold().FontSize(7).LetterSpacing(0.08f).FontColor(accent);
+                    c.Item().PaddingTop(1).Row(r =>
+                    {
+                        r.AutoItem().AlignMiddle().Hyperlink(site).Text(siteLabel!).Bold().FontSize(12).FontColor(Ink);
+                        r.ConstantItem(8);
+                        r.AutoItem().AlignMiddle().Hyperlink(site).Background(accent).CornerRadius(10).PaddingVertical(2.5f).PaddingHorizontal(8)
+                            .Text("Order online  ›").Bold().FontSize(7.5f).FontColor("#FFFFFF");
+                    });
+                    c.Item().PaddingTop(2).Text("Order any time, pay online by card or transfer — we deliver.").FontSize(7.3f).FontColor(Muted);
+                });
+                if (socials.Count > 0) row.ConstantItem(0.8f).Background(Hairline);
+            }
+            if (socials.Count > 0)
+            {
+                row.RelativeItem(1.05f).PaddingLeft(site is null ? 0 : 10).AlignMiddle().Column(c =>
+                {
+                    c.Item().Text("FOLLOW US · STAY UPDATED").Bold().FontSize(7).LetterSpacing(0.08f).FontColor(accent);
+                    c.Item().PaddingTop(3).Table(t =>
+                    {
+                        t.ColumnsDefinition(cd => { cd.RelativeColumn(); cd.RelativeColumn(); });
+                        foreach (var s in socials)
+                        {
+                            var (mark, colour) = SocialBadge(s.Platform);
+                            t.Cell().PaddingBottom(3).PaddingRight(3).Hyperlink(s.Url).Background("#FFFFFF").CornerRadius(5)
+                                .Border(0.5f).BorderColor(Hairline).PaddingVertical(2).PaddingHorizontal(3).Row(chip =>
+                                {
+                                    chip.ConstantItem(13).Height(13).Background(colour).CornerRadius(3).AlignCenter().AlignMiddle()
+                                        .Text(mark).Bold().FontSize(mark.Length > 1 ? 5.5f : 7.5f).FontColor("#FFFFFF");
+                                    chip.RelativeItem().PaddingLeft(4).AlignMiddle().Text(s.Handle).Bold().FontSize(7.5f).FontColor(Ink);
+                                });
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    /// <summary>The only accounts customers should pay into — said plainly on every receipt, because old account numbers circulate.</summary>
+    public const string PayOnlyHereNote =
+        "Please note: make payment only into the accounts and payment options on this receipt — not into any account you may have used or known before.";
+
+    /// <summary>
+    /// Bank details (with the "pay only here" note) on the left and the signature/stamp on the right, in one row — the stamp no longer takes a
+    /// band of its own, which is most of what lets a full receipt fit one page.
+    /// </summary>
+    private static void BankAndStamp(ColumnDescriptor col, string accent, IReadOnlyList<BankInfo> banks, byte[]? stamp)
+    {
+        col.Item().PaddingTop(4).Row(row =>
+        {
+            row.RelativeItem().Column(c =>
+            {
+                c.Item().Background("#FFF6E0").Border(0.6f).BorderColor("#E9C46A").CornerRadius(5).PaddingVertical(4).PaddingHorizontal(7)
+                    .Text(PayOnlyHereNote).Bold().FontSize(7.8f).FontColor("#5A4200").LineHeight(1.25f);
+                if (banks.Count > 0)
+                {
+                    c.Item().PaddingTop(5).Text("PAYMENT DETAILS — BANK TRANSFER").Bold().FontSize(8).FontColor(accent);
+                    c.Item().PaddingTop(2).Table(t =>
+                    {
+                        t.ColumnsDefinition(cd => { cd.RelativeColumn(1.2f); cd.RelativeColumn(1.7f); cd.RelativeColumn(1.1f); });
+                        foreach (var h in new[] { "Bank", "Account name", "Account number" }) t.Cell().Element(HeadCell(accent)).Text(h).Bold().FontSize(7.8f);
+                        foreach (var b in banks)
+                        {
+                            t.Cell().Element(BodyCell).Text(b.Bank).FontSize(8.3f);
+                            t.Cell().Element(BodyCell).Text(b.AccountName).FontSize(8.3f);
+                            t.Cell().Element(BodyCell).Text(b.AccountNumber).Bold().FontSize(8.8f);
+                        }
+                    });
+                }
+            });
+            row.ConstantItem(16);
+            row.ConstantItem(150).AlignBottom().Column(c =>
+            {
+                if (stamp is { Length: > 0 }) c.Item().Height(84).AlignCenter().Image(stamp).FitArea();
+                else c.Item().Height(40);
+                c.Item().LineHorizontal(0.7f).LineColor(Ink);
+                c.Item().PaddingTop(2).AlignCenter().Text("Authorised signature & company stamp").FontSize(7).FontColor(Muted);
+            });
+        });
     }
 
     private static void BankTable(ColumnDescriptor col, string accent, IReadOnlyList<BankInfo> banks)

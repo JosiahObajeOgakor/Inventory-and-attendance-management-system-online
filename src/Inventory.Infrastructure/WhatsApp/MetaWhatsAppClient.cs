@@ -69,10 +69,62 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
             ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "document",
             ["document"] = new JsonObject { ["id"] = mediaId, ["filename"] = filename, ["caption"] = caption },
         };
+        // A person pressed "Send" and is waiting to be told it went: a refused send must not look like a delivered one.
+        if (!await SendAsync(cfg, body, ct)) throw new BusinessRuleException("WhatsApp didn't accept the message. Check the number, or use Share instead.");
+    }
+
+    public async Task SendImageAsync(string companyKey, string toE164, byte[] png, string caption, CancellationToken ct)
+    {
+        var cfg = ForCompany(companyKey) ?? throw new BusinessRuleException("WhatsApp isn't set up for this business.");
+        var mediaId = await UploadMediaAsync(cfg, png, "catalog.png", "image/png", ct);
+        var body = new JsonObject
+        {
+            ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "image",
+            ["image"] = new JsonObject { ["id"] = mediaId, ["caption"] = caption.Length > 1024 ? caption[..1024] : caption },
+        };
         await SendAsync(cfg, body, ct);
     }
 
-    private async Task SendAsync(WhatsAppNumberConfig cfg, JsonObject body, CancellationToken ct)
+    public async Task SendButtonsAsync(string companyKey, string toE164, string body, IReadOnlyList<WhatsAppButton> buttons, CancellationToken ct)
+    {
+        var cfg = ForCompany(companyKey) ?? throw new BusinessRuleException("WhatsApp isn't set up for this business.");
+        var replies = new JsonArray();
+        foreach (var b in buttons.Take(3))
+            replies.Add(new JsonObject { ["type"] = "reply", ["reply"] = new JsonObject { ["id"] = b.Id, ["title"] = b.Title.Length > 20 ? b.Title[..20] : b.Title } });
+        var msg = new JsonObject
+        {
+            ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "interactive",
+            ["interactive"] = new JsonObject
+            {
+                ["type"] = "button",
+                ["body"] = new JsonObject { ["text"] = body.Length > 1024 ? body[..1024] : body },
+                ["action"] = new JsonObject { ["buttons"] = replies },
+            },
+        };
+        await SendAsync(cfg, msg, ct);
+    }
+
+    public async Task<bool> SendTemplateAsync(string companyKey, string toE164, string templateName, string languageCode, IReadOnlyList<string> bodyParameters, CancellationToken ct)
+    {
+        var cfg = ForCompany(companyKey) ?? throw new BusinessRuleException("WhatsApp isn't set up for this business.");
+        var parameters = new JsonArray();
+        // Template parameters can't contain newlines, tabs or 4+ spaces in a row (Meta rejects the send).
+        foreach (var p in bodyParameters)
+            parameters.Add(new JsonObject { ["type"] = "text", ["text"] = System.Text.RegularExpressions.Regex.Replace(string.IsNullOrWhiteSpace(p) ? "-" : p, @"\s+", " ").Trim() });
+        var msg = new JsonObject
+        {
+            ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "template",
+            ["template"] = new JsonObject
+            {
+                ["name"] = templateName,
+                ["language"] = new JsonObject { ["code"] = languageCode },
+                ["components"] = new JsonArray { new JsonObject { ["type"] = "body", ["parameters"] = parameters } },
+            },
+        };
+        return await SendAsync(cfg, msg, ct);
+    }
+
+    private async Task<bool> SendAsync(WhatsAppNumberConfig cfg, JsonObject body, CancellationToken ct)
     {
         try
         {
@@ -80,9 +132,26 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
             { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", cfg.AccessToken);
             using var res = await http.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode) log.LogWarning("WhatsApp send failed: {Status} {Body}", (int)res.StatusCode, await res.Content.ReadAsStringAsync(ct));
+            var text = await res.Content.ReadAsStringAsync(ct);
+            if (res.IsSuccessStatusCode)
+            {
+                // Meta accepting a message is not Meta delivering it: outside the 24-hour window, or while the app is unpublished, it
+                // answers 200 "accepted" and drops it silently. Log the id so the delivery status webhook can be matched to this send.
+                var node = SafeParse(text);
+                log.LogInformation("WhatsApp accepted message {MessageId} to {To} (status {DeliveryStatus})",
+                    node?["messages"]?[0]?["id"]?.GetValue<string>() ?? "?", body["to"]?.GetValue<string>() ?? "?",
+                    node?["messages"]?[0]?["message_status"]?.GetValue<string>() ?? "accepted");
+                return true;
+            }
+            log.LogWarning("WhatsApp send failed: {Status} {Body}", (int)res.StatusCode, text);
+            return false;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { log.LogWarning(ex, "WhatsApp send failed"); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { log.LogWarning(ex, "WhatsApp send failed"); return false; }
+    }
+
+    private static JsonNode? SafeParse(string json)
+    {
+        try { return JsonNode.Parse(json); } catch (System.Text.Json.JsonException) { return null; }
     }
 
     private async Task<string> UploadMediaAsync(WhatsAppNumberConfig cfg, byte[] bytes, string filename, string mime, CancellationToken ct)

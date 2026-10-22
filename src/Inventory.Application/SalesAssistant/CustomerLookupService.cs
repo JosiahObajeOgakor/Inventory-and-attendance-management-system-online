@@ -21,7 +21,7 @@ public sealed class CustomerLookupService(IBusinessDbContext db)
             Name = string.IsNullOrWhiteSpace(name) ? normalized : name!.Trim(),
             Phone = normalized,
             CustomerType = CustomerTypes.WalkIn,
-            RebateRatePct = 0,
+            RebatePerUnit = 0,
             CreditLimit = 0,
             Balance = 0,
         };

@@ -26,12 +26,14 @@ public sealed record MovementRowDto(int Id, DateTime At, int ProductId, string P
 
 public sealed record SupplierDto(int Id, string Name, string? Category, string? ContactName, string? Phone, string? Email, string? Address, string? TaxId, decimal Balance);
 public sealed record SupplierInput(string Name, string? Category, string? ContactName, string? Phone, string? Email, string? Address, string? TaxId);
+public sealed record SupplierItemDto(int Id, int ProductId, string Product, string Sku, string Unit, decimal UnitCost, bool IsActive);
+public sealed record SupplierItemInput(int ProductId, decimal UnitCost);
 
 public sealed record CustomerDto(int Id, string Name, string CustomerType, string? ContactName, string? Phone, string? Location, string? Address,
-    string? Email, string? TaxId, decimal RebateRatePct, decimal CreditLimit, decimal Balance, decimal TrailingTwelveMonthSpend, string Ranking);
+    string? Email, string? TaxId, decimal RebatePerUnit, decimal CreditLimit, decimal Balance, decimal TrailingTwelveMonthSpend, string Ranking);
 public sealed record CustomerLookupDto(int Id, string Name, string CustomerType, string? Phone, decimal Balance);
 public sealed record CustomerInput(string Name, string CustomerType, string? ContactName, string? Phone, string? Location, string? Address,
-    string? Email, string? TaxId, decimal RebateRatePct, decimal CreditLimit);
+    string? Email, string? TaxId, decimal RebatePerUnit, decimal CreditLimit);
 
 public sealed record InvoiceRowDto(int Id, string InvoiceNumber, string Customer, DateOnly InvoiceDate, string PaymentMethod, decimal TotalAmount,
     string Status, decimal? EstProfit);
@@ -41,19 +43,24 @@ public sealed record SupplierPaymentDto(DateTime At, decimal Amount, string Meth
 public sealed record InvoiceDetailDto(int Id, string InvoiceNumber, int CustomerId, string Customer, string CustomerType, DateOnly InvoiceDate,
     DateOnly? DueDate, decimal Subtotal, decimal DiscountPct, decimal DiscountAmount, decimal VatRate, decimal VatAmount, decimal TotalAmount,
     decimal AmountPaid, string Status, string PaymentMethod, string PriceTier, int? WarehouseId, string CreatedBy, string? VoidReason,
-    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments);
+    IReadOnlyList<InvoiceItemDto> Items, IReadOnlyList<PaymentDto> Payments, decimal DeliveryFee = 0, decimal OwedElsewhere = 0,
+    string? CustomerPhone = null, string? CustomerEmail = null);
 
 public sealed record PurchaseRowDto(int Id, string PoNumber, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus, decimal TotalAmount, decimal AmountPaid);
 public sealed record PurchaseItemDto(int ProductId, string Product, string Sku, int Quantity, decimal UnitCost, decimal LineTotal);
 public sealed record PurchaseDetailDto(int Id, string PoNumber, int SupplierId, string Supplier, DateOnly OrderDate, string Status, string PaymentStatus,
-    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items, IReadOnlyList<SupplierPaymentDto> Payments);
+    decimal TotalAmount, decimal AmountPaid, IReadOnlyList<PurchaseItemDto> Items, decimal OwedElsewhere = 0,
+    string? SupplierPhone = null, string? SupplierEmail = null, IReadOnlyList<SupplierPaymentDto>? Payments = null);
 
 public sealed record LedgerRowDto(int Id, DateOnly EntryDate, string AccountName, string AccountType, string EntryType, decimal Amount, string? Reference);
 
 public sealed record MonthlyIncomeDto(int Year, int Month, int Invoices, decimal GrossSales, decimal Vat, decimal NetSales, decimal Collected, decimal Outstanding);
 
 public sealed record FinanceSummaryDto(int Year, int Month, decimal Revenue, decimal Discounts, decimal Cogs, decimal GrossProfit, decimal Expenses,
-    decimal NetProfit, decimal AccountsPayable, decimal AccountsReceivable, decimal RebatesAvailable);
+    decimal NetProfit, decimal AccountsPayable, decimal AccountsReceivable, decimal RebatesAvailable,
+    // The buying side, so the page summarises everything the system records and not only sales:
+    // what suppliers billed us this month, what of that is still unpaid, what we paid them, and what the shelves are worth at cost.
+    decimal PurchasesThisMonth = 0, decimal PurchasesUnpaid = 0, decimal PaidToSuppliers = 0, decimal InventoryValue = 0);
 
 public sealed record ReorderAdviceDto(int ProductId, string Product, int OnHand, int ReorderLevel, decimal AvgDailyDemand, decimal? DaysOfCover,
     int ReorderPoint, int SuggestedOrderQty, string Urgency, string Summary);

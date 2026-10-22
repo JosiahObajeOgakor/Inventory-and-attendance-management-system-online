@@ -11,11 +11,11 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, injec
   template: `
     <div class="welcome" role="dialog" aria-modal="true" aria-labelledby="w-title">
       @if (!videoFailed()) {
-        <video class="bg" autoplay muted playsinline preload="auto" [attr.poster]="imageFailed() ? null : '/clerk-welcome.jpg'" (error)="videoFailed.set(true)">
-          <source src="/clerk-welcome.mp4" type="video/mp4" (error)="videoFailed.set(true)" />
+        <video class="bg" autoplay muted playsinline preload="auto" [attr.poster]="imageFailed() ? null : 'clerk-welcome.jpg'" (error)="videoFailed.set(true)">
+          <source src="clerk-welcome.mp4" type="video/mp4" (error)="videoFailed.set(true)" />
         </video>
       } @else if (!imageFailed()) {
-        <img class="bg still" [class.zoom]="!reduced" src="/clerk-welcome.jpg" alt="" (error)="imageFailed.set(true)" />
+        <img class="bg still" [class.zoom]="!reduced" src="clerk-welcome.jpg" alt="" (error)="imageFailed.set(true)" />
       }
       <div class="shade"></div>
 

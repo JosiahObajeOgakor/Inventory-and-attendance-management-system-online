@@ -2,8 +2,11 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, injec
 import { RouterLink } from '@angular/router';
 import { Api2 } from '../../core/api-more';
 import { messageOf } from '../../core/api.service';
+import { Loading } from '../../core/loading.service';
 import { Auth } from '../../core/auth.service';
 import { CalendarData, ChatSummary, CustomerHero, InsightSet, Kpi, Overview } from '../../core/models-dash';
+import { ReorderDue, SupplySummary } from '../../core/models-more';
+import { Toasts } from '../../shared/feedback';
 import { Icon } from '../../shared/icon';
 import { DueCalendar } from './due-calendar';
 import { Bubbles, Dots, LineChart, Series, compact, naira } from './widgets';
@@ -47,6 +50,22 @@ const POLL_MS = 30_000;
           }
         </section>
 
+        <!-- cost of goods: what sold goods cost us, what we bought, what's on the shelves, what we owe suppliers -->
+        <section class="kpis" aria-label="Cost of goods">
+          @for (k of costKpis(); track k.label) {
+            <article class="card cost">
+              <div class="k-head"><span>{{ k.label }}</span><app-icon [name]="k.icon" [size]="16" /></div>
+              <div class="k-val">{{ full(k.value) }}</div>
+              <div class="k-foot">
+                @if (k.kpi; as kp) {
+                  <span class="prev">vs last month {{ full(kp.previous) }}</span>
+                  @if (kp.changePct !== null) { <span class="chip"><span aria-hidden="true">{{ kp.changePct >= 0 ? '↑' : '↓' }}</span> {{ kp.changePct >= 0 ? '+' : '' }}{{ kp.changePct }}%</span> }
+                } @else if (k.link) { <a class="prev" [routerLink]="k.link">{{ k.note }}</a> } @else { <span class="prev">{{ k.note }}</span> }
+              </div>
+            </article>
+          }
+        </section>
+
         <!-- customers by month -->
         <section class="card hero">
           <div class="c-head"><app-icon name="customer" [size]="18" /><h2>Top customers</h2>
@@ -84,6 +103,66 @@ const POLL_MS = 30_000;
             </div>
           } @else { <div class="empty"><strong>No customer sales yet</strong>Named customers appear here once they buy.</div> }
         </section>
+
+        <!-- customers overdue to buy again, each judged against their own rhythm -->
+        @if (dueBack().length) {
+          <section class="card reorder">
+            <div class="c-head"><app-icon name="customer" [size]="18" /><h2>Due to buy again</h2>
+              <span class="sub">Each one against their own pattern · <button type="button" class="ghost" [disabled]="alertsBusy()" (click)="sendAlerts()">{{ alertsBusy() ? 'Sending…' : 'Send me today’s alerts' }}</button></span></div>
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>Customer</th><th>Usually buys</th><th class="num">Last seen</th><th class="num">Average order</th><th>Usually takes</th><th><span class="sr-only">Call</span></th></tr></thead>
+              <tbody>@for (r of dueBack(); track r.customerId) {
+                <tr><td><a class="strong" [routerLink]="['/customers']">{{ r.customer }}</a><div class="muted xs">{{ r.orders }} order(s) on record</div></td>
+                  <td>every {{ r.typicalDays }} day(s)</td>
+                  <td class="num mono" [class.owes]="r.daysOverdue > r.typicalDays">{{ r.daysSince }} day(s) ago<div class="xs muted">{{ r.daysOverdue }} late</div></td>
+                  <td class="num mono">{{ full(r.averageOrder) }}</td>
+                  <td class="xs">{{ r.usualItems || '—' }}</td>
+                  <td>@if (r.phone) { <a class="btn btn-sm" [href]="waLink(r.phone)" target="_blank" rel="noopener">WhatsApp</a> }</td></tr>
+              }</tbody>
+            </table></div>
+          </section>
+        }
+
+        <!-- supplies: what suppliers supplied, on its own (no stock, no purchase orders mixed in) -->
+        @if (sup(); as sp) {
+          <section class="card supplies">
+            <div class="c-head"><app-icon name="supplier" [size]="18" /><h2>Purchases from suppliers</h2>
+              <span class="sub">Never touches stock · <a routerLink="/purchases">open purchases</a></span></div>
+
+            <div class="s-tiles">
+              <div class="s-tile"><span>Bought this month</span><strong class="mono">{{ full(sp.thisMonth) }}</strong>
+                <small>vs last month {{ full(sp.lastMonth) }}@if (sp.changePct !== null) { <span class="chip">{{ sp.changePct >= 0 ? '+' : '' }}{{ sp.changePct }}%</span> }</small></div>
+              <div class="s-tile" [class.owes]="sp.owedTotal > 0"><span>Owed to suppliers on these</span><strong class="mono">{{ full(sp.owedTotal) }}</strong>
+                <small>{{ sp.recordsThisMonth }} record(s) this month</small></div>
+            </div>
+
+            <div class="s-cols">
+              <div>
+                <span class="eyebrow">Per supplier, this month</span>
+                @if (sp.bySupplier.length) {
+                  <table class="mini"><tbody>@for (b of sp.bySupplier; track b.supplierId) {
+                    <tr><td><a [routerLink]="['/suppliers', b.supplierId]">{{ b.supplier }}</a><div class="muted xs">{{ b.records }} record(s) · {{ b.units }} unit(s)</div></td>
+                      <td class="num mono">{{ full(b.amount) }}<div class="xs" [class.owes]="b.owed > 0">{{ b.owed > 0 ? full(b.owed) + ' owed' : 'settled' }}</div></td></tr>
+                  }</tbody></table>
+                } @else { <p class="muted xs">Nothing bought this month yet.</p> }
+              </div>
+              <div>
+                <span class="eyebrow">Top items bought, this month</span>
+                @if (sp.topItems.length) {
+                  <table class="mini"><tbody>@for (t of sp.topItems; track t.name + (t.size ?? '')) {
+                    <tr><td>{{ t.name }}<div class="muted xs">{{ t.quantity }} {{ t.unit }}{{ t.size ? ' · ' + t.size : '' }}</div></td><td class="num mono">{{ full(t.amount) }}</td></tr>
+                  }</tbody></table>
+                } @else { <p class="muted xs">No items bought this month yet.</p> }
+              </div>
+            </div>
+
+            @if (supplySeries().length) {
+              <span class="eyebrow">Each supplier, month by month</span>
+              <app-line-chart [series]="supplySeries()" [labels]="supplyLabels()" />
+              <div class="legend">@for (s of supplySeries(); track s.key) { <span><i [style.background]="s.color"></i>{{ s.label }}</span> }</div>
+            }
+          </section>
+        }
 
         <!-- revenue chart + advice -->
         <div class="row two-one">
@@ -184,6 +263,17 @@ const POLL_MS = 30_000;
     .add { display: inline-flex; align-items: center; gap: .4rem; background: var(--blue); color: #fff; padding: .6rem 1rem; border-radius: 10px; font-weight: 600; text-decoration: none; } .add:hover { filter: brightness(.95); }
     .card { background: #fff; border-radius: 16px; padding: 1.1rem 1.25rem; box-shadow: none; border: 0; min-width: 0; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+    .reorder .sub { margin-left: auto; font-size: .8125rem; color: #6b7280; } .reorder .ghost { background: none; border: 0; color: var(--brand); cursor: pointer; text-decoration: underline; padding: 0; font: inherit; }
+    .reorder td.owes, .reorder .owes { color: var(--stamp); font-weight: 600; }
+    .supplies { padding-bottom: 1rem; } .supplies .sub { margin-left: auto; font-size: .8125rem; color: #6b7280; }
+    .s-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .8rem; padding: 0 1.15rem .4rem; }
+    .s-tile { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border: 1px solid #eef1f6; border-radius: 12px; }
+    .s-tile span { color: #6b7280; font-size: .8125rem; } .s-tile strong { font: 500 1.35rem/1 var(--font-mono); letter-spacing: -.03em; }
+    .s-tile small { color: #6b7280; font-size: .75rem; } .s-tile.owes strong { color: var(--stamp); }
+    .s-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.2rem; padding: .8rem 1.15rem; }
+    .mini { width: 100%; border-collapse: collapse; margin-top: .4rem; } .mini td { padding: .4rem 0; border-bottom: 1px solid #f1f3f7; vertical-align: top; font-size: .875rem; }
+    .mini td.num { text-align: right; white-space: nowrap; } .xs { font-size: .7rem; } .xs.owes, .mini .owes { color: var(--stamp); }
+    .supplies .eyebrow { display: block; padding: 0 1.15rem; }
     .k-head { display: flex; justify-content: space-between; align-items: center; color: #4a5468; font-size: .9375rem; padding-bottom: .7rem; border-bottom: 1px solid #eef1f6; } .k-head app-icon { color: #9aa6bd; }
     .k-val { font: 500 1.7rem/1 var(--font-mono); letter-spacing: -.04em; color: var(--dark); margin: .9rem 0 .7rem; white-space: nowrap; }
     .k-foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; } .prev { font-size: .75rem; color: #8b95a7; }
@@ -215,6 +305,8 @@ const POLL_MS = 30_000;
 })
 export class AdminDashboard implements OnInit {
   private readonly api = inject(Api2);
+  private readonly loading = inject(Loading);
+  private readonly toasts = inject(Toasts);
   protected readonly auth = inject(Auth);
   private readonly destroy = inject(DestroyRef);
   protected readonly compact = compact;
@@ -265,11 +357,55 @@ export class AdminDashboard implements OnInit {
 
   protected readonly chat = signal<ChatSummary | null>(null);
 
+  // ---- supplies: its own endpoint, so the overview payload stays lean and a supply problem never blanks the dashboard
+  protected readonly sup = signal<SupplySummary | null>(null);
+  private static readonly SUPPLY_COLORS = ['#6a2c5b', '#1f6b4f', '#b8762a', '#2f6fb0', '#8a3b3b', '#4a4a6a'];
+  protected readonly supplyLabels = computed(() => (this.sup()?.months ?? []).map(m => `${MONTHS[m.month - 1]} ${String(m.year).slice(2)}`));
+  protected readonly supplySeries = computed(() => {
+    const sp = this.sup(); if (!sp) return [];
+    // Only suppliers that actually supplied something in the year — a flat line at zero teaches nobody anything.
+    return sp.trends.filter(t => t.months.some(m => m.amount > 0)).map((t, i) => ({
+      key: String(t.supplierId), label: t.supplier, color: AdminDashboard.SUPPLY_COLORS[i % AdminDashboard.SUPPLY_COLORS.length],
+      values: t.months.map(m => m.amount),
+    }));
+  });
+
+  // ---- customers overdue to buy again, and the daily digest
+  protected readonly dueBack = signal<ReorderDue[]>([]);
+  protected readonly alertsBusy = signal(false);
+
+  /** Opens WhatsApp on this phone/computer with the customer's chat ready — the person still writes the message. */
+  protected waLink(phone: string) {
+    const d = phone.replace(/\D/g, '');
+    const intl = d.startsWith('234') ? d : d.startsWith('0') ? '234' + d.slice(1) : d;
+    return `https://wa.me/${intl}`;
+  }
+
+  protected async sendAlerts() {
+    this.alertsBusy.set(true);
+    try { const r = await this.api.sendAlerts(); this.toasts.info(r.message); }
+    catch (e) { this.toasts.error(messageOf(e)); } finally { this.alertsBusy.set(false); }
+  }
+
+  private async loadReorderDue(first: boolean) {
+    try { this.dueBack.set(await (first ? this.api.reorderDue(8) : this.loading.quiet(() => this.api.reorderDue(8)))); }
+    catch { /* the rest of the dashboard still works */ }
+  }
+
+  private async loadSupplies(first: boolean) {
+    try { this.sup.set(await (first ? this.api.supplySummary() : this.loading.quiet(() => this.api.supplySummary()))); }
+    catch { /* the rest of the dashboard still works */ }
+  }
+
   ngOnInit() {
     void this.loadOverview(true);
+    void this.loadSupplies(true);
+    void this.loadReorderDue(true);
     void this.reloadInsights(false);
     // "Real time": the figures refresh on their own while this tab is open and visible.
-    this.timers.push(setInterval(() => { if (!document.hidden) void this.loadOverview(false); }, POLL_MS));
+    this.timers.push(setInterval(() => {
+      if (!document.hidden) { void this.loadOverview(false); void this.loadSupplies(false); void this.loadReorderDue(false); }
+    }, POLL_MS));
     document.addEventListener('visibilitychange', this.onVisible);
     this.destroy.onDestroy(() => { this.timers.forEach(clearInterval); document.removeEventListener('visibilitychange', this.onVisible); });
   }
@@ -277,7 +413,8 @@ export class AdminDashboard implements OnInit {
 
   private async loadOverview(first: boolean) {
     try {
-      const o = await this.api.overview(30);
+      // The first load shows the global spinner; the automatic refreshes after it happen quietly in the background.
+      const o = await (first ? this.api.overview(30) : this.loading.quiet(() => this.api.overview(30)));
       this.o.set(o); this.error.set(''); this.stale.set(false);
       this.updated.set(new Date().toLocaleTimeString('en-GB'));
       if (first) { this.mi.set(o.months.length - 1); const [y, m] = [+o.asOf.slice(0, 4), +o.asOf.slice(5, 7)]; this.calYear = y; this.calMonth = m; }
@@ -299,6 +436,18 @@ export class AdminDashboard implements OnInit {
     this.insightsBusy.set(true);
     try { this.insights.set(await this.api.insights(refresh)); } catch { /* the panel keeps its last advice */ } finally { this.insightsBusy.set(false); }
   }
+
+  /** Cost side of the business. Costs going up isn't "good" or "bad" on its own (more sales cost more), so these chips stay neutral. */
+  protected readonly costKpis = computed(() => {
+    const o = this.o(); if (!o) return [];
+    const owed = o.suppliersOwed === 1 ? '1 supplier' : `${o.suppliersOwed} suppliers`;
+    return [
+      { label: 'Cost of goods sold', icon: 'stock', value: o.cogs?.current ?? 0, kpi: o.cogs, note: '', link: null },
+      { label: 'Goods bought', icon: 'purchase', value: o.purchases?.current ?? 0, kpi: o.purchases, note: '', link: null },
+      { label: 'Stock at cost', icon: 'product', value: o.inventoryValue, kpi: null, note: 'What is on the shelves now', link: null },
+      { label: 'Owed to suppliers', icon: 'supplier', value: o.payablesTotal, kpi: null, note: o.suppliersOwed ? `Across ${owed} · view` : 'Nothing owed', link: o.suppliersOwed ? '/suppliers' : null },
+    ] as { label: string; icon: string; value: number; kpi: Kpi | null; note: string; link: string | null }[];
+  });
 
   protected good(k: { kpi: Kpi; invert: boolean }) { return (k.kpi.changePct ?? 0) >= 0 !== k.invert; }
   protected monthOf(c: CustomerHero) { return c.months[Math.min(this.mi(), c.months.length - 1)]; }

@@ -9,8 +9,7 @@ local_infile            = 0
 character-set-server    = utf8mb4
 collation-server        = utf8mb4_0900_as_ci
 
-# Small footprint: the VM has 12 GB shared with the API and NGINX.
-innodb_buffer_pool_size = 1G
+# Memory: setup-server.sh writes innodb_buffer_pool_size (about a quarter of the server's RAM) to inventory-size.cnf.
 max_connections         = 60
 innodb_flush_log_at_trx_commit = 1
 sync_binlog             = 1

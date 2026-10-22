@@ -31,6 +31,20 @@ public sealed record ArchivePreviewRow(string Table, int Rows);
 public sealed record ArchiveResult(int Records, string File, long Bytes);
 public sealed record ArchiveFile(string Name, long Bytes, DateTime CreatedUtc);
 
+/// <summary>The kinds of history the CEO can clear in one go.</summary>
+public static class HistoryAreas
+{
+    public const string Sales = "sales";
+    public const string Quotations = "quotations";
+    public const string Purchases = "purchases";
+    public const string Expenses = "expenses";
+    public const string Finance = "finance";
+    public const string Payroll = "payroll";
+    public const string StockMovements = "stock-movements";
+    public const string Activity = "activity";
+    public static readonly string[] All = [Sales, Quotations, Purchases, Expenses, Finance, Payroll, StockMovements, Activity];
+}
+
 /// <summary>
 /// Database size and "archive old records" (ported from DbMaintenance.vb). Archiving copies old, SETTLED records to a ZIP (one Excel workbook
 /// plus a CSV per table) that stays on the server, then deletes them, all in ONE transaction: if the file can't be written nothing is deleted.
@@ -180,6 +194,154 @@ public sealed class ArchiveService(IBusinessDbContext db, TransactionRunner tx, 
     }
 
     private static void TryDelete(string path) { try { File.Delete(path); } catch { /* best effort: the archive failed and nothing was deleted from the database */ } }
+
+    // ---------------------------------------------------------------- clear history (CEO)
+    private static readonly string[] SaleMoves = [MovementReferences.Invoice, MovementReferences.InvoiceVoid, MovementReferences.InvoiceEdit, MovementReferences.InvoiceDelete];
+    private static readonly string[] PurchaseMoves = [MovementReferences.PurchaseOrder, MovementReferences.PurchaseEdit];
+
+    private IEnumerable<(string Name, IQueryable<object> Rows)> ClearSpecs(HashSet<string> what)
+    {
+        if (what.Contains(HistoryAreas.Sales))
+        {
+            yield return ("invoices", db.Invoices.AsNoTracking().Cast<object>());
+            yield return ("invoice_items", db.InvoiceItems.AsNoTracking().Cast<object>());
+            yield return ("payments", db.Payments.AsNoTracking().Cast<object>());
+            yield return ("waybills", db.Waybills.AsNoTracking().Cast<object>());
+            yield return ("rebate_entries", db.RebateEntries.AsNoTracking().Cast<object>());
+            yield return ("price_overrides", db.PriceOverrides.AsNoTracking().Cast<object>());
+            yield return ("payment_links", db.PaymentLinks.AsNoTracking().Where(l => l.DocType == Application.Payments.PaymentDocTypes.Invoice).Cast<object>());
+            yield return ("sale_stock_movements", db.StockMovements.AsNoTracking().Where(m => m.ReferenceType != null && SaleMoves.Contains(m.ReferenceType)).Cast<object>());
+            yield return ("customer_ledger", db.Ledger.AsNoTracking().Where(l => l.AccountType == LedgerAccountTypes.Customer).Cast<object>());
+        }
+        if (what.Contains(HistoryAreas.Quotations))
+        {
+            yield return ("quotations", db.Quotations.AsNoTracking().Cast<object>());
+            yield return ("quotation_items", db.QuotationItems.AsNoTracking().Cast<object>());
+            yield return ("quotation_payment_links", db.PaymentLinks.AsNoTracking().Where(l => l.DocType == Application.Payments.PaymentDocTypes.Quotation).Cast<object>());
+        }
+        if (what.Contains(HistoryAreas.Purchases))
+        {
+            yield return ("purchase_orders", db.PurchaseOrders.AsNoTracking().Cast<object>());
+            yield return ("purchase_order_items", db.PurchaseOrderItems.AsNoTracking().Cast<object>());
+            yield return ("purchase_stock_movements", db.StockMovements.AsNoTracking().Where(m => m.ReferenceType != null && PurchaseMoves.Contains(m.ReferenceType)).Cast<object>());
+            yield return ("supplier_ledger", db.Ledger.AsNoTracking().Where(l => l.AccountType == LedgerAccountTypes.Supplier).Cast<object>());
+        }
+        if (what.Contains(HistoryAreas.Expenses)) yield return ("expenses", db.Expenses.AsNoTracking().Cast<object>());
+        if (what.Contains(HistoryAreas.Finance)) yield return ("ledger", db.Ledger.AsNoTracking().Cast<object>());
+        if (what.Contains(HistoryAreas.Payroll))
+        {
+            yield return ("employee_monthly", db.EmployeeMonthlies.AsNoTracking().Cast<object>());
+            yield return ("employee_loans", db.EmployeeLoans.AsNoTracking().Cast<object>());
+            yield return ("loan_repayments", db.LoanRepayments.AsNoTracking().Cast<object>());
+        }
+        if (what.Contains(HistoryAreas.StockMovements)) yield return ("stock_movements", db.StockMovements.AsNoTracking().Cast<object>());
+        if (what.Contains(HistoryAreas.Activity)) yield return ("audit_logs", db.AuditLogs.AsNoTracking().Cast<object>());
+    }
+
+    private static HashSet<string> Areas(IEnumerable<string> what)
+    {
+        var set = what.Where(HistoryAreas.All.Contains).ToHashSet();
+        if (set.Count == 0) throw new BusinessRuleException("Choose at least one kind of history to clear.");
+        return set;
+    }
+
+    /// <summary>How many records each chosen area would remove (the same row can appear under two areas, e.g. ledger). Changes nothing.</summary>
+    public async Task<List<ArchivePreviewRow>> ClearPreviewAsync(IEnumerable<string> what, CancellationToken ct)
+    {
+        var rows = new List<ArchivePreviewRow>();
+        foreach (var (name, q) in ClearSpecs(Areas(what))) rows.Add(new ArchivePreviewRow(name, await q.CountAsync(ct)));
+        return rows;
+    }
+
+    /// <summary>
+    /// Clears all history of the chosen kinds, whatever its date — for starting the books afresh. Like archiving, every row is first written
+    /// to a ZIP kept on the server (nothing is deleted if that fails), then deleted in the same transaction. Clearing sales also sets every
+    /// customer's balance to zero; clearing purchases does the same for suppliers. Stock on hand, products, customers and suppliers stay.
+    /// </summary>
+    public Task<ArchiveResult> ClearAsync(IEnumerable<string> what, CurrentUser user, CancellationToken ct)
+    {
+        var areas = Areas(what);
+        return tx.RunAsync(async inner =>
+        {
+            Directory.CreateDirectory(CompanyFolder);
+            var zipPath = Path.Combine(CompanyFolder, $"Archive-cleared-{string.Join('-', areas.Order())}-{clock.BusinessNow:yyyyMMdd-HHmmss}.zip");
+            var total = 0;
+            try
+            {
+                using var wb = new XLWorkbook();
+                var about = wb.Worksheets.Add("About");
+                await using (var fs = new FileStream(zipPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+                using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+                {
+                    foreach (var (name, q) in ClearSpecs(areas))
+                    {
+                        var rows = await q.ToListAsync(inner);
+                        total += rows.Count;
+                        var table = ToTable(name, rows);
+                        var entry = zip.CreateEntry($"csv/{name}.csv");
+                        await using (var es = entry.Open()) await WriteCsv(es, table);
+                        var ws = wb.Worksheets.Add(name.Length > 31 ? name[..31] : name);
+                        if (rows.Count == 0) ws.Cell(1, 1).Value = "(nothing cleared)";
+                        else if (rows.Count > XlsxRowLimit) ws.Cell(1, 1).Value = $"{rows.Count:N0} rows: too many for one sheet, see csv/{name}.csv";
+                        else { ws.Cell(1, 1).InsertTable(table, name, true); ws.Columns().AdjustToContents(1, 60); }
+                    }
+                    about.Cell(1, 1).Value = $"{company.LegalName}: history cleared";
+                    about.Cell(2, 1).Value = $"Cleared ({string.Join(", ", areas.Order())}) on {clock.BusinessNow:yyyy-MM-dd HH:mm} by {user.FullName}.";
+                    about.Cell(3, 1).Value = $"{total:N0} records. Full copies are in the csv folder inside this ZIP.";
+                    var xe = zip.CreateEntry("Archive.xlsx");
+                    await using var xs = xe.Open(); wb.SaveAs(xs);
+                }
+            }
+            catch { TryDelete(zipPath); throw; }
+
+            // Children first; rows kept elsewhere that pointed at deleted ones lose the link but keep their data.
+            if (areas.Contains(HistoryAreas.Sales))
+            {
+                await db.ProductSerials.Where(p => p.InvoiceId != null).ExecuteUpdateAsync(u => u.SetProperty(p => p.InvoiceId, (int?)null), inner);
+                await db.Quotations.Where(q => q.ConvertedInvoiceId != null).ExecuteUpdateAsync(u => u.SetProperty(q => q.ConvertedInvoiceId, (int?)null), inner);
+                await db.RebateEntries.ExecuteDeleteAsync(inner);
+                await db.Waybills.ExecuteDeleteAsync(inner);
+                await db.Payments.ExecuteDeleteAsync(inner);
+                await db.InvoiceItems.ExecuteDeleteAsync(inner);
+                await db.PriceOverrides.ExecuteDeleteAsync(inner);
+                await db.PaymentLinks.Where(l => l.DocType == Application.Payments.PaymentDocTypes.Invoice).ExecuteDeleteAsync(inner);
+                await db.StockMovements.Where(m => m.ReferenceType != null && SaleMoves.Contains(m.ReferenceType)).ExecuteDeleteAsync(inner);
+                await db.Ledger.Where(l => l.AccountType == LedgerAccountTypes.Customer).ExecuteDeleteAsync(inner);
+                await db.Invoices.ExecuteDeleteAsync(inner);
+                await db.Customers.ExecuteUpdateAsync(u => u.SetProperty(c => c.Balance, 0m), inner);
+            }
+            if (areas.Contains(HistoryAreas.Quotations))
+            {
+                await db.ChatConversations.Where(c => c.QuotationId != null).ExecuteUpdateAsync(u => u.SetProperty(c => c.QuotationId, (int?)null), inner);
+                await db.PaymentLinks.Where(l => l.DocType == Application.Payments.PaymentDocTypes.Quotation).ExecuteDeleteAsync(inner);
+                await db.QuotationItems.ExecuteDeleteAsync(inner);
+                await db.Quotations.ExecuteDeleteAsync(inner);
+            }
+            if (areas.Contains(HistoryAreas.Purchases))
+            {
+                await db.PurchaseOrderItems.ExecuteDeleteAsync(inner);
+                await db.StockMovements.Where(m => m.ReferenceType != null && PurchaseMoves.Contains(m.ReferenceType)).ExecuteDeleteAsync(inner);
+                await db.Ledger.Where(l => l.AccountType == LedgerAccountTypes.Supplier).ExecuteDeleteAsync(inner);
+                await db.PurchaseOrders.ExecuteDeleteAsync(inner);
+                await db.Suppliers.ExecuteUpdateAsync(u => u.SetProperty(s => s.Balance, 0m), inner);
+            }
+            if (areas.Contains(HistoryAreas.Expenses)) await db.Expenses.ExecuteDeleteAsync(inner);
+            if (areas.Contains(HistoryAreas.Finance)) await db.Ledger.ExecuteDeleteAsync(inner);
+            if (areas.Contains(HistoryAreas.Payroll))
+            {
+                await db.LoanRepayments.ExecuteDeleteAsync(inner);
+                await db.EmployeeLoans.ExecuteDeleteAsync(inner);
+                await db.EmployeeMonthlies.ExecuteDeleteAsync(inner);
+            }
+            if (areas.Contains(HistoryAreas.StockMovements)) await db.StockMovements.ExecuteDeleteAsync(inner);
+            if (areas.Contains(HistoryAreas.Activity)) await db.AuditLogs.ExecuteDeleteAsync(inner);
+            // Always kept: who cleared what, and where the copy is.
+            db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "HISTORY_CLEARED", Entity = "Database", At = clock.UtcNow,
+                Detail = $"{string.Join(", ", areas.Order())}: {total:N0} records → {Path.GetFileName(zipPath)}" });
+            await db.SaveChangesAsync(inner);
+            return new ArchiveResult(total, Path.GetFileName(zipPath), new FileInfo(zipPath).Length);
+        }, ct);
+    }
 
     // ---------------------------------------------------------------- files
     public IReadOnlyList<ArchiveFile> Files() =>

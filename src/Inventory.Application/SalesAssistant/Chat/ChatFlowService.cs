@@ -525,7 +525,7 @@ public sealed class ChatFlowService(
         var quotationId = t.C.QuotationId;
         var links = quotationId is null ? [] : await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == quotationId).OrderByDescending(l => l.Id).ToListAsync(ct);
         // The bank account is the primary link (what the customer was first shown); a card / USSD link, if there is one, is the other way to pay the same order.
-        var link = links.FirstOrDefault(l => l.Provider == PaymentLinkService.AlatProvider) ?? links.FirstOrDefault();
+        var link = links.FirstOrDefault(l => l.ExternalId != null) ?? links.FirstOrDefault();
         if (link is null) { t.C.State = ChatStates.Idle; await CollectAsync(t, ct); return; }
 
         var finished = links.FirstOrDefault(l => l.Status != PaymentLinkStatuses.Pending);
@@ -559,7 +559,7 @@ public sealed class ChatFlowService(
 
     private static void SayStillWaiting(Turn t, PaymentLink primary, IReadOnlyList<PaymentLink> all)
     {
-        if (primary.Provider == PaymentLinkService.AlatProvider) t.Say("pay_wait", ChatOrderText.Naira(primary.Amount), primary.BankName ?? "", primary.AccountNumber ?? "");
+        if (primary.ExternalId != null) t.Say("pay_wait", ChatOrderText.Naira(primary.Amount), primary.BankName ?? "", primary.AccountNumber ?? "");
         else t.Say("pay_wait_link", ChatOrderText.Naira(primary.Amount), primary.Url);
     }
 
@@ -681,7 +681,7 @@ public sealed class ChatFlowService(
             case "order" when r.Lines.Count > 0:
                 if (t.C.State == ChatStates.AwaitingPayment)
                 {
-                    var owed = await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == t.C.QuotationId && l.Provider == PaymentLinkService.AlatProvider)
+                    var owed = await db.PaymentLinks.AsNoTracking().Where(l => l.DocType == PaymentDocTypes.Quotation && l.DocId == t.C.QuotationId)
                         .OrderByDescending(l => l.Id).Select(l => l.Amount).FirstOrDefaultAsync(ct);
                     t.Say("stale_pay", ChatOrderText.Naira(owed)); return true;
                 }

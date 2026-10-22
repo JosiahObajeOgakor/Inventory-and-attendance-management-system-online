@@ -53,41 +53,4 @@ public class TwilioWhatsAppController(TwilioWhatsAppClient twilio, CompanyRegist
         "text/xml");
 }
 
-/// <summary>
-/// AlatPay calls this when a transfer into one of our virtual accounts completes. The body is signed (HMAC-SHA256, Base64, x-signature header). A webhook is
-/// only a prompt to look: <see cref="PaymentLinkService.SettleAsync"/> asks AlatPay itself whether the money arrived and for how much before recording anything,
-/// and is safe to run any number of times (AlatPay retries deliveries).
-/// </summary>
-[ApiController, Route("api/alatpay")]
-public class AlatPayWebhookController(IVirtualAccountGateway alat, CompanyRegistry registry, ILogger<AlatPayWebhookController> log) : ControllerBase
-{
-    [HttpPost("webhook"), AllowAnonymous, RequestSizeLimit(65536)]
-    public async Task<IActionResult> Webhook(CancellationToken ct)
-    {
-        string raw;
-        using (var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8)) raw = await reader.ReadToEndAsync(ct);
-        if (!alat.IsValidSignature(raw, Request.Headers["x-signature"].FirstOrDefault())) return Unauthorized();
 
-        string? orderId, status;
-        try
-        {
-            var root = JsonNode.Parse(raw);
-            // The payload is PascalCase and nested (Value.Data.*) per AlatPay's docs; accept camelCase too.
-            var data = root?["Value"]?["Data"] ?? root?["value"]?["data"] ?? root?["Data"] ?? root?["data"];
-            orderId = (data?["OrderId"] ?? data?["orderId"])?.ToString();
-            status = (data?["Status"] ?? data?["status"])?.ToString();
-        }
-        catch (System.Text.Json.JsonException) { return BadRequest(); }
-        if (string.IsNullOrEmpty(orderId)) return Ok();
-        if (!string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase) && !string.Equals(status, "successful", StringComparison.OrdinalIgnoreCase)) return Ok();
-
-        var key = orderId.Split('-')[0];
-        if (registry.Find(key) is null) { log.LogWarning("AlatPay webhook for an unknown company prefix"); return Ok(); }
-        HttpContext.Items[RequestCompany.OverrideItem] = key;
-
-        var result = await HttpContext.RequestServices.GetRequiredService<PaymentLinkService>().SettleAsync(orderId, ct);
-        log.LogInformation("AlatPay webhook: applied={Applied} already={Already} unfulfilled={Unfulfilled}", result.Applied, result.AlreadySettled, result.Unfulfilled);
-        await HttpContext.RequestServices.GetRequiredService<ChatPaymentNotifier>().NotifyAsync(result, ct);
-        return Ok();
-    }
-}

@@ -38,7 +38,7 @@ public sealed class StockAvailabilityService(IBusinessDbContext db, ICompanyCont
             .GroupBy(b => b.ProductId).Select(g => new { g.Key, Qty = g.Sum(b => b.QuantityOnHand) }).ToListAsync(ct);
 
         var held = db.PaymentLinks.AsNoTracking()
-            .Where(l => l.Provider == PaymentLinkService.AlatProvider && l.Status == PaymentLinkStatuses.Pending && l.DocType == PaymentDocTypes.Quotation
+            .Where(l => l.Status == PaymentLinkStatuses.Pending && l.DocType == PaymentDocTypes.Quotation
                         && l.CreatedAt > holdFrom && (l.ExpiresAt == null || l.ExpiresAt > now))
             .Select(l => l.DocId);
         var reserved = await db.QuotationItems.AsNoTracking()

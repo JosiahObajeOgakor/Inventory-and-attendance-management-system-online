@@ -1,6 +1,7 @@
 // Shapes returned by the ASP.NET Core API (System.Text.Json, camelCase). Money is a JSON number; DateOnly is "yyyy-MM-dd".
 
-export type Role = 'ADMIN' | 'CLERK';
+/** ADMIN is the CEO; a MANAGER adds and edits like the CEO but can't delete; a CLERK sells. */
+export type Role = 'ADMIN' | 'MANAGER' | 'CLERK';
 
 export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; }
 export interface Me {
@@ -20,6 +21,8 @@ export interface Product {
 export interface ProductInput {
   sku: string; name: string; categoryId: number; unit: string; reorderLevel: number; costPrice: number;
   priceDistributor: number; priceWholesaler: number; priceRetail: number; barcode: string | null; tracksSerial: boolean;
+  /** The suppliers who supply it (it goes on each one's item list). Leave out / null to keep the links as they are. */
+  supplierIds?: number[] | null;
 }
 export interface NewProductRequest {
   product: ProductInput; openingQuantity: number; warehouseId: number; batchNumber: string | null; expiryDate: string | null;
@@ -46,7 +49,7 @@ export type SupplierInput = Omit<Supplier, 'id' | 'balance'>;
 export type CustomerType = 'Distributor' | 'Wholesaler' | 'Retailer' | 'Walk-in';
 export interface Customer {
   id: number; name: string; customerType: CustomerType; contactName: string | null; phone: string | null; location: string | null;
-  address: string | null; email: string | null; taxId: string | null; rebateRatePct: number; creditLimit: number; balance: number;
+  address: string | null; email: string | null; taxId: string | null; rebatePerUnit: number; creditLimit: number; balance: number;
   trailingTwelveMonthSpend: number; ranking: 'Gold' | 'Silver' | 'Bronze';
 }
 export interface CustomerLookup { id: number; name: string; customerType: CustomerType; phone: string | null; balance: number; }
@@ -63,13 +66,32 @@ export interface InvoiceDetail {
   id: number; invoiceNumber: string; customerId: number; customer: string; customerType: string; invoiceDate: string; dueDate: string | null;
   subtotal: number; discountPct: number; discountAmount: number; vatRate: number; vatAmount: number; totalAmount: number; amountPaid: number;
   status: string; paymentMethod: string; priceTier: string; warehouseId: number | null; createdBy: string; voidReason: string | null;
-  items: InvoiceItem[]; payments: { at: string; amount: number; method: string; bankName: string | null; accountName: string | null; accountNumber: string | null; payerName?: string | null }[];
+  items: InvoiceItem[]; payments: { at: string; amount: number; method: string; bankName?: string | null; accountName?: string | null; accountNumber?: string | null; payerName?: string | null }[]; deliveryFee: number;
+  /** What the customer owes on their other invoices (their balance minus this one's unpaid part). */
+  owedElsewhere: number;
+  customerPhone: string | null; customerEmail: string | null;
+}
+export interface InvoiceEditRequest { discountPct: number; discountAmount?: number | null; vatRate: number; deliveryFee: number; dueDate?: string | null; lines: SaleLine[]; }
+export interface StockChange { productId: number; product: string; quantity: number; }
+export interface InvoiceEditResult {
+  invoiceId: number; invoiceNumber: string; oldTotal: number; newTotal: number; outstanding: number; status: string;
+  stockBack: StockChange[]; stockOut: StockChange[]; movedToOtherSales: number; creditHeld: number;
+}
+/** What deleting a sale does (or did): stock back, money to refund, credit restored, debt cleared. */
+export interface SaleDeleteResult {
+  invoiceNumber: string; customer: string; stockReturned: StockChange[]; refundDue: number;
+  refundOnline: { method: string; amount: number }[]; creditRestored: number; owedCleared: number;
+}
+export interface PurchaseEditRequest { vatRate: number; lines: { productId: number; quantity: number; unitCost: number }[]; }
+export interface PurchaseEditResult {
+  purchaseOrderId: number; poNumber: string; oldTotal: number; newTotal: number; outstanding: number; paymentStatus: string;
+  stockIn: StockChange[]; stockOut: StockChange[]; movedToOtherOrders: number; creditHeld: number;
 }
 
 export interface SaleLine { productId: number; quantity: number; unitPrice: number; serials?: string[]; }
 export interface SaleRequest {
   customerId: number; saleDate?: string | null; priceTier: string; warehouseId: number; paymentMethod: string; accountNumber?: string | null;
-  discountPct: number; vatRate: number; paidNow: number; dueDate?: string | null; lines: SaleLine[];
+  discountPct: number; discountAmount?: number | null; vatRate: number; paidNow: number; dueDate?: string | null; lines: SaleLine[];
 }
 export interface SaleResult {
   invoiceId: number; invoiceNumber: string; subtotal: number; discountAmount: number; vatAmount: number; total: number;
@@ -85,6 +107,9 @@ export interface PurchaseDetail {
   id: number; poNumber: string; supplierId: number; supplier: string; orderDate: string; status: string; paymentStatus: string;
   totalAmount: number; amountPaid: number; items: { productId: number; product: string; sku: string; quantity: number; unitCost: number; lineTotal: number }[];
   payments: { at: string; amount: number; method: string; bankName: string | null; accountName: string | null; accountNumber: string | null }[];
+  /** What we owe this supplier on other orders. */
+  owedElsewhere: number;
+  supplierPhone: string | null; supplierEmail: string | null;
 }
 export interface PurchaseRequest {
   supplierId: number; orderDate?: string | null; vatRate: number; receiveNow: boolean; warehouseId: number; paidNow: number; paymentMethod: string; accountNumber?: string | null;
@@ -107,6 +132,8 @@ export interface Dashboard {
 export interface FinanceSummary {
   year: number; month: number; revenue: number; discounts: number; cogs: number; grossProfit: number; expenses: number; netProfit: number;
   accountsPayable: number; accountsReceivable: number; rebatesAvailable: number;
+  /** The buying side: what suppliers billed this month, what of it is unpaid, what was paid out, and stock at cost. */
+  purchasesThisMonth: number; purchasesUnpaid: number; paidToSuppliers: number; inventoryValue: number;
 }
 export interface MonthlyIncome { year: number; month: number; invoices: number; grossSales: number; vat: number; netSales: number; collected: number; outstanding: number; }
 export interface LedgerRow { id: number; entryDate: string; accountName: string; accountType: string; entryType: 'Debit' | 'Credit'; amount: number; reference: string | null; }

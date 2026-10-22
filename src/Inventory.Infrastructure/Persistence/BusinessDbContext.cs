@@ -39,11 +39,19 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
     public DbSet<ProductSerial> ProductSerials => Set<ProductSerial>();
     public DbSet<PriceChange> PriceChanges => Set<PriceChange>();
     public DbSet<PaymentLink> PaymentLinks => Set<PaymentLink>();
+    public DbSet<DeliveryZone> DeliveryZones => Set<DeliveryZone>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatLogMessage> ChatMessages => Set<ChatLogMessage>();
-    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
     public DbSet<Campaign> Campaigns => Set<Campaign>();
     public DbSet<CampaignMessage> CampaignMessages => Set<CampaignMessage>();
+    public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
+    public DbSet<SupplierItem> SupplierItems => Set<SupplierItem>();
+    public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public DbSet<SupplierProduct> SupplierProducts => Set<SupplierProduct>();
+    public DbSet<Supply> Supplies => Set<Supply>();
+    public DbSet<SupplyItem> SupplyItems => Set<SupplyItem>();
 
     public void ClearTracker() => ChangeTracker.Clear();
 
@@ -170,6 +178,7 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.MarketingUpdatedAt).HasPrecision(6);
             e.Property(x => x.TaxId).HasMaxLength(40);
             e.Property(x => x.RebateRatePct).HasPrecision(5, 2);
+            e.Property(x => x.RebatePerUnit).HasPrecision(12, 2);
             e.Property(x => x.CreditLimit).HasPrecision(14, 2);
             e.Property(x => x.Balance).HasPrecision(14, 2);
         });
@@ -189,6 +198,9 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.PriceTier).HasMaxLength(20).IsRequired();
             e.Property(x => x.CreatedAt).HasPrecision(6);
             e.Property(x => x.VoidReason).HasMaxLength(200);
+            e.Property(x => x.DeliveryAddress).HasMaxLength(250);
+            e.Property(x => x.DeliveryZone).HasMaxLength(60);
+            e.Property(x => x.DeliveryFee).HasPrecision(12, 2);
             e.HasIndex(x => x.InvoiceNumber).IsUnique();
             e.HasIndex(x => x.CustomerId);
             e.HasIndex(x => x.InvoiceDate);
@@ -260,7 +272,8 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
             e.Property(x => x.Action).HasMaxLength(60).IsRequired();
             e.Property(x => x.Entity).HasMaxLength(60).IsRequired();
             e.Property(x => x.EntityId).HasMaxLength(60);
-            e.Property(x => x.Detail).HasMaxLength(1000);
+            // text, not varchar(1000): a deleted sale keeps its full record here.
+            e.Property(x => x.Detail).HasColumnType("text");
             e.Property(x => x.At).HasPrecision(6);
             e.HasIndex(x => x.At);
         });

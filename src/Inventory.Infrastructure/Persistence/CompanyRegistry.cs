@@ -69,14 +69,48 @@ public sealed class DatabaseProvisioner(CompanyRegistry registry, IServiceProvid
             var store = scope.ServiceProvider.GetRequiredService<IdentityStore>();
             await store.Database.MigrateAsync(ct);
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
-            foreach (var r in new[] { RoleNames.Admin, RoleNames.Clerk })
+            foreach (var r in RoleNames.All)
                 if (!await roles.RoleExistsAsync(r)) await roles.CreateAsync(new IdentityRole<int>(r));
         }
         foreach (var c in registry.All)
         {
             await using var db = registry.CreateFor(c);
+            await UndoHalfAppliedLiveLineMergeAsync(db, ct);
             await db.Database.MigrateAsync(ct);
         }
+    }
+
+    /// <summary>
+    /// A deploy that was rolled back on 22 Oct 2026 left some schemas half-done before LiveLineMerge existed: four empty payment_links columns added
+    /// and the status check dropped. Put payment_links back the way the live line had it so LiveLineMerge can add them again cleanly.
+    /// Does nothing once LiveLineMerge is applied, or on a schema that has no payment_links table yet.
+    /// </summary>
+    private static async Task UndoHalfAppliedLiveLineMergeAsync(BusinessDbContext db, CancellationToken ct)
+    {
+        if (!(await db.Database.GetPendingMigrationsAsync(ct)).Any(m => m.EndsWith("_LiveLineMerge"))) return;
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        try
+        {
+            async Task<bool> Exists(string sql, string name)
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = sql;
+                cmd.Parameters.Add(new MySqlParameter("@name", name));
+                return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct)) > 0;
+            }
+            async Task Run(string sql) { await using var cmd = conn.CreateCommand(); cmd.CommandText = sql; await cmd.ExecuteNonQueryAsync(ct); }
+
+            const string table = "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @name";
+            const string column = "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_links' AND COLUMN_NAME = @name";
+            const string check = "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_links' AND CONSTRAINT_NAME = @name";
+            if (!await Exists(table, "payment_links")) return;
+            foreach (var name in new[] { "AccountNumber", "BankName", "ExpiresAt", "ExternalId" })
+                if (await Exists(column, name)) await Run($"ALTER TABLE `payment_links` DROP COLUMN `{name}`");
+            if (!await Exists(check, "CK_payment_links_status"))
+                await Run("ALTER TABLE `payment_links` ADD CONSTRAINT `CK_payment_links_status` CHECK (Status IN ('Pending','Paid','PaidUnfulfilled','Cancelled'))");
+        }
+        finally { await conn.CloseAsync(); }
     }
 
     private async Task CreateSchemaAsync(string schema, CancellationToken ct)

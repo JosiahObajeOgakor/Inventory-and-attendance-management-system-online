@@ -198,6 +198,8 @@ public class AuthorizationTests(ApiFixture api)
         { "GET", "/api/finance/income?year=2026" }, { "GET", "/api/finance/ledger" }, { "GET", "/api/users" }, { "GET", "/api/audit" },
         { "POST", "/api/purchases" }, { "POST", "/api/suppliers" }, { "POST", "/api/stock/adjustments" }, { "POST", "/api/sales/1/void" },
         { "DELETE", "/api/products/1" }, { "PUT", "/api/products/1" }, { "POST", "/api/customers/1/payments" }, { "POST", "/api/users" },
+        { "POST", "/api/sales/1/delete" }, { "GET", "/api/sales/1/delete-preview" },
+        { "PUT", "/api/sales/1" }, { "PUT", "/api/purchases/1" }, { "PUT", "/api/waybills/1" }, { "POST", "/api/delivery-zones" }, { "DELETE", "/api/delivery-zones/1" },
     };
 
     [Theory, MemberData(nameof(AdminOnly))]
@@ -372,5 +374,20 @@ public class UserAdminTests(ApiFixture api)
         var myId = await FindId(admin, "admin");
         var self = await admin.PutAsJsonAsync($"/api/users/{myId}", new { fullName = "ADMIN", role = "CLERK", companies = new[] { "chewypets", "candid" }, isActive = true });
         Assert.Equal(HttpStatusCode.Conflict, self.StatusCode);
+    }
+}
+
+[Collection("api")]
+public class PayPageApiTests(ApiFixture api)
+{
+    [Fact]
+    public async Task An_unknown_or_edited_payment_link_gets_a_friendly_page_not_an_error_and_is_never_indexed()
+    {
+        var r = await api.Client(csrf: false).GetAsync("/pay/not-a-real-token");
+        Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
+        Assert.StartsWith("text/html", r.Content.Headers.ContentType?.ToString());
+        Assert.Contains("Link not recognised", await r.Content.ReadAsStringAsync());
+        Assert.Contains("noindex", r.Headers.GetValues("X-Robots-Tag").Single());
+        Assert.Equal(HttpStatusCode.NotFound, (await api.Client(csrf: false).GetAsync("/pay/not-a-real-token/paystack")).StatusCode);
     }
 }

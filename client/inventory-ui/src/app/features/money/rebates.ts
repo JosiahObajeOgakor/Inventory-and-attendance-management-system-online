@@ -14,15 +14,15 @@ import { DayPipe, NairaPipe, Stamp } from '../../shared/ui';
   template: `
     <div class="page">
       <div class="page-head"><h1>Rebates</h1></div>
-      <p class="muted lede">Every sale to a named customer earns them a percentage back, given later as goods. This is what each customer has earned and what has been handed over.</p>
+      <p class="muted lede">Every sale to a named customer earns them a fixed naira amount back for each unit bought (set on the customer), given later as goods. This is what each customer has earned and what has been handed over.</p>
 
       @if (s(); as s) {
         <div class="kpis">
           <div class="card kpi"><span class="eyebrow">Not yet collected</span><div class="value money">{{ s.outstandingTotal | naira }}</div></div>
           <div class="card kpi"><span class="eyebrow">Already given back</span><div class="value money">{{ s.redeemedTotal | naira }}</div></div>
-          <div class="card kpi rate"><label class="eyebrow" for="rr">Default rate for new customers (%)</label>
-            <div class="rate-row"><input id="rr" class="input num" type="number" min="0" max="100" step="0.25" [ngModel]="rate()" (ngModelChange)="rate.set($event)" />
-              <button type="button" class="btn btn-sm" (click)="saveRate()">Save rate</button></div></div>
+          <div class="card kpi rate"><label class="eyebrow" for="rr">Default for new customers (₦ per unit)</label>
+            <div class="rate-row"><input id="rr" class="input num" type="number" min="0" step="0.01" [ngModel]="rate()" (ngModelChange)="rate.set($event)" />
+              <button type="button" class="btn btn-sm" (click)="saveRate()">Save amount</button></div></div>
         </div>
       }
 
@@ -74,7 +74,7 @@ export class RebatesPage implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
   protected readonly s = signal<RebateSummary | null>(null);
-  protected readonly rate = signal(1);
+  protected readonly rate = signal(0);
   protected readonly sel = signal<RebateCustomer | null>(null);
   protected readonly entries = signal<RebateEntry[]>([]);
   protected readonly loading = signal(true);
@@ -87,7 +87,7 @@ export class RebatesPage implements OnInit {
   private async load(first = false) {
     this.loading.set(true);
     try {
-      const r = await this.api.rebates(this.term); this.s.set(r); if (first) this.rate.set(r.defaultRatePct); this.error.set('');
+      const r = await this.api.rebates(this.term); this.s.set(r); if (first) this.rate.set(r.defaultPerUnit); this.error.set('');
       const cur = this.sel(); if (cur) this.sel.set(r.customers.find(c => c.customerId === cur.customerId) ?? null);
     } catch (e) { this.error.set(messageOf(e)); } finally { this.loading.set(false); }
   }
@@ -100,7 +100,7 @@ export class RebatesPage implements OnInit {
   }
 
   protected async saveRate() {
-    try { await this.api.setRebateRate(Number(this.rate())); this.toasts.ok(`Default rebate rate set to ${this.rate()}%.`); } catch (e) { this.toasts.error(messageOf(e)); }
+    try { await this.api.setRebateRate(Number(this.rate())); this.toasts.ok(`New customers now earn ₦${Number(this.rate()).toLocaleString('en-NG')} per unit.`); } catch (e) { this.toasts.error(messageOf(e)); }
   }
 
   protected async redeem(c: RebateCustomer) {

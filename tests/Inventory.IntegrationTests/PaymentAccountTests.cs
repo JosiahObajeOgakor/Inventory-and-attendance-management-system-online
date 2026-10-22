@@ -41,7 +41,7 @@ public class PaymentAccountTests(MySqlFixture mysql)
         var purchases = new PurchaseService(db, tx, stockSvc, Clock, co, new PurchaseRequestValidator(), accounts);
         var quotes = new QuotationService(db, tx, Clock, co, sales, new NoUsers());
         var va = new FakeVirtualAccounts();
-        var pay = new PaymentLinkService(db, tx, Clock, co, new FakeGateway(false), new RecordingNotifier(), payments, quotes, va);
+        var pay = new PaymentLinkService(db, tx, Clock, co, new PaymentGateways([new FakeGateway(false)]), new RecordingNotifier(), payments, quotes, va);
         return new Rig { Cs = cs, Seed = seed, Sales = sales, Payments = payments, Purchases = purchases, Pay = pay, Va = va, Quotes = quotes };
     }
 

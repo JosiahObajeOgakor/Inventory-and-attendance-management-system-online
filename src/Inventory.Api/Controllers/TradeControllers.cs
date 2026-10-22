@@ -12,6 +12,14 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Api.Controllers;
 
 public sealed record VoidRequest(string Reason);
+public sealed record RefundLine(string Method, decimal Amount);
+/// <summary>JSON shape of <see cref="InvoiceDeleteResult"/> (tuples don't serialise to named fields).</summary>
+public sealed record DeletePreviewDto(string InvoiceNumber, string Customer, IReadOnlyList<StockChange> StockReturned, decimal RefundDue,
+    IReadOnlyList<RefundLine> RefundOnline, decimal CreditRestored, decimal OwedCleared)
+{
+    public static DeletePreviewDto From(InvoiceDeleteResult r) => new(r.InvoiceNumber, r.Customer, r.StockReturned, r.RefundDue,
+        r.RefundOnline.Select(x => new RefundLine(x.Method, x.Amount)).ToList(), r.CreditRestored, r.OwedCleared);
+}
 public sealed record PaymentRequest(decimal Amount, string? Method, string? AccountNumber = null, string? PayerName = null);
 public sealed record PurchasePaymentRequest(string? Method, string? AccountNumber);
 public sealed record ReceiveRequest(int WarehouseId);
@@ -19,7 +27,8 @@ public sealed record SalePreviewResult(decimal Subtotal, decimal DiscountAmount,
     decimal AppliedToInvoice, decimal AppliedToPreviousBalance, decimal Outstanding, string Status);
 
 [ApiController, Route("api/sales")]
-public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, IBusinessDbContext db) : AppController(cu)
+public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q, InvoiceVoidService voids, InvoiceEditService edits, InvoiceDeleteService deletes,
+    IBusinessDbContext db) : AppController(cu)
 {
     private const string IdempotencyHeader = "Idempotency-Key";
 
@@ -42,11 +51,30 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     [HttpPost("preview"), Authorize(Policy = Policies.Staff)]
     public async Task<ActionResult<SalePreviewResult>> Preview(SaleRequest req, CancellationToken ct)
     {
-        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
+        var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate, req.DiscountAmount);
         var prev = await db.Customers.Where(c => c.Id == req.CustomerId).Select(c => (decimal?)c.Balance).SingleOrDefaultAsync(ct) ?? 0m;
-        var split = PaymentWaterfall.ForNewDocument(prev, totals.Total, req.PaidNow);
-        return new SalePreviewResult(totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total, prev, split.AppliedToNew, split.Overflow, split.Outstanding, split.Status);
+        // Mirrors SalesService: account credit (a negative balance) is used before the cash paid now.
+        var creditUsed = prev < 0 ? Math.Min(-prev, totals.Total) : 0m;
+        var split = PaymentWaterfall.ForNewDocument(Math.Max(prev, 0m), totals.Total - creditUsed, req.PaidNow);
+        var applied = creditUsed + split.AppliedToNew;
+        return new SalePreviewResult(totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total, prev, applied, split.Overflow, split.Outstanding,
+            PaymentStatuses.For(applied, totals.Total));
     }
+
+    /// <summary>
+    /// Change a sale's items, prices, discount, VAT or delivery fee. Only the difference moves stock (removed units go back to the batch they came
+    /// from); what the customer owes follows the new total, and anything overpaid pays their other sales, then stays as credit. Admin only.
+    /// </summary>
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public Task<InvoiceEditResult> Edit(int id, InvoiceEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
+
+    /// <summary>What deleting this sale would do (stock back, refund due, credit restored) — shown before the admin confirms. Changes nothing.</summary>
+    [HttpGet("{id:int}/delete-preview"), Authorize(Policy = Policies.Ceo)]
+    public async Task<DeletePreviewDto> DeletePreview(int id, CancellationToken ct) => DeletePreviewDto.From(await deletes.PreviewAsync(id, ct));
+
+    /// <summary>Deletes the sale: stock back, money reversed (refund / credit restored / debt cleared), record removed, copy kept in the activity log. Admin only.</summary>
+    [HttpPost("{id:int}/delete"), Authorize(Policy = Policies.Ceo)]
+    public async Task<DeletePreviewDto> Delete(int id, VoidRequest r, CancellationToken ct) => DeletePreviewDto.From(await deletes.DeleteAsync(id, r.Reason, Me, ct));
 
     /// <summary>Send a unique <c>Idempotency-Key</c> header per submit: a retry or double click returns the same invoice.</summary>
     [HttpPost, Authorize(Policy = Policies.Staff)]
@@ -59,7 +87,7 @@ public class SalesController(ICurrentUser cu, SalesService sales, SalesQueries q
     }
 
     /// <summary>Replaces "Delete invoice": reverses stock, balance and rebate, keeps the record (defect D1). Admin only.</summary>
-    [HttpPost("{id:int}/void"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("{id:int}/void"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Void(int id, VoidRequest r, [FromServices] Inventory.Application.Approvals.ApprovalService approvals, CancellationToken ct)
     {
         // Above the business's limit (off until switched on under Approvals) the void is held for someone else's approval (202) instead of being made.
@@ -82,14 +110,14 @@ public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     [HttpGet("lookup"), Authorize(Policy = Policies.Staff)]
     public Task<List<CustomerLookupDto>> Lookup([FromQuery] string? search, CancellationToken ct) => q.LookupAsync(search, ct);
 
-    /// <summary>Clerks can add a customer while making a sale (as in the desktop app) — decision D10 is open.</summary>
-    [HttpPost, Authorize(Policy = Policies.Staff)]
+    /// <summary>A manager or the CEO adds customers; clerks pick from the list (clerks don't add records).</summary>
+    [HttpPost, Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Create(CustomerInput input, CancellationToken ct) => Ok(new { id = await svc.CreateCustomerAsync(input, Me, ct) });
 
     [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Update(int id, CustomerInput input, CancellationToken ct) { await svc.UpdateCustomerAsync(id, input, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteCustomerAsync(id, Me, ct); return NoContent(); }
 
     [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
@@ -98,8 +126,16 @@ public class CustomersController(ICurrentUser cu, PartnerQueries q, PartnerServi
 }
 
 [ApiController, Route("api/suppliers")]
-public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerService svc) : AppController(cu)
+public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerService svc, SupplierStatementQueries statements, PurchaseService purchases) : AppController(cu)
 {
+    /// <summary>Everything tied to this supplier: their goods, every order, every payment, and what we owe.</summary>
+    [HttpGet("{id:int}/statement"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplierStatement> Statement(int id, CancellationToken ct) => statements.GetAsync(id, ct);
+
+    /// <summary>Pay the supplier any amount up to what we owe; it settles their unpaid orders oldest first.</summary>
+    [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplierPaymentResult> Pay(int id, PaymentRequest r, CancellationToken ct) => purchases.RecordPaymentAsync(id, r.Amount, r.Method ?? "Cash", Me, ct);
+
     [HttpGet, Authorize(Policy = Policies.Admin)]
     public Task<PagedResult<SupplierDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.SuppliersAsync(paging, ct);
 
@@ -109,12 +145,74 @@ public class SuppliersController(ICurrentUser cu, PartnerQueries q, PartnerServi
     [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
     public async Task<IActionResult> Update(int id, SupplierInput input, CancellationToken ct) { await svc.UpdateSupplierAsync(id, input, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteSupplierAsync(id, Me, ct); return NoContent(); }
+
+    /// <summary>This supplier's OWN items — their names, pack sizes and prices. Nothing to do with products or stock; the Supplies form picks from here.</summary>
+    [HttpGet("{id:int}/catalog"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierProductDto>> Catalog(int id, [FromQuery] bool includeInactive, [FromServices] SupplierCatalogService catalog, CancellationToken ct) =>
+        catalog.ListAsync(id, includeInactive, ct);
+
+    [HttpPut("{id:int}/catalog"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierProductDto>> SaveCatalog(int id, List<SupplierProductInput> items, [FromServices] SupplierCatalogService catalog, CancellationToken ct) =>
+        catalog.SaveAsync(id, items ?? [], Me, ct);
+
+    /// <summary>The stock products we buy from this supplier (with usual costs) — the new-purchase form picks from this list.</summary>
+    [HttpGet("{id:int}/items"), Authorize(Policy = Policies.Admin)]
+    public Task<List<SupplierItemDto>> Items(int id, CancellationToken ct) => svc.SupplierItemsAsync(id, ct);
+
+    [HttpPut("{id:int}/items"), Authorize(Policy = Policies.Admin)]
+    public async Task<IActionResult> SetItems(int id, List<SupplierItemInput> items, CancellationToken ct) { await svc.SetSupplierItemsAsync(id, items ?? [], Me, ct); return NoContent(); }
+}
+
+public sealed record SupplyPaymentRequest(decimal Amount, string? Method);
+public sealed record ClearMonthRequest(int Year, int Month);
+
+/// <summary>
+/// What suppliers supplied — a record in its own right. Nothing here moves stock, changes a product's cost price or writes to the ledger, so
+/// these figures answer "what did Supplier A supply this month" on their own. Managers and the CEO record and pay; only the CEO deletes.
+/// </summary>
+[ApiController, Route("api/supplies")]
+public class SuppliesController(ICurrentUser cu, SupplyService svc, SupplyQueries q) : AppController(cu)
+{
+    [HttpGet, Authorize(Policy = Policies.Admin)]
+    public Task<PagedResult<SupplyRowDto>> List([FromQuery] PageRequest paging, [FromQuery] int? supplierId, [FromQuery] int? year,
+        [FromQuery] int? month, CancellationToken ct) => q.ListAsync(paging, supplierId, year, month, ct);
+
+    [HttpGet("summary"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplySummary> Summary(CancellationToken ct) => q.SummaryAsync(ct);
+
+    [HttpGet("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public async Task<ActionResult<SupplyDetailDto>> Get(int id, CancellationToken ct) => await q.GetAsync(id, ct) is { } d ? d : NotFound();
+
+    [HttpPost, Authorize(Policy = Policies.Admin)]
+    public async Task<ActionResult<SupplyResult>> Create(SupplyRequest req, CancellationToken ct)
+    {
+        var r = await svc.CreateAsync(req, Me, ct);
+        return CreatedAtAction(nameof(Get), new { id = r.Id }, r);
+    }
+
+    [HttpPost("{id:int}/payments"), Authorize(Policy = Policies.Admin)]
+    public Task<SupplyResult> Pay(int id, SupplyPaymentRequest r, CancellationToken ct) => svc.PayAsync(id, r.Amount, r.Method ?? "Cash", Me, ct);
+
+    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> Delete(int id, CancellationToken ct) => svc.DeleteAsync(id, Me, ct);
+
+    /// <summary>Every supply from one supplier.</summary>
+    [HttpDelete("supplier/{supplierId:int}"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> DeleteForSupplier(int supplierId, CancellationToken ct) => svc.DeleteForSupplierAsync(supplierId, Me, ct);
+
+    /// <summary>Every supply in one month, across all suppliers.</summary>
+    [HttpPost("clear-month"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> ClearMonth(ClearMonthRequest r, CancellationToken ct) => svc.DeleteForMonthAsync(r.Year, r.Month, Me, ct);
+
+    /// <summary>Every supply record there is. Kept behind its own call so it can never be reached by a stray id.</summary>
+    [HttpPost("clear-all"), Authorize(Policy = Policies.Ceo)]
+    public Task<SupplyDeleteResult> ClearAll(CancellationToken ct) => svc.DeleteAllAsync(Me, ct);
 }
 
 [ApiController, Route("api/purchases")]
-public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQueries q) : AppController(cu)
+public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseEditService edits, PurchaseQueries q) : AppController(cu)
 {
     [HttpGet, Authorize(Policy = Policies.Admin)]
     public Task<PagedResult<PurchaseRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => q.ListAsync(paging, ct);
@@ -134,5 +232,14 @@ public class PurchasesController(ICurrentUser cu, PurchaseService svc, PurchaseQ
     public async Task<IActionResult> Receive(int id, ReceiveRequest r, CancellationToken ct) { await svc.ReceiveAsync(id, r.WarehouseId, Me, ct); return NoContent(); }
 
     [HttpPost("{id:int}/pay"), Authorize(Policy = Policies.Admin)]
-    public async Task<IActionResult> Pay(int id, PurchasePaymentRequest r, CancellationToken ct) { await svc.PayAsync(id, string.IsNullOrWhiteSpace(r.Method) ? "Cash" : r.Method, r.AccountNumber, Me, ct); return NoContent(); }
+    public async Task<IActionResult> Pay(int id, [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] PurchasePaymentRequest? r, CancellationToken ct)
+    {
+        // The older screen posts no body (cash); the newer one may say how it was paid and from which company account.
+        await svc.PayAsync(id, string.IsNullOrWhiteSpace(r?.Method) ? "Cash" : r!.Method!, r?.AccountNumber, Me, ct);
+        return NoContent();
+    }
+
+    /// <summary>Change an order's lines or VAT. Once received, stock moves by the difference in this order's own batch.</summary>
+    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    public Task<PurchaseEditResult> Edit(int id, PurchaseEditRequest req, CancellationToken ct) => edits.EditAsync(id, req, Me, ct);
 }

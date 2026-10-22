@@ -1,0 +1,10 @@
+[Unit]
+Description=Inventory weekly backup restore test (downloads from R2, restores to a scratch DB, compares)
+After=mysql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: needs the restore key (/etc/inventory/backup-restore.key, root 600) and CREATE/DROP for the scratch database.
+ExecStart=/usr/local/bin/inventory-restore-test
+Nice=15

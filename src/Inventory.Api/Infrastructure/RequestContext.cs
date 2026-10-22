@@ -18,10 +18,13 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     /// <summary>Set by the payment webhook only, from a reference this server generated and the processor confirmed. Signed-in requests never use it.</summary>
     public const string OverrideItem = "company-override";
 
-    /// <summary>Set by the campaign scheduler only (there is no HTTP request there): which company this scope works for.</summary>
+    /// <summary>Set by the campaign and broadcast schedulers (there is no HTTP request there): which company this scope works for.</summary>
     public string? BackgroundKey { get; set; }
 
-    public CompanyInfo Info => registry.Find(BackgroundKey ?? http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
+    /// <summary>For background work with no HTTP request (e.g. the pending-payment reconciler): the company for the current async flow only.</summary>
+    public static readonly AsyncLocal<string?> Background = new();
+
+    public CompanyInfo Info => registry.Find(BackgroundKey ?? Background.Value ?? http.HttpContext?.Items[OverrideItem] as string ?? http.HttpContext?.User.FindFirstValue(AppClaims.Company))
         ?? throw new InvalidOperationException("No company selected for this request.");
     public string Key => Info.Key;
     public string DocumentPrefix => Info.DocumentPrefix;
@@ -32,6 +35,9 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     public int DefaultWarehouseId => Info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();
+    public string? Website => Info.Website;
+    public IReadOnlyList<Inventory.Application.Abstractions.SocialLink> Socials => Info.Socials ?? [];
+    public IReadOnlyList<string>? PaymentProviders => Info.PaymentProviders;
 }
 
 public sealed class HttpCurrentUser(IHttpContextAccessor http) : ICurrentUser

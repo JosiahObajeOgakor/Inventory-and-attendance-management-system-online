@@ -36,6 +36,14 @@ export class Api2 {
   waybillInvoices(q: PageQuery & { pendingOnly?: boolean }) { return this.get<Paged<N.PendingInvoice>>('/api/waybills/invoices', q); }
   waybillPrefill(invoiceId: number) { return this.get<N.WaybillPrefill>(`/api/waybills/prefill/${invoiceId}`); }
   createWaybill(r: N.WaybillInput) { return this.post<{ id: number }>('/api/waybills', r); }
+  waybill(id: number) { return this.get<N.WaybillDetail>(`/api/waybills/${id}`); }
+  updateWaybill(id: number, r: N.WaybillInput) { return this.put<void>(`/api/waybills/${id}`, r); }
+
+  // delivery zones (Company settings)
+  deliveryZones() { return this.get<N.DeliveryZone[]>('/api/delivery-zones'); }
+  createDeliveryZone(z: N.DeliveryZoneInput) { return this.post<{ id: number }>('/api/delivery-zones', z); }
+  updateDeliveryZone(id: number, z: N.DeliveryZoneInput) { return this.put<void>(`/api/delivery-zones/${id}`, z); }
+  deleteDeliveryZone(id: number) { return this.del<void>(`/api/delivery-zones/${id}`); }
 
   // attendance
   attendanceToday() { return this.get<N.AttendanceToday>('/api/attendance/today'); }
@@ -69,8 +77,40 @@ export class Api2 {
   writeOffSerial(productId: number, serial: string, reason: string) { return this.post<void>(`/api/serials/product/${productId}/write-off`, { serial, reason }); }
   serialDiscrepancies() { return this.get<N.SerialDiscrepancy[]>('/api/serials/discrepancies'); }
 
+  // product photos (printed on the catalog)
+  uploadProductImage(id: number, file: File) { const f = new FormData(); f.append('file', file); return firstValueFrom(this.http.put<void>(`/api/products/${id}/image`, f)); }
+  removeProductImage(id: number) { return this.del<void>(`/api/products/${id}/image`); }
+
+  // supplier item lists
+  supplierItems(supplierId: number) { return this.get<N.SupplierItem[]>(`/api/suppliers/${supplierId}/items`); }
+  setSupplierItems(supplierId: number, items: { productId: number; unitCost: number }[]) { return this.put<void>(`/api/suppliers/${supplierId}/items`, items); }
+  supplierStatement(supplierId: number) { return this.get<N.SupplierStatement>(`/api/suppliers/${supplierId}/statement`); }
+  /** The supplier's OWN items (their names, sizes, prices) — what the Supplies form picks from. */
+  supplierCatalog(supplierId: number) { return this.get<N.SupplierProduct[]>(`/api/suppliers/${supplierId}/catalog`); }
+  saveSupplierCatalog(supplierId: number, items: N.SupplierProductInput[]) { return this.put<N.SupplierProduct[]>(`/api/suppliers/${supplierId}/catalog`, items); }
+  paySupplier(supplierId: number, amount: number, method: string) { return this.post<N.SupplierPaymentResult>(`/api/suppliers/${supplierId}/payments`, { amount, method }); }
+  productSuppliers(productId: number) { return this.get<N.ProductSupplier[]>(`/api/products/${productId}/suppliers`); }
+
+  // supplies — what suppliers supplied; separate from stock and from purchase orders
+  supplies(q: PageQuery & { supplierId?: number; year?: number; month?: number }) { return this.get<Paged<N.SupplyRow>>('/api/supplies', q); }
+  supply(id: number) { return this.get<N.SupplyDetail>(`/api/supplies/${id}`); }
+  supplySummary() { return this.get<N.SupplySummary>('/api/supplies/summary'); }
+  createSupply(input: N.SupplyInput) { return this.post<N.SupplyResult>('/api/supplies', input); }
+  paySupply(id: number, amount: number, method: string) { return this.post<N.SupplyResult>(`/api/supplies/${id}/payments`, { amount, method }); }
+  deleteSupply(id: number) { return this.del<N.SupplyDeleteResult>(`/api/supplies/${id}`); }
+  deleteSuppliesOfSupplier(supplierId: number) { return this.del<N.SupplyDeleteResult>(`/api/supplies/supplier/${supplierId}`); }
+  clearSuppliesForMonth(year: number, month: number) { return this.post<N.SupplyDeleteResult>('/api/supplies/clear-month', { year, month }); }
+  clearAllSupplies() { return this.post<N.SupplyDeleteResult>('/api/supplies/clear-all', {}); }
+
+  // clearing history (CEO)
+  clearPreview(what: string[]) { return firstValueFrom(this.http.get<{ table: string; rows: number }[]>('/api/admin/archive/clear-preview', { params: new HttpParams({ fromObject: { what } }) })); }
+  clearHistory(what: string[], confirm: string) { return this.post<{ records: number; file: string; bytes: number }>('/api/admin/archive/clear', { what, confirm }); }
+
   // expenses & rebates
   expenseCategories() { return this.get<string[]>('/api/expenses/categories'); }
+  expenseCategoriesAll() { return this.get<{ name: string; custom: boolean }[]>('/api/expenses/categories/all'); }
+  addExpenseCategory(name: string) { return this.post<{ name: string }>('/api/expenses/categories', { name }); }
+  deleteExpenseCategory(name: string) { return this.del<void>(`/api/expenses/categories/${encodeURIComponent(name)}`); }
   expenses(q: PageQuery & { from: string; to: string; category?: string }) { return this.get<N.ExpenseList>('/api/expenses', q); }
   createExpense(i: N.ExpenseInput) { return this.post<{ id: number }>('/api/expenses', i); }
   updateExpense(id: number, i: N.ExpenseInput) { return this.put<void>(`/api/expenses/${id}`, i); }
@@ -92,6 +132,9 @@ export class Api2 {
   calendar(year: number, month: number) { return this.get<D.CalendarData>('/api/dashboard/calendar', { year, month }); }
   chatSummary(days = 30) { return this.get<D.ChatSummary>('/api/dashboard/chat', { days }); }
   insights(refresh = false) { return this.get<D.InsightSet>('/api/ai/insights', { refresh }); }
+  reorderDue(max = 10) { return this.get<N.ReorderDue[]>('/api/dashboard/reorder-due', { max }); }
+  /** Sends today's digest now, to the business mailbox and WhatsApp number. */
+  sendAlerts() { return this.post<{ message: string }>('/api/alerts/send', {}); }
   aiStatus() { return this.get<D.AiStatus>('/api/ai/status'); }
   aiAsk(question: string, history: D.ChatTurn[]) { return this.post<D.AssistantAnswer>('/api/ai/ask', { question, history }); }
   forecast() { return this.get<D.ForecastRow[]>('/api/analytics/forecast'); }
@@ -100,7 +143,11 @@ export class Api2 {
   suggestedOrder(supplierId: number) { return this.get<D.SuggestedLine[]>(`/api/analytics/suggested-order/${supplierId}`); }
   saleAdvice(customerId: number | null, lines: { productId: number; quantity: number }[]) { return this.post<D.AdviceLine[]>('/api/analytics/sale-advice', { customerId, lines }); }
   purchaseAdvice(supplierId: number, lines: { productId: number; unitCost: number }[]) { return this.post<D.AdviceLine[]>('/api/analytics/purchase-advice', { supplierId, lines }); }
-  emailStatus() { return this.get<{ configured: boolean }>('/api/email/status'); }
+  emailStatus() { return this.get<{ configured: boolean; whatsApp: boolean }>('/api/email/status'); }
+  /** A sale receipt ('receipts') or a purchase order ('purchases'): preview / send by email, or send over the business's WhatsApp. */
+  previewDocEmail(kind: 'receipts' | 'purchases' | 'supplies', id: number, to: string | null, note: string | null) { return this.post<D.EmailPreview>(`/api/email/${kind}/${id}/preview`, { to, note }); }
+  sendDocEmail(kind: 'receipts' | 'purchases' | 'supplies', id: number, to: string | null, note: string | null) { return this.post<D.EmailSent>(`/api/email/${kind}/${id}/send`, { to, note }); }
+  sendDocWhatsApp(kind: 'receipts' | 'purchases' | 'supplies', id: number, to: string | null) { return this.post<N.DocumentSent>(`/api/email/${kind}/${id}/whatsapp`, { to, note: null }); }
   previewQuotationEmail(id: number, to: string | null, note: string | null) { return this.post<D.EmailPreview>(`/api/email/quotations/${id}/preview`, { to, note }); }
   sendQuotationEmail(id: number, to: string | null, note: string | null) { return this.post<D.EmailSent>(`/api/email/quotations/${id}/send`, { to, note }); }
   previewPriceListEmail(customerId: number | null, tier: string | null, to: string | null, note: string | null) { return this.post<D.EmailPreview>('/api/email/price-list/preview', { customerId, tier, to, note }); }

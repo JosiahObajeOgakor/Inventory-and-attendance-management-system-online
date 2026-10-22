@@ -60,15 +60,23 @@ public interface IBusinessDbContext
     DbSet<ProductSerial> ProductSerials { get; }
     DbSet<PriceChange> PriceChanges { get; }
     DbSet<PaymentLink> PaymentLinks { get; }
+    DbSet<DeliveryZone> DeliveryZones { get; }
     DbSet<ChatConversation> ChatConversations { get; }
     DbSet<ChatLogMessage> ChatMessages { get; }
-    DbSet<SupplierPayment> SupplierPayments { get; }
     DbSet<Campaign> Campaigns { get; }
     DbSet<CampaignMessage> CampaignMessages { get; }
     DbSet<AppRecord> AppRecords { get; }
     DbSet<CampaignRecipient> CampaignRecipients { get; }
     DbSet<LeaveType> LeaveTypes { get; }
     DbSet<LeaveRequest> LeaveRequests { get; }
+    DbSet<InboundMessage> InboundMessages { get; }
+    DbSet<SupplierItem> SupplierItems { get; }
+    DbSet<ExpenseCategory> ExpenseCategories { get; }
+    DbSet<ProductImage> ProductImages { get; }
+    DbSet<SupplierPayment> SupplierPayments { get; }
+    DbSet<SupplierProduct> SupplierProducts { get; }
+    DbSet<Supply> Supplies { get; }
+    DbSet<SupplyItem> SupplyItems { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken ct = default);
@@ -108,7 +116,18 @@ public interface ICompanyContext
     /// <summary>The warehouse the sales assistant fulfills online orders from (config-set; 0 means unconfigured).</summary>
     int DefaultWarehouseId { get; }
     IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks { get; }
+    /// <summary>Where customers order and pay online (printed on receipts and quotations). Null when the business has no shop site.</summary>
+    string? Website => null;
+    /// <summary>The business's social accounts, printed as "follow us" links on receipts and quotations.</summary>
+    IReadOnlyList<SocialLink> Socials => [];
+    /// <summary>Which online processors this business may use ("paystack", "alatpay"); null = every one set up on the server.</summary>
+    IReadOnlyList<string>? PaymentProviders => null;
 }
+
+/// <param name="Platform">Facebook, Instagram, YouTube, Telegram, X or TikTok.</param>
+/// <param name="Handle">What's printed, e.g. "chewypetsfeeds" or "Chewypets TV".</param>
+/// <param name="Url">Where the printed link goes.</param>
+public sealed record SocialLink(string Platform, string Handle, string Url);
 
 /// <summary>Lets Application code react to provider-specific transient failures without referencing the provider.</summary>
 public interface IDbErrorClassifier

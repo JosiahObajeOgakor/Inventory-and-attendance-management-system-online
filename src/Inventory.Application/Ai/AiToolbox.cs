@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Application.Ai;
 
 public sealed record CustomerScore(int CustomerId, string Name, string Tier, decimal SpendLast12Months, int OrdersLast12Months, int? AvgDaysBetweenOrders, int? DaysSinceLastOrder,
-    int OverdueInvoices, decimal Balance, decimal CreditLimit, decimal RebateRatePct, decimal RebateNotCollected, int Score, string Recommendation);
+    int OverdueInvoices, decimal Balance, decimal CreditLimit, decimal RebatePerUnit, decimal RebateNotCollected, int Score, string Recommendation);
 
 /// <summary>
 /// The assistant's ONLY window onto data: read-only functions over this company's own records. The model never sees a database
@@ -146,7 +146,7 @@ public sealed class AiToolbox(IBusinessDbContext db, IClock clock, OverviewQueri
                 : score >= 55 ? "Good: keep the current terms; a small rebate bump if orders continue at this pace."
                 : score >= 35 ? "Average: no change; encourage more frequent ordering."
                 : "Low activity: consider a re-engagement offer rather than a rebate.";
-            list.Add(new CustomerScore(c.Id, c.Name, CustomerRanking.For(spend), spend, mine.Count, avgGap, since, overdue, c.Balance, c.CreditLimit, c.RebateRatePct, rebates.GetValueOrDefault(c.Id), score, rec));
+            list.Add(new CustomerScore(c.Id, c.Name, CustomerRanking.For(spend), spend, mine.Count, avgGap, since, overdue, c.Balance, c.CreditLimit, c.RebatePerUnit, rebates.GetValueOrDefault(c.Id), score, rec));
         }
         return list.OrderByDescending(s => s.Score).Take(25).ToList();
     }

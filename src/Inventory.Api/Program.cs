@@ -38,11 +38,26 @@ builder.Services.AddScoped<Inventory.Infrastructure.Documents.ExcelExporter>();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<Inventory.Infrastructure.Payments.PaystackOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.PaystackOptions.Section));
 builder.Services.Configure<Inventory.Infrastructure.Payments.NotifyOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.NotifyOptions.Section));
-builder.Services.AddHttpClient<Inventory.Application.Payments.IPaymentGateway, Inventory.Infrastructure.Payments.PaystackGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.Configure<Inventory.Infrastructure.Payments.AlatPayOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.AlatPayOptions.Section));
+builder.Services.Configure<Inventory.Application.Payments.FulfilmentOptions>(builder.Configuration.GetSection(Inventory.Application.Payments.FulfilmentOptions.Section));
+// Both processors are registered as IPaymentGateway; PaymentGateways picks one by name (the customer's choice, or the link's own provider).
+builder.Services.AddHttpClient<Inventory.Infrastructure.Payments.PaystackGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<Inventory.Infrastructure.Payments.AlatPayGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.PaystackGateway>());
+builder.Services.AddScoped<Inventory.Application.Payments.IPaymentGateway>(sp => sp.GetRequiredService<Inventory.Infrastructure.Payments.AlatPayGateway>());
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.PendingPaymentReconciler>();
+// The public "choose how to pay" page linked from receipts and quotations (Site:PublicUrl, e.g. https://chewypetsfeeds.com).
+builder.Services.Configure<Inventory.Api.Controllers.SiteOptions>(builder.Configuration.GetSection(Inventory.Api.Controllers.SiteOptions.Section));
+builder.Services.AddScoped<Inventory.Application.Payments.IPayPageLinks, Inventory.Api.Controllers.PayPageLinks>();
+// WhatsApp messages are stored by the webhook and answered here, with retries, in the background.
+builder.Services.Configure<Inventory.Application.SalesAssistant.InboxOptions>(builder.Configuration.GetSection(Inventory.Application.SalesAssistant.InboxOptions.Section));
+builder.Services.AddSingleton<Inventory.Api.Infrastructure.DailyAlertsWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Inventory.Api.Infrastructure.DailyAlertsWorker>());
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.WhatsAppInboxWorker>();
 builder.Services.AddHttpClient("sms", c => c.Timeout = TimeSpan.FromSeconds(20));
 // WhatsApp sales chat: Twilio carries the messages, AlatPay issues the single-use bank account shown inside the chat.
 builder.Services.Configure<Inventory.Infrastructure.Payments.AlatPayOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Payments.AlatPayOptions.Section));
-builder.Services.AddHttpClient<Inventory.Application.Payments.IVirtualAccountGateway, Inventory.Infrastructure.Payments.AlatPayGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<Inventory.Application.Payments.IVirtualAccountGateway, Inventory.Infrastructure.Payments.AlatPayVirtualAccounts>(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.Configure<Inventory.Infrastructure.WhatsApp.TwilioOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.WhatsApp.TwilioOptions.Section));
 builder.Services.AddHttpClient<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>(c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddScoped<Inventory.Application.Messaging.IChatSender>(sp => sp.GetRequiredService<Inventory.Infrastructure.WhatsApp.TwilioWhatsAppClient>());
@@ -108,6 +123,19 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(o =>
     .AddPasswordValidator<DesktopPasswordPolicy>()
     .AddDefaultTokenProviders();   // needed for admin password resets
 builder.Services.AddScoped<IPasswordHasher<AppUser>, LegacyAwarePasswordHasher>();
+// A role the CEO grants or revokes (e.g. manager delegated to a clerk and taken back) reaches that person's session within a minute.
+builder.Services.Configure<SecurityStampValidatorOptions>(o =>
+{
+    o.ValidationInterval = TimeSpan.FromMinutes(1);
+    // The refresh rebuilds the principal from the user store (fresh roles); carry over the claims we add at sign-in.
+    o.OnRefreshingPrincipal = ctx =>
+    {
+        var carried = ctx.CurrentPrincipal?.Claims.Where(c => c.Type is AppClaims.Company or AppClaims.FullName or MustChangePasswordMiddleware.ClaimType).ToList() ?? [];
+        if (ctx.NewPrincipal?.Identity is System.Security.Claims.ClaimsIdentity id)
+            foreach (var c in carried) if (!id.HasClaim(c.Type, c.Value)) id.AddClaim(new System.Security.Claims.Claim(c.Type, c.Value));
+        return Task.CompletedTask;
+    };
+});
 builder.Services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "inventory.auth";
@@ -124,8 +152,9 @@ builder.Services.ConfigureApplicationCookie(o =>
 // ---- authorization: deny by default, explicit policies per endpoint ----
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
-    .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin))
-    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Clerk));
+    .AddPolicy(Policies.Ceo, p => p.RequireRole(RoleNames.Admin))
+    .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager))
+    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Clerk));
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -135,6 +164,8 @@ builder.Services.AddRateLimiter(o =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:LoginPerMinute", 10), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     // Meta's webhook calls all arrive from its own servers, not the customer's IP, so this only guards against a flood/misconfiguration —
     // the real per-customer limit is SalesAssistantOptions.DailyMessagesPerConversation, enforced inside SalesAssistantService.
+    // Storing a message is cheap now (answering happens in the background), so this only guards against floods; each customer is
+    // separately capped by SalesAssistant:DailyMessagesPerConversation. Meta retries anything refused here.
     o.AddPolicy(Policies.WhatsAppRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("whatsapp",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = builder.Configuration.GetValue("RateLimit:WhatsAppPerMinute", 1200), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));   // 20 messages a second across all customers; was 2 a second
     o.AddPolicy(Policies.WebChatRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(

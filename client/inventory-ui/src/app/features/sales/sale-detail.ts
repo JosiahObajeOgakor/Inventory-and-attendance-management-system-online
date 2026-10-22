@@ -1,15 +1,16 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
 import { Auth } from '../../core/auth.service';
-import { InvoiceDetail } from '../../core/models';
+import { InvoiceDetail, SaleDeleteResult } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
+import { SendDocument } from '../../shared/send-document';
 
 @Component({
   selector: 'app-sale-detail',
-  imports: [RouterLink, Icon, NairaPipe, DayPipe, StampTimePipe, Stamp],
+  imports: [RouterLink, Icon, NairaPipe, DayPipe, StampTimePipe, Stamp, SendDocument],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -18,8 +19,12 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
         <div class="actions">
           <a class="btn" routerLink="/sales">All sales</a>
           <a class="btn btn-primary" [href]="'/api/sales/' + id() + '/receipt.pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> Receipt (PDF)</a>
+          @if (s() && s()!.status !== 'Voided') { <button type="button" class="btn" (click)="sendOpen.set(true)"><app-icon name="send" [size]="18" /> Send receipt</button> }
           <button type="button" class="btn" (click)="print()">Print this page</button>
-          @if (auth.isAdmin() && s() && s()!.status !== 'Voided') { <button type="button" class="btn btn-danger" (click)="voidIt()">Void sale</button> }
+          @if (auth.isAdmin() && s() && s()!.status !== 'Voided') {
+            <a class="btn" [routerLink]="['/sales', id(), 'edit']"><app-icon name="edit" [size]="18" /> Edit sale</a>
+          }
+          @if (auth.canDelete() && s()) { <button type="button" class="btn btn-danger" (click)="deleteIt()">Delete sale</button> }
         </div>
       </div>
 
@@ -62,14 +67,21 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
               <div><dt>Subtotal</dt><dd class="mono">{{ s.subtotal | naira }}</dd></div>
               @if (s.discountAmount > 0) { <div><dt>Discount ({{ s.discountPct }}%)</dt><dd class="mono">−{{ s.discountAmount | naira }}</dd></div> }
               @if (s.vatAmount > 0) { <div><dt>VAT ({{ s.vatRate }}%)</dt><dd class="mono">{{ s.vatAmount | naira }}</dd></div> }
+              @if (s.deliveryFee > 0) { <div><dt>Delivery</dt><dd class="mono">{{ s.deliveryFee | naira }}</dd></div> }
               <div class="grand"><dt>Total</dt><dd class="figure">{{ s.totalAmount | naira }}</dd></div>
               <div><dt>Paid</dt><dd class="mono">{{ s.amountPaid | naira }}</dd></div>
               @if (owed() > 0 && s.status !== 'Voided') { <div class="owed"><dt>Balance on this invoice</dt><dd class="mono">{{ owed() | naira }}</dd></div> }
+              @if (s.owedElsewhere > 0) {
+                <div class="owed"><dt>Owed on earlier invoices</dt><dd class="mono">{{ s.owedElsewhere | naira }}</dd></div>
+                <div class="owed all"><dt>Total now owed</dt><dd class="mono">{{ (s.status === 'Voided' ? 0 : owed()) + s.owedElsewhere | naira }}</dd></div>
+              }
             </dl>
           </div>
         </article>
       } @else if (!error()) { <div class="card skeleton" style="height:18rem"></div> }
-    </div>`,
+    </div>
+    <app-send-document [open]="sendOpen()" kind="receipts" [docId]="s()?.id ?? null" [number]="s()?.invoiceNumber ?? ''"
+      [defaultPhone]="s()?.customerPhone ?? ''" [defaultEmail]="s()?.customerEmail ?? ''" (closed)="sendOpen.set(false)" />`,
   styles: `
     .receipt { max-width: 52rem; padding: 1.5rem 1.75rem 1.75rem; position: relative; overflow: hidden; }
     header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; border-bottom: 2px solid var(--ink); }
@@ -82,13 +94,18 @@ import { DayPipe, NairaPipe, StampTimePipe, Stamp } from '../../shared/ui';
     .totals { margin: 0; width: min(20rem, 100%); display: grid; gap: .35rem; margin-left: auto; } .totals div { display: flex; justify-content: space-between; } .totals dt { color: var(--muted); } .totals dd { margin: 0; }
     .grand { border-top: 2px solid var(--ink); padding-top: .5rem; align-items: baseline; } .grand dt { color: var(--ink) !important; font-weight: 700; } .grand dd { font-size: 1.9rem; color: var(--brand); }
     .owed dt, .owed dd { color: var(--stamp) !important; font-weight: 700; }
+    .owed.all { border-top: 1px solid var(--line); padding-top: .35rem; }
     @media print { .receipt { max-width: none; border: 0; padding: 0; } .grand dd { color: #000; } }
   `,
 })
 export class SaleDetail implements OnInit {
   readonly id = input.required<string>();   // bound from the route (withComponentInputBinding)
+  /** "?send=1": the sale was just made — offer to send the receipt straight away. */
+  readonly send = input<string>();
+  protected readonly sendOpen = signal(false);
   private readonly api = inject(Api);
   private readonly confirm = inject(Confirm);
+  private readonly router = inject(Router);
   private readonly toasts = inject(Toasts);
   protected readonly auth = inject(Auth);
   protected readonly s = signal<InvoiceDetail | null>(null);
@@ -98,20 +115,40 @@ export class SaleDetail implements OnInit {
   ngOnInit() { void this.load(); }
 
   private async load() {
-    try { this.s.set(await this.api.sale(Number(this.id()))); } catch (e) { this.error.set(messageOf(e)); }
+    try {
+      this.s.set(await this.api.sale(Number(this.id())));
+      if (this.send() && this.s()!.status !== 'Voided') this.sendOpen.set(true);
+    } catch (e) { this.error.set(messageOf(e)); }
   }
 
   protected print() { window.print(); }
 
-  protected async voidIt() {
+  /**
+   * Deletes the sale as if it never happened. First asks the server what that will do (stock back, what to refund and how), so the admin
+   * confirms knowing exactly what money to hand back.
+   */
+  protected async deleteIt() {
     const s = this.s(); if (!s) return;
+    let p: SaleDeleteResult;
+    try { p = await this.api.deleteSalePreview(s.id); } catch (e) { this.toasts.error(messageOf(e)); return; }
+    const naira = new NairaPipe();
+    const parts = [
+      p.stockReturned.length ? `Stock goes back on the shelf: ${p.stockReturned.map(x => `${x.quantity} × ${x.product}`).join(', ')}.` : 'No stock to return.',
+      p.refundDue > 0 ? `Refund ${naira.transform(p.refundDue)} to ${p.customer} — it will no longer count as income.` : '',
+      ...p.refundOnline.map(o => `${naira.transform(o.amount)} of that was paid through ${o.method}: refund it from your ${o.method} dashboard.`),
+      p.creditRestored > 0 ? `${naira.transform(p.creditRestored)} of account credit goes back on ${p.customer}'s account.` : '',
+      p.owedCleared > 0 ? `${naira.transform(p.owedCleared)} still owed is cleared from ${p.customer}'s balance.` : '',
+      'The sale, its payments and waybills are removed. A full copy is kept in the activity log.',
+    ].filter(Boolean);
     const reason = await this.confirm.ask({
-      title: 'Void this sale?',
-      message: `${s.invoiceNumber} stays on record as voided. The stock goes back on the shelf and the customer’s balance drops by what they still owed. Money already received stays recorded as paid — note any refund below.`,
-      confirmLabel: 'Void sale', danger: true, reason: { label: 'Why is it being voided?', required: true },
+      title: `Delete ${s.invoiceNumber}?`, message: parts.join(' '),
+      confirmLabel: 'Delete sale', danger: true, reason: { label: 'Why is it being deleted?', required: true },
     });
     if (reason === null) return;
-    try { await this.api.voidSale(s.id, reason); this.toasts.ok(`${s.invoiceNumber} voided.`); await this.load(); }
-    catch (e) { this.toasts.error(messageOf(e)); }
+    try {
+      const r = await this.api.deleteSale(s.id, reason);
+      this.toasts.ok(r.refundDue > 0 ? `${r.invoiceNumber} deleted. Refund ${naira.transform(r.refundDue)} to ${r.customer}.` : `${r.invoiceNumber} deleted.`);
+      await this.router.navigate(['/sales']);
+    } catch (e) { this.toasts.error(messageOf(e)); }
   }
 }

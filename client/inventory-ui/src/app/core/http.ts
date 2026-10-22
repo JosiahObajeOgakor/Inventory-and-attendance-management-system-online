@@ -29,7 +29,14 @@ export const authGuard: CanActivateFn = () => {
 /** The newer features are being tested with K9 Cravings; in the other businesses their pages send you back to the dashboard. */
 export const newFeaturesGuard: CanActivateFn = () => inject(Auth).flags().hasNewFeatures ? true : inject(Router).createUrlTree(['/dashboard']);
 
+/** CEO or manager. */
 export const adminGuard: CanActivateFn = () => {
   const auth = inject(Auth);
   return auth.isAdmin() ? true : inject(Router).createUrlTree(['/dashboard']);
+};
+
+/** The CEO only (people & roles, clearing history). */
+export const ceoGuard: CanActivateFn = () => {
+  const auth = inject(Auth);
+  return auth.isCeo() ? true : inject(Router).createUrlTree(['/dashboard']);
 };

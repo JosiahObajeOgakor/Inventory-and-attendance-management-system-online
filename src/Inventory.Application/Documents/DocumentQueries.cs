@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Application.Documents;
 
 /// <summary>Assembles the data for each printable document from the database. Read-only.</summary>
-public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService profile, ICompanyContext company, IUserDirectory users, IClock clock, PaymentLinkService pay)
+public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService profile, ICompanyContext company, IUserDirectory users, IClock clock, PaymentLinkService pay,
+    IPayPageLinks? payPages = null)
 {
     public async Task<Branding> BrandAsync(CancellationToken ct)
     {
@@ -18,7 +19,8 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var assets = await db.CompanyAssets.AsNoTracking().ToDictionaryAsync(a => a.Kind, a => a.Data, ct);
         return new Branding(company.Key, p.LegalName, p.Address, p.Phone, p.Email, p.TaxId,
             assets.GetValueOrDefault(AssetKinds.Logo), assets.GetValueOrDefault(AssetKinds.Signature), assets.GetValueOrDefault(AssetKinds.WaybillStamp),
-            p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankInfo(b.BankName, b.AccountName, b.AccountNumber)).ToList());
+            p.Banks.OrderBy(b => b.SortOrder).Select(b => new BankInfo(b.BankName, b.AccountName, b.AccountNumber)).ToList(),
+            company.Website, company.Socials);
     }
 
     /// <summary>A clerk login is shared front-desk staff, not one named person, so their documents show "&lt;Company&gt; (Clerk)"; only an admin's own name is printed.</summary>
@@ -48,12 +50,26 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var payUrl = i.Status == PaymentStatuses.Voided ? null : await PayUrlAsync(PaymentDocTypes.Invoice, i.Id, i.InvoiceNumber, bal, c, ct);
         return new ReceiptDoc(brand, i.InvoiceNumber, i.InvoiceDate, i.Status, bal > 0 ? i.DueDate : null, Party(c), i.PriceTier, wh, i.PaymentMethod,
             PersonOn(briefs.GetValueOrDefault(i.CreatedByUserId), brand.Name), lines, i.Subtotal, i.DiscountPct, i.DiscountAmount, i.VatRate, i.VatAmount,
-            i.TotalAmount, i.AmountPaid, i.Status == PaymentStatuses.Voided ? 0m : elsewhere, rebate, clock.BusinessNow, payUrl);
+            i.TotalAmount, i.AmountPaid, i.Status == PaymentStatuses.Voided ? 0m : elsewhere, rebate, clock.BusinessNow, payUrl,
+            i.Status == PaymentStatuses.Voided ? null : ScanUrl(PaymentDocTypes.Invoice, i.Id, bal));
     }
 
-    /// <summary>The Paystack link for this document at its exact amount. A payment-provider problem must never stop a document from printing, so failures give no link rather than an error.</summary>
+    /// <summary>
+    /// The address behind the printed "scan to pay" QR code: it goes straight into an AlatPay checkout for what is owed at the moment of scanning
+    /// (no choosing screen). Only when AlatPay is set up and the site address is configured — a QR that can't pay is worse than none.
+    /// </summary>
+    private string? ScanUrl(string docType, int docId, decimal amount) =>
+        amount > 0 && pay.Providers.Contains(PaymentProviders.AlatPay) && payPages?.UrlFor(docType, docId) is { } page ? $"{page}/{PaymentProviders.AlatPay}" : null;
+
+    /// <summary>
+    /// The "pay online" link printed on the document: our own page where the customer picks Paystack or AlatPay and pays what is owed at that
+    /// moment. Without a configured site address it falls back to a direct Paystack checkout. A payment-provider problem must never stop a document
+    /// from printing, so failures give no link rather than an error.
+    /// </summary>
     private async Task<string?> PayUrlAsync(string docType, int docId, string number, decimal amount, Customer c, CancellationToken ct)
     {
+        if (!pay.Enabled || amount <= 0) return null;
+        if (payPages?.UrlFor(docType, docId) is { } page) return page;
         try { return (await pay.GetOrCreateAsync(docType, docId, number, amount, c.Email, c.Name, ct))?.Url; }
         catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
     }
@@ -70,7 +86,43 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var briefs = await users.BriefsAsync([q.CreatedByUserId], ct);
         var payUrl = q.Status == QuotationStatuses.Open ? await PayUrlAsync(PaymentDocTypes.Quotation, q.Id, q.QuotationNumber, q.TotalAmount, c, ct) : null;
         return new QuotationDoc(brand, q.QuotationNumber, q.QuotationDate, q.Status, Party(c), q.PriceTier, PersonOn(briefs.GetValueOrDefault(q.CreatedByUserId), brand.Name),
-            lines, q.Subtotal, q.DiscountPct, q.DiscountAmount, q.VatRate, q.VatAmount, q.TotalAmount, clock.BusinessNow, payUrl);
+            lines, q.Subtotal, q.DiscountPct, q.DiscountAmount, q.VatRate, q.VatAmount, q.TotalAmount, clock.BusinessNow, payUrl,
+            q.Status == QuotationStatuses.Open ? ScanUrl(PaymentDocTypes.Quotation, q.Id, q.TotalAmount) : null);
+    }
+
+    public async Task<PurchaseOrderDoc> PurchaseOrderAsync(int id, CancellationToken ct)
+    {
+        var po = await db.PurchaseOrders.AsNoTracking().Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Purchase order");
+        var s = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == po.SupplierId, ct);
+        var brand = await BrandAsync(ct);
+        var ids = po.Items.Select(x => x.ProductId).ToList();
+        var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var lines = po.Items.OrderBy(x => products[x.ProductId].Name).Select((x, n) =>
+            new DocLine(n + 1, products[x.ProductId].Sku, products[x.ProductId].Name, products[x.ProductId].Unit, x.Quantity, x.UnitCost, x.Quantity * x.UnitCost)).ToList();
+        var subtotal = lines.Sum(l => l.Amount);
+        var briefs = await users.BriefsAsync([po.CreatedByUserId], ct);
+        var cancelled = po.Status == PurchaseStatuses.Cancelled;
+        // What we owe them on OTHER orders: the running balance minus this order's unpaid share.
+        var elsewhere = cancelled ? Math.Max(0m, s.Balance) : Math.Max(0m, s.Balance - Math.Max(0m, po.TotalAmount - po.AmountPaid));
+        var party = new PartyInfo(s.Name, s.ContactName ?? "", s.Address ?? "", s.Phone ?? "", s.Email ?? "", s.TaxId ?? "", "");
+        return new PurchaseOrderDoc(brand, po.PoNumber, po.OrderDate, po.Status, po.PaymentStatus, party, PersonOn(briefs.GetValueOrDefault(po.CreatedByUserId), brand.Name),
+            lines, subtotal, Math.Max(0m, po.TotalAmount - subtotal), po.TotalAmount, po.AmountPaid, elsewhere, clock.BusinessNow);
+    }
+
+    /// <summary>A supplier's copy of what we bought from them, built from their own items — no product or stock data is involved.</summary>
+    public async Task<SupplyDoc> SupplyAsync(int id, CancellationToken ct)
+    {
+        var s = await db.Supplies.AsNoTracking().Include(x => x.Items).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Purchase");
+        var sup = await db.Suppliers.AsNoTracking().SingleAsync(x => x.Id == s.SupplierId, ct);
+        var brand = await BrandAsync(ct);
+        var briefs = await users.BriefsAsync([s.CreatedByUserId], ct);
+        var lines = s.Items.OrderBy(i => i.Name).Select((i, n) => new SupplyDocLine(n + 1, i.Name, i.Size, i.Unit, i.Quantity, i.UnitCost, i.LineTotal)).ToList();
+        // What we still owe them on their OTHER purchases — supply records only, never mixed with the stock-order balance.
+        var elsewhere = await db.Supplies.AsNoTracking().Where(x => x.SupplierId == s.SupplierId && x.Id != s.Id)
+            .SumAsync(x => (decimal?)(x.TotalAmount - x.AmountPaid), ct) ?? 0m;
+        var party = new PartyInfo(sup.Name, sup.ContactName ?? "", sup.Address ?? "", sup.Phone ?? "", sup.Email ?? "", sup.TaxId ?? "", "");
+        return new SupplyDoc(brand, s.Reference, s.SupplyDate, s.PaymentStatus, party, PersonOn(briefs.GetValueOrDefault(s.CreatedByUserId), brand.Name),
+            s.Note, lines, s.TotalAmount, s.AmountPaid, Math.Max(0, elsewhere), clock.BusinessNow);
     }
 
     public async Task<WaybillDoc> WaybillAsync(int id, CancellationToken ct)
@@ -90,16 +142,31 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
             w.DriverName ?? "", w.DriverPhone ?? "", w.VehiclePlate ?? "", w.Notes ?? "", lines, clock.BusinessNow);
     }
 
-    public async Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, CancellationToken ct)
+    public Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, CancellationToken ct) =>
+        PriceListAsync(tier, customerName, includeOutOfStock, null, false, ct);
+
+    /// <summary>
+    /// The price list for one tier. <paramref name="productIds"/> narrows it to chosen items (null = everything; chosen items are listed even when
+    /// out of stock). <paramref name="catalog"/> builds the picture catalog: each item carries its photo.
+    /// </summary>
+    public async Task<PriceListDoc> PriceListAsync(string tier, string? customerName, bool includeOutOfStock, IReadOnlyCollection<int>? productIds, bool catalog, CancellationToken ct)
     {
         if (!PriceTiers.IsValid(tier)) throw new BusinessRuleException("Unknown price list.");
         var brand = await BrandAsync(ct);
         var qty = await db.StockBatches.AsNoTracking().GroupBy(b => b.ProductId).Select(g => new { g.Key, Q = g.Sum(b => b.QuantityOnHand) }).ToDictionaryAsync(x => x.Key, x => x.Q, ct);
-        var products = await db.Products.AsNoTracking().Where(p => p.IsActive).Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
-        var lines = products.Where(x => includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0)
+        var q = db.Products.AsNoTracking().Where(p => p.IsActive);
+        var chosen = productIds is { Count: > 0 };
+        if (chosen) q = q.Where(p => productIds!.Contains(p.Id));
+        var products = await q.Select(p => new { p, Category = p.Category!.Name }).ToListAsync(ct);
+        if (chosen && products.Count == 0) throw new BusinessRuleException("None of the chosen products could be found.");
+        var ids = products.Select(x => x.p.Id).ToList();
+        var images = catalog
+            ? await db.ProductImages.AsNoTracking().Where(i => ids.Contains(i.ProductId)).ToDictionaryAsync(i => i.ProductId, i => i.Data, ct)
+            : [];
+        var lines = products.Where(x => chosen || includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0)
             .OrderBy(x => x.Category).ThenBy(x => x.p.Name)
-            .Select(x => new PriceListLine(x.Category, x.p.Name, x.p.Sku, x.p.Unit, x.p.PriceFor(tier), qty.GetValueOrDefault(x.p.Id))).ToList();
+            .Select(x => new PriceListLine(x.Category, x.p.Name, x.p.Sku, x.p.Unit, x.p.PriceFor(tier), qty.GetValueOrDefault(x.p.Id), images.GetValueOrDefault(x.p.Id))).ToList();
         var today = clock.BusinessToday;
-        return new PriceListDoc(brand, tier, customerName, $"PL-{today:yyyyMMdd}", today, lines, clock.BusinessNow);
+        return new PriceListDoc(brand, tier, customerName, $"{(catalog ? "CAT" : "PL")}-{today:yyyyMMdd}", today, lines, clock.BusinessNow, catalog);
     }
 }

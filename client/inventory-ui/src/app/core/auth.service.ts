@@ -13,8 +13,13 @@ export class Auth {
   readonly ready = signal(false);
   /** The business chosen on the sign-in screen (before there is a session). */
   readonly selected = signal<string>(storageGet('company') ?? 'chewypets');
-  readonly isAdmin = computed(() => this.me()?.role === 'ADMIN');
-  /** This business has two roles, so every accounting permission (journals, approvals, tax, periods…) is simply an admin's. */
+  /** The CEO (role ADMIN): everything, including deleting records, clearing history and managing people. */
+  readonly isCeo = computed(() => this.me()?.role === 'ADMIN');
+  /** CEO or manager: every management screen and every add/edit. Only the CEO can delete. */
+  readonly isAdmin = computed(() => this.me()?.role === 'ADMIN' || this.me()?.role === 'MANAGER');
+  readonly canDelete = this.isCeo;
+  readonly roleLabel = computed(() => roleLabel(this.me()?.role));
+  /** Accounting, approvals, tax and periods follow the management screens: CEO or manager. */
   can(_permission: string): boolean { return this.isAdmin(); }
   readonly company = computed(() => this.me()?.company ?? this.selected());
   readonly companyName = computed(() => this.me()?.companies.find(c => c.key === this.company())?.displayName ?? '');
@@ -58,6 +63,10 @@ export class Auth {
     this.me.set(null);
     void this.router.navigate(['/login']);
   }
+}
+
+export function roleLabel(role: string | undefined): string {
+  return role === 'ADMIN' ? 'CEO' : role === 'MANAGER' ? 'Manager' : 'Clerk';
 }
 
 function storageGet(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }

@@ -75,6 +75,9 @@ export class Api {
   previewSale(req: M.SaleRequest) { return this.post<M.SalePreview>('/api/sales/preview', req); }
   createSale(req: M.SaleRequest, idempotencyKey: string) { return this.post<M.SaleResult>('/api/sales', req, { 'Idempotency-Key': idempotencyKey }); }
   voidSale(id: number, reason: string) { return this.post<void>(`/api/sales/${id}/void`, { reason }); }
+  deleteSalePreview(id: number) { return this.get<M.SaleDeleteResult>(`/api/sales/${id}/delete-preview`); }
+  deleteSale(id: number, reason: string) { return this.post<M.SaleDeleteResult>(`/api/sales/${id}/delete`, { reason }); }
+  editSale(id: number, req: M.InvoiceEditRequest) { return this.put<M.InvoiceEditResult>(`/api/sales/${id}`, req); }
 
   // customers
   customers(q: M.PageQuery) { return this.get<M.Paged<M.Customer>>('/api/customers', q); }
@@ -93,7 +96,9 @@ export class Api {
   purchase(id: number) { return this.get<M.PurchaseDetail>(`/api/purchases/${id}`); }
   createPurchase(req: M.PurchaseRequest, idempotencyKey: string) { return this.post<M.PurchaseResult>('/api/purchases', req, { 'Idempotency-Key': idempotencyKey }); }
   receivePurchase(id: number, warehouseId: number) { return this.post<void>(`/api/purchases/${id}/receive`, { warehouseId }); }
-  payPurchase(id: number, method: string, accountNumber: string | null) { return this.post<void>(`/api/purchases/${id}/pay`, { method, accountNumber }); }
+  /** Without a method it is recorded as cash (the older screen); with one, how it was paid and from which company account. */
+  payPurchase(id: number, method?: string, accountNumber?: string | null) { return this.post<void>(`/api/purchases/${id}/pay`, method ? { method, accountNumber: accountNumber ?? null } : {}); }
+  editPurchase(id: number, req: M.PurchaseEditRequest) { return this.put<M.PurchaseEditResult>(`/api/purchases/${id}`, req); }
 
   // admin
   users() { return this.get<M.UserRow[]>('/api/users'); }

@@ -126,7 +126,7 @@ public sealed class LedgerSync(IBusinessDbContext db, GeneralLedger gl)
         {
             try
             {
-                if (await gl.PostAsync("SupplierPayment", p.Id.ToString(), "paid", Day(p.PaymentDate), $"Payment to supplier ({p.Method})",
+                if (await gl.PostAsync("SupplierPayment", p.Id.ToString(), "paid", Day(p.PaidAt), $"Payment to supplier ({p.Method})",
                         [PostLine.Dr(GlCodes.Payables, p.Amount, supplierId: p.SupplierId), PostLine.Cr(Cashbox(p.Method), p.Amount)], System, ct) is not null) n++;
             }
             catch (BusinessRuleException) { }

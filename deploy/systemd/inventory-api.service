@@ -17,6 +17,11 @@ RestartSec=5
 Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
 Environment=DOTNET_gcServer=0
 Environment=DOTNET_GCHeapHardLimit=0x20000000
+# Persistent, deploy-proof state. HOME makes ASP.NET keep its sign-in cookie keys in /var/lib/inventory/.aspnet
+# (otherwise they live in memory and everyone is signed out on every restart/deploy). Archives live beside them,
+# not inside /opt/inventory/api, which each deploy replaces.
+Environment=HOME=/var/lib/inventory
+Environment=Archive__Folder=/var/lib/inventory/archives
 
 # Hardening
 NoNewPrivileges=true
@@ -26,7 +31,7 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/var/log/inventory
+ReadWritePaths=/var/log/inventory /var/lib/inventory
 LimitNOFILE=8192
 
 [Install]

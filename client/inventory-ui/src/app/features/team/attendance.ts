@@ -16,8 +16,8 @@ const clock = (v: string | null) => (v ? new Date(v.endsWith('Z') ? v : v + 'Z')
   template: `
     <section class="card">
       <div class="toolbar">
-        <div class="field inline"><label for="af">From</label><input id="af" class="input" type="date" [ngModel]="from()" (ngModelChange)="setFrom($event)" /></div>
-        <div class="field inline"><label for="at">To</label><input id="at" class="input" type="date" [ngModel]="to()" (ngModelChange)="setTo($event)" /></div>
+        <div class="field inline"><label for="af">From</label><input id="af" class="input" type="date" min="2020-01-01" [ngModel]="from()" (ngModelChange)="setFrom($event)" /></div>
+        <div class="field inline"><label for="at">To</label><input id="at" class="input" type="date" min="2020-01-01" [ngModel]="to()" (ngModelChange)="setTo($event)" /></div>
         <div class="tabs pills" role="tablist">
           <button type="button" class="tab" role="tab" [attr.aria-selected]="view() === 'daily'" (click)="view.set('daily')">Per day</button>
           <button type="button" class="tab" role="tab" [attr.aria-selected]="view() === 'events'" (click)="view.set('events')">Every event</button>

@@ -16,7 +16,15 @@ public sealed class QuoteRequest
     public DateOnly? QuoteDate { get; set; }
     public string PriceTier { get; set; } = PriceTiers.Retailer;
     public decimal DiscountPct { get; set; }
+    /// <summary>A fixed naira discount; when set (&gt; 0) it wins over <see cref="DiscountPct"/>.</summary>
+    public decimal? DiscountAmount { get; set; }
     public decimal VatRate { get; set; }
+    /// <summary>Added to the total after VAT; carried onto the invoice when the quote is converted.</summary>
+    public decimal DeliveryFee { get; set; }
+    public string? DeliveryZone { get; set; }
+    public string? DeliveryAddress { get; set; }
+    /// <summary>Where the order will be fulfilled from (the sales assistant sets it; a human converting manually still picks one).</summary>
+    public int? WarehouseId { get; set; }
     public List<SaleLineDto> Lines { get; set; } = [];
 }
 
@@ -45,7 +53,11 @@ public sealed class QuoteRequestValidator : AbstractValidator<QuoteRequest>
         RuleFor(x => x.CustomerId).GreaterThan(0);
         RuleFor(x => x.PriceTier).Must(PriceTiers.IsValid).WithMessage("Unknown price tier.");
         RuleFor(x => x.DiscountPct).InclusiveBetween(0, 100);
+        RuleFor(x => x.DiscountAmount).GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue);
         RuleFor(x => x.VatRate).InclusiveBetween(0, 100);
+        RuleFor(x => x.DeliveryFee).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.DeliveryZone).MaximumLength(60);
+        RuleFor(x => x.DeliveryAddress).MaximumLength(250);
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one product line.");
         RuleForEach(x => x.Lines).ChildRules(l =>
         {
@@ -69,12 +81,14 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
             var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, inner);
             if (products.Count != ids.Count || products.Values.Any(p => !p.IsActive)) throw new BusinessRuleException("One of the products on this quotation no longer exists or is inactive.");
 
-            var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate);
+            var totals = DocumentCalculator.Sale(req.Lines.Select(l => new SaleLineInput(l.ProductId, l.Quantity, l.UnitPrice)), req.DiscountPct, req.VatRate, req.DiscountAmount);
+            var grandTotal = totals.Total + req.DeliveryFee;   // delivery goes on after VAT
             var number = await DocumentNumbers.NextAsync(company, clock, (n, c) => db.Quotations.AnyAsync(q => q.QuotationNumber == n, c), inner);
             var q = new Quotation
             {
                 QuotationNumber = number, CustomerId = req.CustomerId, QuotationDate = req.QuoteDate ?? clock.BusinessToday, Subtotal = totals.Subtotal,
-                DiscountPct = req.DiscountPct, DiscountAmount = totals.DiscountAmount, VatRate = req.VatRate, VatAmount = totals.VatAmount, TotalAmount = totals.Total,
+                DiscountPct = req.DiscountAmount is > 0 ? DocumentCalculator.EffectivePct(totals.Subtotal, totals.DiscountAmount) : req.DiscountPct, DiscountAmount = totals.DiscountAmount, VatRate = req.VatRate, VatAmount = totals.VatAmount, TotalAmount = grandTotal,
+                DeliveryFee = req.DeliveryFee, DeliveryZone = req.DeliveryZone?.Trim(), DeliveryAddress = req.DeliveryAddress?.Trim(), WarehouseId = req.WarehouseId,
                 PriceTier = req.PriceTier, Status = QuotationStatuses.Open, CreatedByUserId = user.Id, CreatedAt = clock.UtcNow,
                 Items = req.Lines.Select(l => new QuotationItem { ProductId = l.ProductId, Quantity = l.Quantity, UnitPrice = l.UnitPrice, LineTotal = l.Quantity * l.UnitPrice }).ToList(),
             };
@@ -88,7 +102,7 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
             }
             db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = "QUOTATION_CREATED", Entity = "Quotation", At = clock.UtcNow, Detail = number });
             await db.SaveChangesAsync(inner);
-            return new QuoteResult(q.Id, number, totals.Subtotal, totals.DiscountAmount, totals.VatAmount, totals.Total);
+            return new QuoteResult(q.Id, number, totals.Subtotal, totals.DiscountAmount, totals.VatAmount, grandTotal);
         }, ct);
     }
 
@@ -114,7 +128,11 @@ public sealed class QuotationService(IBusinessDbContext db, TransactionRunner tx
         var sale = new SaleRequest
         {
             CustomerId = q.CustomerId, PriceTier = q.PriceTier, WarehouseId = req.WarehouseId, PaymentMethod = req.PaymentMethod, DiscountPct = q.DiscountPct,
-            AccountNumber = req.AccountNumber, VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
+            AccountNumber = req.AccountNumber,
+            // The exact naira discount that was quoted (the stored percentage is rounded, so recomputing from it could differ by a naira).
+            DiscountAmount = q.DiscountAmount > 0 ? q.DiscountAmount : null,
+            VatRate = q.VatRate, PaidNow = req.PaidNow, DueDate = req.DueDate,
+            DeliveryFee = q.DeliveryFee, DeliveryZone = q.DeliveryZone, DeliveryAddress = q.DeliveryAddress,
             Lines = q.Items.Select(i => new SaleLineDto { ProductId = i.ProductId, Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
         };
         var result = await sales.SaveWithinAsync(sale, user, null, ct);
