@@ -18,6 +18,12 @@ public sealed class WhatsAppNumberConfig
     public string AccessToken { get; set; } = "";
     public string AppSecret { get; set; } = "";
     public string BusinessAccountId { get; set; } = "";
+    /// <summary>Other businesses that SEND through this number until they have one of their own: comma-separated keys, or "*" for all.
+    /// Outbound only (price lists, documents, alerts); replies to this number still belong to <see cref="CompanyKey"/>.</summary>
+    public string SharedWith { get; set; } = "";
+
+    public bool SharesWith(string companyKey) =>
+        SharedWith.Trim() == "*" || SharedWith.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries).Contains(companyKey, StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class WhatsAppOptions
@@ -34,8 +40,10 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
     private const string GraphBase = "https://graph.facebook.com/v21.0/";
     private WhatsAppOptions Opt => options.Value;
 
+    /// <summary>The business's own number; failing that, a working number shared with it (see <see cref="WhatsAppNumberConfig.SharedWith"/>).</summary>
     public WhatsAppNumberConfig? ForCompany(string companyKey) =>
-        Opt.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(companyKey, StringComparison.OrdinalIgnoreCase));
+        Opt.Numbers.FirstOrDefault(n => n.CompanyKey.Equals(companyKey, StringComparison.OrdinalIgnoreCase))
+        ?? Opt.Numbers.FirstOrDefault(n => n.AccessToken.Length > 0 && n.SharesWith(companyKey));
 
     public WhatsAppNumberConfig? ForPhoneNumberId(string phoneNumberId) =>
         Opt.Numbers.FirstOrDefault(n => n.PhoneNumberId == phoneNumberId);
@@ -82,7 +90,8 @@ public sealed class MetaWhatsAppClient(HttpClient http, IOptions<WhatsAppOptions
             ["messaging_product"] = "whatsapp", ["to"] = toE164, ["type"] = "image",
             ["image"] = new JsonObject { ["id"] = mediaId, ["caption"] = caption.Length > 1024 ? caption[..1024] : caption },
         };
-        await SendAsync(cfg, body, ct);
+        // Same as documents: a person pressed "Send", so a refused image must not be reported as sent.
+        if (!await SendAsync(cfg, body, ct)) throw new BusinessRuleException("WhatsApp didn't accept the message. Check the number, or use Share instead.");
     }
 
     public async Task SendButtonsAsync(string companyKey, string toE164, string body, IReadOnlyList<WhatsAppButton> buttons, CancellationToken ct)
