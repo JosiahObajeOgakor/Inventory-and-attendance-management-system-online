@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Inventory.Api.Controllers;
 
 public sealed record LoginRequest(string Username, string Password, string Company);
-public sealed record CompanyChoice(string Key, string DisplayName, bool HasPriceLists = false, bool BuysGoods = false, bool HasNewFeatures = false);
+public sealed record CompanyChoice(string Key, string DisplayName, bool HasPriceLists = false, bool BuysGoods = false, bool HasNewFeatures = false, bool HasMarketing = false);
 public sealed record MeResponse(int Id, string Username, string FullName, string Role, string Company, IReadOnlyList<CompanyChoice> Companies, bool MustChangePassword);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record SwitchCompanyRequest(string Company);
@@ -29,7 +29,7 @@ public class AuthController(
     /// <summary>The businesses shown on the sign-in screen (names only; nothing sensitive).</summary>
     [HttpGet("companies")]
     [AllowAnonymous]
-    public IEnumerable<CompanyChoice> Companies() => companies.All.Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures));
+    public IEnumerable<CompanyChoice> Companies() => companies.All.Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures, c.HasNewFeatures || c.HasMarketing));
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -124,7 +124,7 @@ public class AuthController(
     private async Task<MeResponse> BuildMe(AppUser user, string companyKey)
     {
         var role = (await users.GetRolesAsync(user)).FirstOrDefault() ?? "";
-        var choices = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures)).ToList();
+        var choices = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures, c.HasNewFeatures || c.HasMarketing)).ToList();
         return new MeResponse(user.Id, user.UserName!, user.FullName, role, companyKey, choices, user.MustChangePassword);
     }
 

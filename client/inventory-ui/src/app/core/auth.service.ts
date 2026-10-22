@@ -26,7 +26,7 @@ export class Auth {
 
   readonly flags = computed(() => {
     const c = this.me()?.companies.find(x => x.key === this.company());
-    return { hasPriceLists: !!c?.hasPriceLists, buysGoods: !!c?.buysGoods, hasNewFeatures: !!c?.hasNewFeatures };
+    return { hasPriceLists: !!c?.hasPriceLists, buysGoods: !!c?.buysGoods, hasNewFeatures: !!c?.hasNewFeatures, hasMarketing: !!c?.hasNewFeatures || !!c?.hasMarketing };
   });
 
   constructor() {

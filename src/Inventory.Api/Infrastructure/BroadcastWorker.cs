@@ -22,7 +22,7 @@ public sealed class BroadcastWorker(IServiceProvider services, CompanyRegistry r
             do
             {
                 var rules = tick++ % 120 == 0;                          // every hour
-                foreach (var company in registry.All.Where(c => c.HasNewFeatures))
+                foreach (var company in registry.All.Where(c => c.HasNewFeatures || c.HasMarketing))
                 {
                     try
                     {

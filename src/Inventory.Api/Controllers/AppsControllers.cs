@@ -22,12 +22,12 @@ public class AppsRecordsController(ICurrentUser cu, AppRecordService svc, ICompa
     private IActionResult? Refuse(string app)
     {
         AppRecordService.Def(app);   // not one of the apps at all: 404
-        return access.For(company.HasNewFeatures).IsEnabled(app) ? null : StatusCode(403, new ProblemDetails { Status = 403, Title = "This app isn't part of your plan.", Detail = "Ask SpringUpTech to add it." });
+        return access.For(company.HasNewFeatures, company.HasMarketing).IsEnabled(app) ? null : StatusCode(403, new ProblemDetails { Status = 403, Title = "This app isn't part of your plan.", Detail = "Ask SpringUpTech to add it." });
     }
 
     /// <summary>The apps switched on here, for the menu.</summary>
     [HttpGet("enabled")]
-    public IActionResult Enabled() => Ok(access.For(company.HasNewFeatures).Enabled);
+    public IActionResult Enabled() => Ok(access.For(company.HasNewFeatures, company.HasMarketing).Enabled);
 
     [HttpGet("spreadsheet/figures")]
     public async Task<IActionResult> Figures(CancellationToken ct) =>

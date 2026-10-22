@@ -44,7 +44,7 @@ public class SiteController(CompanyRegistry registry, CompanyScopes scopes) : Co
         return await scopes.RunAsync(company, async sp =>
         {
             var db = sp.GetRequiredService<IBusinessDbContext>(); var co = sp.GetRequiredService<ICompanyContext>(); var clock = sp.GetRequiredService<IClock>();
-            var access = sp.GetRequiredService<AppAccess>().For(co.HasNewFeatures);
+            var access = sp.GetRequiredService<AppAccess>().For(co.HasNewFeatures, co.HasMarketing);
             return await work(new Ctx(sp, db, co, access, clock.BusinessToday, clock.UtcNow, await LoadSiteAsync(db, co, access, clock.BusinessToday, company), company));
         });
     }

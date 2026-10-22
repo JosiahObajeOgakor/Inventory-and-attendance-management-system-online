@@ -32,6 +32,7 @@ public sealed class RequestCompany(IHttpContextAccessor http, CompanyRegistry re
     public bool HasPriceLists => Info.HasPriceLists;
     public bool BuysGoods => Info.BuysGoods;
     public bool HasNewFeatures => Info.HasNewFeatures;
+    public bool HasMarketing => Info.HasNewFeatures || Info.HasMarketing;
     public int DefaultWarehouseId => Info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (Info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();

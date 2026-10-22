@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Inventory.Api.Controllers;
 
 /// <summary>Switch campaigns on or off, set when they run, look at a sample of what they would say today, run one now, and see exactly what was sent. Administrators only.</summary>
-[ApiController, Route("api/campaigns"), Authorize(Policy = Policies.Admin), RequiresNewFeatures]
+[ApiController, Route("api/campaigns"), Authorize(Policy = Policies.Admin), RequiresNewFeatures(Marketing = true)]
 public class CampaignsController(ICurrentUser cu, CampaignService svc, Inventory.Application.Queries.ChatFunnelQueries funnel) : AppController(cu)
 {
     /// <summary>Who chats, from where, in what language, when, how far they get, and who can be followed up — for targeting the campaigns below.</summary>

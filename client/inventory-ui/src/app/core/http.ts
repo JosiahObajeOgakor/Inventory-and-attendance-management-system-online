@@ -3,6 +3,7 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { Auth } from './auth.service';
+import { MARKETING_APPS } from './product-catalog';
 
 /** The API rejects any state-changing call without this header (defence in depth on top of SameSite=Strict). */
 export const csrfInterceptor: HttpInterceptorFn = (req, next) =>
@@ -28,6 +29,13 @@ export const authGuard: CanActivateFn = () => {
 
 /** The newer features are being tested with K9 Cravings; in the other businesses their pages send you back to the dashboard. */
 export const newFeaturesGuard: CanActivateFn = () => inject(Auth).flags().hasNewFeatures ? true : inject(Router).createUrlTree(['/dashboard']);
+/** Campaigns: open to a business with Marketing switched on (or all the new features). */
+export const marketingGuard: CanActivateFn = () => inject(Auth).flags().hasMarketing ? true : inject(Router).createUrlTree(['/dashboard']);
+/** An app page: every app with the new features; only the Marketing apps with Marketing alone. */
+export const appGuard: CanActivateFn = route => {
+  const f = inject(Auth).flags();
+  return f.hasNewFeatures || (f.hasMarketing && MARKETING_APPS.includes(route.paramMap.get('app') ?? '')) ? true : inject(Router).createUrlTree(['/dashboard']);
+};
 
 /** CEO or manager. */
 export const adminGuard: CanActivateFn = () => {

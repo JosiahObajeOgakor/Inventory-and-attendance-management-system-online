@@ -16,7 +16,7 @@ public sealed record BankDefault(string Bank, string AccountName, string Account
 
 public sealed record CompanyInfo(string Key, string DisplayName, string DocumentPrefix, string Schema, string LegalName = "", bool HasPriceLists = false,
     bool BuysGoods = false, List<BankDefault>? Banks = null, int DefaultWarehouseId = 0, string? Website = null, List<SocialLink>? Socials = null,
-    List<string>? PaymentProviders = null, int Order = 0, bool HasNewFeatures = false);
+    List<string>? PaymentProviders = null, int Order = 0, bool HasNewFeatures = false, bool HasMarketing = false);
 
 public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
 {
@@ -26,6 +26,7 @@ public sealed class CompanyContext(CompanyInfo info) : ICompanyContext
     public bool HasPriceLists => info.HasPriceLists;
     public bool BuysGoods => info.BuysGoods;
     public bool HasNewFeatures => info.HasNewFeatures;
+    public bool HasMarketing => info.HasNewFeatures || info.HasMarketing;
     public int DefaultWarehouseId => info.DefaultWarehouseId;
     public IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks =>
         (info.Banks ?? []).Select(b => (b.Bank, b.AccountName, b.AccountNumber)).ToList();

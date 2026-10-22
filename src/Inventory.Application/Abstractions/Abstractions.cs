@@ -111,8 +111,10 @@ public interface ICompanyContext
     bool HasPriceLists { get; }
     /// <summary>Candid buys what it sells (no production runs); ChewyPets produces.</summary>
     bool BuysGoods { get; }
-    /// <summary>Campaigns and the Marketing apps (email, SMS, WhatsApp, automation, social, surveys) are switched on per business; only the demo business has them for now.</summary>
+    /// <summary>All the newer features (Accounting, Branches, Time Off, the apps…) are switched on per business; only the demo business has them for now.</summary>
     bool HasNewFeatures { get; }
+    /// <summary>Campaigns and the Marketing apps (email, SMS, WhatsApp, automation, social, surveys) only: switched on separately per business (always on with <see cref="HasNewFeatures"/>).</summary>
+    bool HasMarketing => HasNewFeatures;
     /// <summary>The warehouse the sales assistant fulfills online orders from (config-set; 0 means unconfigured).</summary>
     int DefaultWarehouseId { get; }
     IReadOnlyList<(string Bank, string AccountName, string AccountNumber)> DefaultBanks { get; }

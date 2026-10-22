@@ -3,7 +3,7 @@
 /** ADMIN is the CEO; a MANAGER adds and edits like the CEO but can't delete; a CLERK sells. */
 export type Role = 'ADMIN' | 'MANAGER' | 'CLERK';
 
-export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; }
+export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; hasMarketing?: boolean; }
 export interface Me {
   id: number; username: string; fullName: string; role: Role; company: string;
   companies: CompanyChoice[]; mustChangePassword: boolean;

@@ -19,7 +19,7 @@ public sealed class CampaignScheduler(IServiceProvider services, CompanyRegistry
             using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
             do
             {
-                foreach (var company in registry.All.Where(c => c.HasNewFeatures))
+                foreach (var company in registry.All.Where(c => c.HasNewFeatures || c.HasMarketing))
                 {
                     try
                     {

@@ -9,7 +9,7 @@ import { Icon } from '../shared/icon';
 import { Modal } from '../shared/modal';
 import { Toasts } from '../shared/feedback';
 import { HttpClient } from '@angular/common/http';
-import { APPS, APP_GROUPS } from '../core/product-catalog';
+import { APPS, APP_GROUPS, MARKETING_APPS } from '../core/product-catalog';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
@@ -96,9 +96,13 @@ export class Shell {
   protected readonly navOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly groups = computed(() =>
-    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.ceoOnly || this.auth.isCeo()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || !this.auth.flags().hasNewFeatures || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
-  /** True for a newer feature in a business that doesn't have it yet. */
-  protected locked(i: NavItem): boolean { return !!i.preview && !this.auth.flags().hasNewFeatures; }
+    NAV.map(g => ({ ...g, items: g.items.filter(i => (!i.adminOnly || this.auth.isAdmin()) && (!i.ceoOnly || this.auth.isCeo()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || this.locked(i) || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
+  /** True for a newer feature in a business that doesn't have it yet. Campaigns and the Marketing apps open with Marketing alone. */
+  protected locked(i: NavItem): boolean {
+    const f = this.auth.flags();
+    const marketing = i.path === '/campaigns' || (!!i.app && MARKETING_APPS.includes(i.app));
+    return !!i.preview && !f.hasNewFeatures && !(marketing && f.hasMarketing);
+  }
   protected readonly initials = computed(() => (this.auth.me()?.fullName ?? '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase());
   protected readonly countdown = computed(() => {
     const s = this.idle.secondsLeft();

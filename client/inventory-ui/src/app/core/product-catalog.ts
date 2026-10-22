@@ -31,3 +31,6 @@ export const APPS: AppEntry[] = [
   { key: 'marketing-automation', label: 'Marketing Automation', icon: 'swap', group: 'Marketing' },
   { key: 'surveys', label: 'Surveys', icon: 'check', group: 'Marketing' },
 ];
+
+/** The apps a business with only Marketing switched on may use (the server's AppAccess.Marketing). */
+export const MARKETING_APPS: string[] = APPS.filter(a => a.group === 'Marketing').map(a => a.key);

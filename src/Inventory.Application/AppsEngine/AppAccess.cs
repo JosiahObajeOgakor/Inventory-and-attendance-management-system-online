@@ -25,8 +25,13 @@ public sealed class AppAccess
         _enabled = (asked.Length == 0 && !allowEmpty ? Bought : asked).Where(Bought.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>What one business may use: everything this installation has for a business that has the new features, nothing for one that does not yet.</summary>
-    public AppAccess For(bool hasNewFeatures) => hasNewFeatures ? this : new AppAccess("", allowEmpty: true);
+    /// <summary>The Marketing apps: the ones a business with only Marketing switched on (<c>HasMarketing</c>) may use.</summary>
+    public static readonly IReadOnlyList<string> Marketing = ["social-marketing", "surveys", "email-marketing", "sms-marketing", "whatsapp", "marketing-automation"];
+
+    /// <summary>What one business may use: everything this installation has for a business that has the new features, the Marketing apps for one with
+    /// only Marketing switched on, nothing for one that has neither yet.</summary>
+    public AppAccess For(bool hasNewFeatures, bool hasMarketing = false) =>
+        hasNewFeatures ? this : new AppAccess(hasMarketing ? string.Join(",", _enabled.Where(Marketing.Contains)) : "", allowEmpty: true);
 
     public IReadOnlyCollection<string> Enabled => _enabled;
     public bool IsEnabled(string key) => _enabled.Contains(key);
