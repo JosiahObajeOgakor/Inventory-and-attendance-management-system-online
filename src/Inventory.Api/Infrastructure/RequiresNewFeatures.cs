@@ -16,6 +16,6 @@ public sealed class RequiresNewFeaturesAttribute : ActionFilterAttribute
     {
         var company = context.HttpContext.RequestServices.GetRequiredService<ICompanyContext>();
         if (company.HasNewFeatures || (Marketing && company.HasMarketing)) return;
-        context.Result = new ObjectResult(new ProblemDetails { Status = 403, Title = "This feature is being tested with K9 Cravings.", Detail = "Switch to K9 Cravings to try it." }) { StatusCode = 403 };
+        context.Result = new ObjectResult(new ProblemDetails { Status = 403, Title = "This feature isn't switched on for this business.", Detail = "Ask your administrator to switch it on." }) { StatusCode = 403 };
     }
 }

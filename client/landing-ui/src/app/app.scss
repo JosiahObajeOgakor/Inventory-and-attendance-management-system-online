@@ -17,9 +17,11 @@
 .skip-link { position: absolute; left: -999px; top: 0.5rem; z-index: 100; background: #fff; color: var(--ink); padding: 0.6rem 1rem; border-radius: 8px; font-weight: 700; }
 .skip-link:focus { left: 0.75rem; }
 .nav__lang select {
-  font: 600 0.85rem var(--font-body); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px;
+  font: 600 0.85rem var(--font-body); color: #fff; background: transparent; border: 1px solid rgba(255, 255, 255, 0.45); border-radius: 999px;
   padding: 0.45rem 0.8rem; min-height: 2.5rem; cursor: pointer;
 }
+.nav__lang option { color: var(--ink); }   // the opened list stays dark-on-white
+.nav :focus-visible { outline-color: #fff; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 // ---------- nav ----------
@@ -33,9 +35,10 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem clamp(1.25rem, 4vw, 3rem);
-  background: rgba(255, 250, 243, 0.82);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
+  // Grey bar, white text. #767676 is the lightest grey white text still reads on at the WCAG AA minimum (4.5:1).
+  background: #767676;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
 }
 .nav__brand {
   display: flex;
@@ -50,9 +53,9 @@
   display: flex;
   gap: 0.3rem;
   font-size: 0.9rem;
-  color: var(--ink-dim);
-  background: rgba(23, 11, 34, 0.04);
-  border: 1px solid var(--line);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 999px;
   padding: 0.35rem;
   a {
@@ -60,7 +63,7 @@
     border-radius: 999px;
     transition: background 0.15s ease, color 0.15s ease;
   }
-  a:hover { color: var(--ink); background: rgba(23, 11, 34, 0.07); }
+  a:hover { color: #fff; background: rgba(255, 255, 255, 0.16); }
 }
 .nav__cta {
   display: inline-flex;

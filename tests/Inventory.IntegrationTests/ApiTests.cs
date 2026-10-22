@@ -130,7 +130,7 @@ public class AuthTests(ApiFixture api)
         var r = await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("clerk", ApiFixture.Password, "k9cravings"));
         Assert.Equal(HttpStatusCode.Forbidden, r.StatusCode);
         var body = await r.Content.ReadAsStringAsync();
-        Assert.Contains("can't open K9 Cravings", body);
+        Assert.Contains("can't open Captain Guard", body);
         Assert.Contains("Candid Purrfect", body);
         Assert.Contains("ChewyPets Feed", body);
         // a wrong password for the same business still says nothing about access

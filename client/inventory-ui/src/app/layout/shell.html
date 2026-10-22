@@ -23,10 +23,10 @@
             <div class="inner">
               @for (i of g.items; track i.path) {
                 @if (locked(i)) {
-                  <span class="locked" title="Test with K9" aria-disabled="true" role="link" tabindex="0">
+                  <span class="locked" title="Not switched on for this business" aria-disabled="true" role="link" tabindex="0">
                     <app-icon [name]="i.icon" [size]="18" />
                     <span>{{ i.label }}</span>
-                    <span class="soon">Test with K9</span>
+                    <span class="soon">Not switched on</span>
                   </span>
                 } @else {
                   <a [routerLink]="i.path" routerLinkActive="active" (click)="go()">

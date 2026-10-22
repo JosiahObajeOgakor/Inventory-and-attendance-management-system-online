@@ -27,7 +27,7 @@ export const authGuard: CanActivateFn = () => {
   return true;
 };
 
-/** The newer features are being tested with K9 Cravings; in the other businesses their pages send you back to the dashboard. */
+/** The newer features are switched on per business (HasNewFeatures); where they are off, their pages send you back to the dashboard. */
 export const newFeaturesGuard: CanActivateFn = () => inject(Auth).flags().hasNewFeatures ? true : inject(Router).createUrlTree(['/dashboard']);
 /** Campaigns: open to a business with Marketing switched on (or all the new features). */
 export const marketingGuard: CanActivateFn = () => inject(Auth).flags().hasMarketing ? true : inject(Router).createUrlTree(['/dashboard']);
