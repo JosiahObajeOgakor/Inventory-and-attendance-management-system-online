@@ -16,6 +16,8 @@ public static class ChatEventKinds
     public const string Selected = "selected";
     /// <summary>The customer was shown the order summary and asked to confirm.</summary>
     public const string Summary = "summary";
+    /// <summary>A question the enquiry desk answered (Reference = what was asked: delivery, price, stock, info…).</summary>
+    public const string Enquiry = "enquiry";
     /// <summary>A quotation was refused because this number already had one in the last day.</summary>
     public const string QuoteLimited = "quote_limited";
 

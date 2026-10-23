@@ -23,7 +23,7 @@ public sealed record ChatFlowReply(IReadOnlyList<string> Messages, bool Limited 
 /// The AI is only consulted (<see cref="ChatAiInterpreter"/>) when the words could not be understood, at most once per message and at most
 /// <see cref="SalesAssistantOptions.MaxAiCallsPerSale"/> times per sale. Customers never pick from a numbered menu: they type product names and yes/no in their own language.
 /// </summary>
-public sealed class ChatFlowService(
+public sealed partial class ChatFlowService(
     IBusinessDbContext db, ChatConversationService conversations, CustomerLookupService customers, QuotationService quotations, PaymentLinkService pay,
     StockAvailabilityService stock, ChatAiInterpreter ai, ChatOrderText texts, CompanyProfileService profile, ICompanyContext company, IClock clock,
     IOptions<SalesAssistantOptions> options, ILogger<ChatFlowService> log, Inventory.Application.Campaigns.ConsentService consent,
@@ -50,11 +50,18 @@ public sealed class ChatFlowService(
         public bool Quote { get; set; }
         /// <summary>An email address the customer typed for the quotation.</summary>
         public string? Email { get; set; }
+        /// <summary>The delivery zone chosen in the chat (its fee is read from the zone when the order is priced, never stored here).</summary>
+        public string? Zone { get; set; }
+        public string? Address { get; set; }
+        /// <summary>A delivery zone offered while a payment account is already open: "ADD DELIVERY" / "yes" re-prices the order with it.</summary>
+        public string? Offer { get; set; }
+        /// <summary>The product the shopper last asked about (price, stock, details, a recommendation): the nudge keeps coming back to it until they decide.</summary>
+        public int? Interest { get; set; }
     }
     private sealed class DraftLine { public int ProductId { get; set; } public int Qty { get; set; } }
     private sealed class Pending
     {
-        public string Kind { get; set; } = "";          // which | qty | stock
+        public string Kind { get; set; } = "";          // which | qty | stock | zone | address
         public List<int> ProductIds { get; set; } = [];
         public int? Qty { get; set; }
         public int? Available { get; set; }
@@ -126,6 +133,7 @@ public sealed class ChatFlowService(
         if (t.C.State != ChatStates.Idle && ChatLexicon.IsCancel(t.Norm)) { Cancel(t); return; }
         if (await HandleWaybillAsync(t, ct)) return;
         if (await HandleQuoteIntentAsync(t, ct)) return;
+        if (await HandleEnquiryAsync(t, ct)) return;      // a question is answered in any state, then the sale is picked up again
         switch (t.C.State)
         {
             case ChatStates.AwaitingPayment: await PaymentStepAsync(t, ct); break;
@@ -249,6 +257,7 @@ public sealed class ChatFlowService(
         }
         var line = t.D.Lines.FirstOrDefault(l => l.ProductId == item.Id);
         if (line is null) t.D.Lines.Add(new DraftLine { ProductId = item.Id, Qty = qty.Value }); else line.Qty = qty.Value;   // the latest number the customer said wins
+        if (t.D.Interest == item.Id) t.D.Interest = null;
         return true;
     }
 
@@ -318,9 +327,12 @@ public sealed class ChatFlowService(
         var vat = (await profile.GetAsync(ct)).DefaultVatRate;
         var rows = t.D.Lines.Select(l => (Item: cat.First(c => c.Id == l.ProductId), l.Qty)).ToList();
         var totals = DocumentCalculator.Sale(rows.Select(r => new SaleLineInput(r.Item.Id, r.Qty, r.Item.Price)), 0, vat);
+        var fee = await DeliveryFeeAsync(t, ct);
+        var lines = rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price)).ToList();
+        if (t.D.Zone is { } zone) lines.Add(fee > 0 ? $"• Delivery to {zone} — {ChatOrderText.Naira(fee)}" : $"• Delivery to {zone} — {ChatText.Get(t.Lang, "d_eta_default")}");
         t.C.State = ChatStates.AwaitingConfirm;
-        Track(t, ChatEventKinds.Summary, totals.Total);
-        t.Say(t.D.Quote ? "quote_summary" : "summary", string.Join('\n', rows.Select(r => ChatOrderText.Line(r.Qty, r.Item.Name, r.Qty * r.Item.Price))), ChatOrderText.Naira(totals.Total));
+        Track(t, ChatEventKinds.Summary, totals.Total + fee);
+        t.Say(t.D.Quote ? "quote_summary" : "summary", string.Join('\n', lines), ChatOrderText.Naira(totals.Total + fee));
     }
 
     // ------------------------------------------------------------------ who the customer is: their WhatsApp number
@@ -502,6 +514,7 @@ public sealed class ChatFlowService(
             quote = await quotations.CreateAsync(new QuoteRequest
             {
                 CustomerId = customer.Id, PriceTier = await TierAsync(t, ct), DiscountPct = 0, VatRate = vat,
+                DeliveryFee = await DeliveryFeeAsync(t, ct), DeliveryZone = t.D.Zone, DeliveryAddress = t.D.Address,
                 // The price is always read from the product record here, never from anything the customer or the AI said.
                 Lines = t.D.Lines.Select(l => new SaleLineDto { ProductId = l.ProductId, Quantity = l.Qty, UnitPrice = cat.First(c => c.Id == l.ProductId).Price }).ToList(),
             }, SalesBot, ct);
@@ -758,6 +771,9 @@ public sealed class ChatFlowService(
                 if (await ProcessAsync(t, cat, ct)) await AdvanceAsync(t, ct);
                 return true;
             case "catalogue": CatalogueReply(t, cat); return true;
+            case ChatLexicon.AskDelivery or ChatLexicon.AskPrice or ChatLexicon.AskStock or ChatLexicon.AskInfo or ChatLexicon.AskRecommend
+                or ChatLexicon.AskHours or ChatLexicon.AskLocation or ChatLexicon.AskPayHow or ChatLexicon.AskDiscount or ChatLexicon.AskHuman:
+                return await HandleEnquiryAsync(t, ct, r.Intent, r.Lines.Where(l => l.ProductId is not null).Select(l => l.ProductId!.Value).ToList());
             case "yes": t.Norm = "yes"; break;
             case "no": t.Norm = "no"; break;
             case "cancel": t.Norm = "cancel"; break;

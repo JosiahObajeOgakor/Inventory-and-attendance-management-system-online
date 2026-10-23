@@ -72,7 +72,7 @@ public static partial class ChatText
 
     static ChatText()
     {
-        foreach (var source in new[] { Extra, More })
+        foreach (var source in new[] { Extra, More, Desk })
             foreach (var (lang, entries) in source)
                 foreach (var kv in entries) Packs[lang][kv.Key] = kv.Value;
     }

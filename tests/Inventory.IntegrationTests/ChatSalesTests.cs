@@ -189,6 +189,102 @@ public class ChatSalesTests(MySqlFixture mysql)
         Assert.Contains(ChatOrderText.Naira(retail.PriceRetail * 3), await r.Say(Ngozi, "3 adult dog food", "Ngozi"));
     }
 
+    // ------------------------------------------------------------------ the enquiry desk: questions answered in any state, then back to the sale
+
+    private static async Task AddZoneAsync(Rig r, string name, decimal fee, string? eta)
+    {
+        await using var db = NewContext(r.Cs);
+        db.DeliveryZones.Add(new DeliveryZone { Name = name, Fee = fee, Eta = eta, IsActive = true });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_delivery_question_while_an_account_is_open_is_answered_and_delivery_can_be_added_to_the_order()
+    {
+        var r = await BuildAsync(stock: 10);
+        await AddZoneAsync(r, "Agege", 3000, "same day");
+        await r.Say(Ngozi, "2 adult dog food", "Ngozi");
+        Assert.Contains("8880007001", await r.Say(Ngozi, "yes"));                         // the account for the order without delivery
+
+        var ask = await r.Say(Ngozi, "Hi! Do you deliver to my area, and how much is delivery?");
+        Assert.Contains("Agege", ask);                                                     // the question is answered...
+        Assert.Contains("Which area", ask);
+        Assert.DoesNotContain("haven't seen your payment", ask);                           // ...not met with "pay first"
+
+        var fee = await r.Say(Ngozi, "Agege");
+        Assert.Contains("₦3,000", fee);
+        Assert.Contains("ADD DELIVERY", fee);
+        Assert.Contains("address", await r.Say(Ngozi, "add delivery"));
+        var account = await r.Say(Ngozi, "12 Pen Cinema Road, Agege");
+        Assert.Contains("12 Pen Cinema Road", account);
+
+        r.Db.ChangeTracker.Clear();
+        var (link, quote) = await OpenOrder(r);
+        Assert.Equal(3000m, quote.DeliveryFee);
+        Assert.Equal("Agege", quote.DeliveryZone);
+        Assert.Equal(quote.TotalAmount, link.Amount);                                       // the new account is for the new total, delivery included
+        Assert.Equal(1, await r.Db.PaymentLinks.CountAsync(l => l.Status == PaymentLinkStatuses.Pending));   // the old account is closed
+        Assert.Equal(0, r.Ai.Calls);
+    }
+
+    [Fact]
+    public async Task Delivery_named_before_confirming_goes_on_the_summary_with_its_fee()
+    {
+        var r = await BuildAsync(stock: 10);
+        await AddZoneAsync(r, "Ikeja", 2500, "1-2 days");
+        await r.Say(Ngozi, "2 adult dog food", "Ngozi");                                    // summary shown, awaiting yes
+        Assert.Contains("address", await r.Say(Ngozi, "do you deliver to ikeja?"));
+        var summary = await r.Say(Ngozi, "5 Allen Avenue, Ikeja");
+        Assert.Contains("Delivery to Ikeja", summary);
+        Assert.Contains("₦2,500", summary);
+        Assert.Contains("8880007001", await r.Say(Ngozi, "yes"));
+        r.Db.ChangeTracker.Clear();
+        var (_, quote) = await OpenOrder(r);
+        Assert.Equal("5 Allen Avenue, Ikeja", quote.DeliveryAddress);
+    }
+
+    [Fact]
+    public async Task Questions_get_short_answers_that_lead_back_to_the_sale()
+    {
+        var r = await BuildAsync(stock: 10);
+        var price = await r.Say(Musa, "how much is adult dog food", "Musa");
+        Assert.Contains("How many", price);                                                // price, then straight to "how many?"
+        var stock = await r.Say(Musa, "is it available?");                                   // a question in the middle of "how many?"
+        Assert.Contains("in stock", stock);
+        Assert.Contains("How many", stock);
+        Assert.Contains("2 × Adult Dog Food 20kg", await r.Say(Musa, "2"));                 // the sale picks up where it was
+        await r.Say(Musa, "cancel");
+
+        Assert.Contains("How many", await r.Say(Musa, "how much is adult dog food"));
+        await r.Say(Musa, "do you deliver?");                                               // a detour...
+        Assert.Contains("How many", await r.Say(Musa, "where is your shop"));              // ...and back to the product being weighed up
+
+        var hours = await r.Say(Ngozi, "what time do you open", "Ngozi");
+        Assert.Contains("e.g.", hours);                                                     // the idle nudge offers to take an order
+        var pay = await r.Say(Ngozi, "how do i pay? is it safe");
+        Assert.Contains("AlatPay", pay);
+        var human = await r.Say(Ngozi, "i want to speak to someone");
+        Assert.Contains("team", human);
+        Assert.True(await r.Db.ChatEvents.AnyAsync(e => e.Kind == ChatEventKinds.Handoff));
+        Assert.Equal(0, r.Ai.Calls);
+    }
+
+    [Fact]
+    public async Task A_recommendation_for_a_puppy_names_the_puppy_food_and_asks_how_many()
+    {
+        var r = await BuildAsync(stock: 10);
+        await using (var db = NewContext(r.Cs))
+        {
+            db.Products.Add(new Product { Sku = "PUP-1", Name = "Puppy Starter 10kg", CategoryId = (await db.Categories.FirstAsync()).Id, PriceRetail = 25000, SellingPrice = 25000, CostPrice = 20000, Species = "Dog", LifeStage = "Puppy" });
+            await db.SaveChangesAsync();
+            db.StockBatches.Add(new StockBatch { ProductId = (await db.Products.SingleAsync(p => p.Sku == "PUP-1")).Id, WarehouseId = r.Seed.WarehouseId, BatchNumber = "P1", QuantityOnHand = 8 });
+            await db.SaveChangesAsync();
+        }
+        var rec = await r.Say(Ngozi, "which food is best for my puppy?", "Ngozi");
+        Assert.Contains("Puppy Starter 10kg", rec);
+        Assert.Contains("How many", rec);
+        Assert.Contains("3 × Puppy Starter 10kg", await r.Say(Ngozi, "3"));
+    }
     [Fact]
     public async Task One_new_quotation_per_number_a_day_and_a_second_request_points_back_to_it()
     {

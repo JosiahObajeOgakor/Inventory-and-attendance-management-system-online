@@ -113,6 +113,41 @@ public static class ChatLexicon
     private static readonly string[] WaybillWords = ["waybill", "waybills", "way bill", "delivery status", "where is my order", "where my order dey", "track my order", "order status", "dispatch", "tracking", "delivery update", "isiro", "ibo"];
     private static readonly string[] SendWords = ["send", "send it", "send am", "send quote", "send quotation", "yes send", "ok send", "tura", "zipu", "ran"];
     private static readonly string[] PayWords = ["pay", "pay now", "pay am", "buy now", "i want to pay", "i wan pay", "biya", "kwuo ugwo", "san"];
+    // ---------------------------------------------------------------- enquiries (the desk answers these in any state, then nudges back to the sale)
+
+    public const string AskHuman = "human", AskDelivery = "delivery", AskLocation = "location", AskHours = "hours", AskPayHow = "payhow",
+        AskDiscount = "discount", AskRecommend = "recommend", AskInfo = "info", AskStock = "stock", AskPrice = "price";
+
+    private static readonly (string Intent, string[] Words)[] Enquiries =
+    [
+        (AskHuman, ["human", "real person", "agent", "customer care", "customer service", "call me", "speak to someone", "talk to someone", "speak with someone", "talk to a person", "manager", "your number", "phone number", "make person call me"]),
+        (AskPayHow, ["how do i pay", "how to pay", "how can i pay", "payment method", "payment methods", "pay on delivery", "payment on delivery", "cash on delivery", "pos", "can i pay with card", "pay with card", "is it safe", "safe to pay", "legit", "scam", "trust", "how una dey collect money"]),
+        (AskDelivery, ["deliver", "delivery", "deliveries", "dispatch", "ship", "shipping", "send it to", "send am come", "bring it", "bring am", "rider", "logistics", "deliver to", "dey deliver", "do una deliver", "una dey deliver", "delivery fee", "how much to deliver", "how much is delivery", "ziga", "kai wa", "isarwa", "nnyefe", "ifijise"]),
+        (AskLocation, ["where are you", "where is your", "your address", "address", "location", "located", "your shop", "your store", "pick up", "pickup", "collect it", "come and buy", "where una dey", "ebee ka unu no", "ina kuke"]),
+        (AskHours, ["open", "opening", "closing", "close today", "working hours", "what time", "business hours", "are you open", "una open", "sunday", "saturday", "weekend", "public holiday"]),
+        (AskDiscount, ["discount", "last price", "reduce", "reduction", "cheaper", "too expensive", "too cost", "bulk price", "wholesale price", "any promo", "promo", "bargain", "drop am small"]),
+        (AskRecommend, ["recommend", "suggest", "which one is best", "which is best", "best for", "good for my", "what should i buy", "what do you advise", "which food", "which one should", "help me choose"]),
+        (AskInfo, ["ingredient", "ingredients", "protein", "fat", "nutrition", "feeding guide", "how much to feed", "how many grams", "how much should i feed", "what is inside", "made of", "benefit", "benefits", "tell me about", "details", "difference between", "is it good", "suitable", "expiry", "expire"]),
+        (AskStock, ["in stock", "available", "do you have", "you get", "una get", "e dey", "is there", "have you got", "any left", "still have"]),
+        (AskPrice, ["how much", "price", "prices", "cost", "how much is", "wetin be the price", "elo ni", "nawa ne", "ego ole", "ole ka", "rate"]),
+    ];
+
+    /// <summary>What the shopper is asking, if anything: the first enquiry whose words appear in the message, most specific first.</summary>
+    public static string? EnquiryOf(string n)
+    {
+        foreach (var (intent, words) in Enquiries) if (Has(n, words)) return intent;
+        return null;
+    }
+
+    /// <summary>A pet and life stage the shopper mentioned, for a recommendation: ("dog", "puppy") etc. Either may be null.</summary>
+    public static (string? Species, string? Stage) PetOf(string n)
+    {
+        string? species = Has(n, "cat", "cats", "kitten", "kittens", "mage", "nwamba", "ologbo") ? "cat" : Has(n, "dog", "dogs", "puppy", "puppies", "pup", "nkita", "kare", "aja") ? "dog" : null;
+        string? stage = Has(n, "puppy", "puppies", "pup", "kitten", "kittens", "small", "baby", "young") ? "young"
+            : Has(n, "senior", "old", "older", "aged") ? "senior" : Has(n, "adult", "grown") ? "adult" : null;
+        return (species, stage);
+    }
+
     /// <summary>The customer is asking for a quotation (a price document), not to pay.</summary>
     public static bool IsQuote(string n) => Has(n, QuoteWords);
     /// <summary>The customer is asking where their delivery is / for the waybill.</summary>
