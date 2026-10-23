@@ -23,9 +23,14 @@
 .trade__copy h2 { margin-top: 0.75rem; font-size: clamp(2rem, 4.6vw, 3.4rem); font-weight: 600; color: #fff; }
 .trade__copy h2 span { color: var(--gold-bright); }
 .trade__lede { margin-top: 1rem; max-width: 46ch; line-height: 1.65; color: rgba(251, 241, 228, 0.82); font-size: 1.05rem; }
-.trade__ctas { margin-top: 1.75rem; display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: center; }
-.trade__wa { color: var(--cream); font-weight: 600; text-underline-offset: 4px; }
-.trade__wa:hover, .trade__wa:focus-visible { color: var(--gold-bright); }
+.trade__ctas { margin-top: 1.75rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; max-width: 30rem; }
+.trade__btn { width: 100%; justify-content: center; text-align: center; min-height: 52px; white-space: nowrap; }
+.trade__btn--outline { background: transparent; color: #fff; border: 1.5px solid rgba(251, 241, 228, 0.6); box-shadow: none; }
+.trade__btn--outline:hover, .trade__btn--outline:focus-visible { background: rgba(255, 255, 255, 0.1); border-color: #fff; }
+.trade__wa { display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 1rem; color: rgba(251, 241, 228, 0.78); font-size: 0.95rem; text-decoration: none; min-height: 44px; }
+.trade__wa svg { color: var(--whatsapp); }
+.trade__wa span { color: var(--gold-bright); font-weight: 600; }
+.trade__wa:hover span, .trade__wa:focus-visible span { text-decoration: underline; text-underline-offset: 3px; }
 
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
 .steps li {
@@ -42,12 +47,10 @@
 
 @media (max-width: 860px) {
   .trade__inner { grid-template-columns: 1fr; }
-  .trade__ctas .btn { width: 100%; justify-content: center; }
-  .trade__wa { width: 100%; text-align: center; }
+  .trade__ctas { grid-template-columns: 1fr; max-width: none; }
+  .trade__wa { width: 100%; justify-content: center; }
 }
 
-.trade__link { background: none; border: 0; padding: 0; font: 600 1rem var(--font-body); color: var(--cream); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; min-height: 44px; }
-.trade__link:hover, .trade__link:focus-visible { color: var(--gold-bright); }
 
 // ---- the application sheet: one step at a time
 .sheet {

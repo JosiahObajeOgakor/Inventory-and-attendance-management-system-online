@@ -5,10 +5,13 @@
       <h2 id="trade-title">Buy at trade prices.<br /><span>Verified partners only.</span></h2>
       <p class="trade__lede">Stock your shelves from the source. Registered businesses get wholesale or distributor pricing on every order, on WhatsApp or right here.</p>
       <div class="trade__ctas">
-        <button type="button" class="btn btn--accent btn--lg" (click)="open()">Apply for trade prices</button>
-        <button type="button" class="trade__link" (click)="open(true)">Partner sign in</button>
-        <a class="trade__link" [href]="whatsappApply" target="_blank" rel="noopener">Apply on WhatsApp</a>
+        <button type="button" class="btn btn--accent btn--lg trade__btn" (click)="open()">Apply for trade prices</button>
+        <button type="button" class="btn btn--lg trade__btn trade__btn--outline" (click)="open(true)">Partner sign in</button>
       </div>
+      <a class="trade__wa" [href]="whatsappApply" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.27 4.9L2 22l5.25-1.38A9.94 9.94 0 0 0 12.04 22c5.52 0 10-4.48 10-10s-4.48-10-10-10Z"/></svg>
+        Prefer WhatsApp? <span>Apply in a chat &rarr;</span>
+      </a>
     </div>
 
     <ol class="steps reveal" appReveal>
