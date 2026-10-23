@@ -13,6 +13,7 @@ public static partial class ChatText
     {
         [ChatLanguages.English] = new()
         {
+            ["ask_away"] = "Sure, ask away 🙂 Price, stock, delivery to your area, or which food suits your pet — I'll answer straight.",
             ["p_welcome"] = "Welcome back, {0} 👋 You're seeing your {1} prices.",
             ["p_last"] = "Your last order: {0}. Reply REORDER to order it again, or tell me what you need.",
             ["p_wallet"] = "Wallet balance: {0}. You can pay from your partner account: {1}",
@@ -31,6 +32,7 @@ public static partial class ChatText
         },
         [ChatLanguages.Pidgin] = new()
         {
+            ["ask_away"] = "No wahala, ask me 🙂 Price, stock, delivery to your area, or which food fit your pet — I go answer you straight.",
             ["p_welcome"] = "Welcome back, {0} 👋 Na your {1} price you go see here.",
             ["p_last"] = "Your last order: {0}. Reply REORDER make I put am again, or tell me wetin you need.",
             ["p_wallet"] = "Wallet balance: {0}. You fit pay from your partner account: {1}",
@@ -49,6 +51,7 @@ public static partial class ChatText
         },
         [ChatLanguages.Igbo] = new()
         {
+            ["ask_away"] = "Ọ dị mma, jụọ 🙂 Ọnụahịa, ihe dị n'ahịa, iziga n'ebe ị nọ, ma ọ bụ nri kwesịrị anụ ụlọ gị — m ga-aza gị ozugbo.",
             ["p_welcome"] = "Nnọọ ọzọ, {0} 👋 Ọ bụ ọnụahịa {1} gị ka ị na-ahụ.",
             ["p_last"] = "Iwu ikpeazụ gị: {0}. Zaa REORDER ka m tinye ya ọzọ, ma ọ bụ gwa m ihe ị chọrọ.",
             ["p_wallet"] = "Ego dị na wallet gị: {0}. Ị nwere ike ịkwụ ụgwọ site na akaụntụ gị: {1}",
@@ -67,6 +70,7 @@ public static partial class ChatText
         },
         [ChatLanguages.Hausa] = new()
         {
+            ["ask_away"] = "To, tambaya 🙂 Farashi, kaya, kai wa yankinka, ko abincin da ya dace da dabbarka — zan amsa kai tsaye.",
             ["p_welcome"] = "Barka da dawowa, {0} 👋 Farashin {1} ɗinka kake gani.",
             ["p_last"] = "Odarka ta ƙarshe: {0}. Amsa da REORDER in maimaita ta, ko ka faɗa min abin da kake buƙata.",
             ["p_wallet"] = "Kuɗin da ke wallet ɗinka: {0}. Za ka iya biya daga asusun abokin hulɗa: {1}",
@@ -85,6 +89,7 @@ public static partial class ChatText
         },
         [ChatLanguages.Yoruba] = new()
         {
+            ["ask_away"] = "Ó dáa, ẹ béèrè 🙂 Iye owó, ọjà tó wà, ìfiránṣẹ́ sí agbègbè yín, tàbí oúnjẹ tó bá ẹranko yín mu — màá dáhùn tààrà.",
             ["p_welcome"] = "Ẹ kú àbọ̀, {0} 👋 Iye owó {1} yín ni ẹ ń rí.",
             ["p_last"] = "Àṣẹ yín tó kẹ́yìn: {0}. Ẹ fèsì REORDER kí n tún un ṣe, tàbí kí ẹ sọ ohun tí ẹ fẹ́.",
             ["p_wallet"] = "Owó inú wallet yín: {0}. Ẹ lè sanwó láti àkọọ́lẹ̀ alábàáṣiṣẹ́pọ̀ yín: {1}",

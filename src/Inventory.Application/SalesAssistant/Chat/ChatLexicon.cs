@@ -107,6 +107,8 @@ public static class ChatLexicon
     public static bool IsCancel(string n) => Has(n, CancelWords);
     public static bool IsPaidClaim(string n) => Has(n, PaidWords);
     public static bool IsProducts(string n) => Has(n, ProductWords);
+    /// <summary>"I have a question" / "I want to ask something" with no question in it yet: ask them to go ahead (no price, stock or product words).</summary>
+    public static bool IsQuestionIntro(string n) => Has(n, ["question", "questions", "enquiry", "inquiry", "want ask", "wan ask", "ask something", "ask you"]) && !Has(n, PriceWords) && !n.Contains("how much");
     public static bool IsPriceQuestion(string n) => Has(n, PriceWords);
 
     private static readonly string[] QuoteWords = ["quote", "quotes", "quotation", "quotations", "proforma", "pro forma", "price quote", "kwote", "give me quotation", "send me quotation", "request quotation"];

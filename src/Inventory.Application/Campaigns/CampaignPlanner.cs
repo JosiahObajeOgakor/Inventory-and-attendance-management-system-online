@@ -45,7 +45,9 @@ public sealed class CampaignPlanner(IBusinessDbContext db, IClock clock, StockAv
             _ => [],
         };
         var since = clock.UtcNow.AddDays(-Math.Max(0, c.CooldownDays));
-        var recent = (await db.CampaignMessages.AsNoTracking().Where(m => m.Status == CampaignMessageStatuses.Sent && m.CreatedAt > since && m.CustomerId != null)
+        // a failed attempt counts for a day too: a broken channel (Twilio refusing) must not turn every re-run into another try at the same person
+        var day = clock.UtcNow.AddDays(-1);
+        var recent = (await db.CampaignMessages.AsNoTracking().Where(m => m.CustomerId != null && ((m.Status == CampaignMessageStatuses.Sent && m.CreatedAt > since) || (m.CampaignId == c.Id && m.Status == CampaignMessageStatuses.Failed && m.CreatedAt > day)))
             .Select(m => m.CustomerId!.Value).Distinct().ToListAsync(ct)).ToHashSet();
         return raw.Where(t => t.CustomerId is null || !recent.Contains(t.CustomerId.Value))
             .GroupBy(t => t.CustomerId).Select(g => g.First()).Take(Math.Max(1, c.MaxRecipients)).ToList();
@@ -267,7 +269,8 @@ public sealed class CampaignPlanner(IBusinessDbContext db, IClock clock, StockAv
     public async Task<AdminDigest?> AdminDigestAsync(Campaign c, string? adminName, CancellationToken ct)
     {
         var today = clock.BusinessToday;
-        var risky = (await analytics.ForecastAsync(ct)).Where(f => f.OnHand <= 0 || (f.DaysOfCover is int d && d <= c.ThresholdDays)).OrderBy(f => f.DaysOfCover ?? 0).Take(10).ToList();
+        // a product nobody buys is not "running out", whatever its stock: only items with real demand are listed
+        var risky = (await analytics.ForecastAsync(ct)).Where(f => f.WeeklyDemand > 0 && (f.OnHand <= 0 || (f.DaysOfCover is int d && d <= c.ThresholdDays))).OrderBy(f => f.DaysOfCover ?? 0).Take(10).ToList();
         if (risky.Count == 0) return null;                               // silence is the default: no digest on a day nothing is at risk
 
         var ids = risky.Select(r => r.ProductId).ToList();

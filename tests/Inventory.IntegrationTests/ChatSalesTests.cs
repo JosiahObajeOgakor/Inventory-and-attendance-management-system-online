@@ -320,6 +320,42 @@ public class ChatSalesTests(MySqlFixture mysql)
         Assert.DoesNotContain("Welcome back", await r.Say(Ngozi, "hello", "Ngozi"));           // anyone else gets the usual welcome
     }
 
+    private static async Task AddProductAsync(Rig r, string sku, string name, decimal price, int stock)
+    {
+        var p = new Product { Sku = sku, Name = name, CategoryId = (await r.Db.Categories.FirstAsync()).Id, CostPrice = price / 2, PriceRetail = price, PriceWholesaler = price - 500, PriceDistributor = price - 1000, SellingPrice = price };
+        r.Db.Products.Add(p); await r.Db.SaveChangesAsync();
+        r.Db.StockBatches.Add(new StockBatch { ProductId = p.Id, WarehouseId = r.Seed.WarehouseId, BatchNumber = sku, QuantityOnHand = stock });
+        await r.Db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task The_exact_name_wins_the_which_question_never_traps_the_customer_and_questions_are_invited()
+    {
+        var r = await BuildAsync(stock: 10);
+        await AddProductAsync(r, "DK1", "DEKRA ALS 10KG", 30000, 10);
+        await AddProductAsync(r, "DK2", "DEKRA CAN", 40000, 10);
+
+        // the conversation that went wrong: "DEKRA CAN" is a full product name ("can" is not a filler word here)
+        var buy = await r.Say(Ngozi, "I want to buy dekra can", "Ngozi");
+        Assert.DoesNotContain("Which", buy);
+        Assert.Contains("DEKRA CAN", buy);
+        await r.Say(Ngozi, "cancel");
+
+        Assert.Contains("DEKRA ALS 10KG", await r.Say(Ngozi, "dekra"));                  // a real choice is asked by name...
+        Assert.Contains("DEKRA CAN", await r.Say(Ngozi, "2"));                           // ...and a number still answers it
+        await r.Say(Ngozi, "cancel");
+
+        await r.Say(Ngozi, "dekra");
+        await r.Say(Ngozi, "the purple one");
+        var third = await r.Say(Ngozi, "hmm");
+        Assert.DoesNotContain("Which one", third);                                   // never asked a third time
+        await r.Say(Ngozi, "dekra");
+        Assert.DoesNotContain("Which one", await r.Say(Ngozi, "Hi Chewy Pet! I'd like to order some dog food."));   // a hello starts afresh
+
+        Assert.Contains("ask away", await r.Say(Musa, "Hi Candid Purrfect! I have a question about your products.", "Musa"));
+        Assert.Contains("TRADE FORM", await r.Say(Musa, "Do you sell for wholesalers?"));
+    }
+
     [Fact]
     public async Task A_product_without_a_price_is_never_offered()
     {

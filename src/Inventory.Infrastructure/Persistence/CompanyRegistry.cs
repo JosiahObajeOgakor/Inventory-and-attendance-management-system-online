@@ -48,9 +48,10 @@ public sealed class CompanyRegistry
         return matches.Count == 1 ? matches[0] : null;
     }
 
+    // utf8mb4 always: without it the connection can fall back to latin1, which keeps "—" and "•" but turns "₦" into "?" in every saved message
     public string ConnectionFor(string schema) =>
-        new MySqlConnectionStringBuilder(_baseConnection) { Database = schema }.ConnectionString;
-    public string ServerConnection => new MySqlConnectionStringBuilder(_baseConnection) { Database = "" }.ConnectionString;
+        new MySqlConnectionStringBuilder(_baseConnection) { Database = schema, CharacterSet = "utf8mb4" }.ConnectionString;
+    public string ServerConnection => new MySqlConnectionStringBuilder(_baseConnection) { Database = "", CharacterSet = "utf8mb4" }.ConnectionString;
 
     public BusinessDbContext CreateFor(CompanyInfo company) =>
         new(new DbContextOptionsBuilder<BusinessDbContext>().UseMySQL(ConnectionFor(company.Schema)).Options);

@@ -50,7 +50,11 @@ public sealed class CampaignRunner(IBusinessDbContext db, CampaignPlanner planne
             }
             if (c.SendEmail && !string.IsNullOrWhiteSpace(t.Email))
             {
-                var r = await SendEmailAsync(c, t, body, ct);
+                // Pidgin reads well in a chat, not in an inbox: the email is written in English
+                var mail = t.Language == ChatLanguages.Pidgin
+                    ? CampaignWriter.Render(await writer.VariantsAsync(t.Kind, ChatLanguages.English, ct), t.Facts, (t.CustomerId ?? 0) + clock.BusinessToday.DayNumber)
+                    : body;
+                var r = await SendEmailAsync(c, t.Language == ChatLanguages.Pidgin ? t with { Language = ChatLanguages.English } : t, mail, ct);
                 (sent, failed, skipped) = Tally(r, sent, failed, skipped);
                 delivered |= r == CampaignMessageStatuses.Sent;
             }

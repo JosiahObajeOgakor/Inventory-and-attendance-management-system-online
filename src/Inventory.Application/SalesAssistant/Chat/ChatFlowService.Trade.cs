@@ -13,7 +13,7 @@ namespace Inventory.Application.SalesAssistant.Chat;
 /// </summary>
 public sealed partial class ChatFlowService
 {
-    [GeneratedRegex(@"^(trade|trade form)\b|\b(trade price|trade prices|wholesale price|wholesale prices|wholesaler|distributor|distributorship|register (my )?(business|shop|store|company)|become (a|your) (partner|distributor|wholesaler))\b")]
+    [GeneratedRegex(@"^(trade|trade form)\b|\b(trade price|trade prices|wholesale price|wholesale prices|wholesaler|distributor|distributorship|wholesalers?|distributors?|distributorship|wholesale|sell (for|to) (shops|retailers|resellers)|bulk (price|prices|order|buy)|register (my )?(business|shop|store|company)|become (a|your) (partner|distributor|wholesaler))\b")]
     private static partial Regex TradeAsk();
 
     private static readonly (string Key, string[] Labels)[] FormFields =
@@ -45,7 +45,7 @@ public sealed partial class ChatFlowService
         {
             switch (existing?.Status)
             {
-                case PartnerStatuses.Approved: t.Say("t_approved", existing.BusinessName, existing.ApprovedTier!.ToLowerInvariant()); return true;
+                case PartnerStatuses.Approved: t.Say("t_approved", existing.BusinessName, existing.ApprovedTier!.ToLowerInvariant()); CatalogueReply(t, await CatAsync(t, ct)); return true;
                 case PartnerStatuses.Suspended: t.Say("t_suspended"); return true;
                 case PartnerStatuses.Pending: t.Say("t_pending", existing.BusinessName); return true;
                 case PartnerStatuses.Rejected: t.Say("t_rejected_again", string.IsNullOrWhiteSpace(existing.DecisionNote) ? "" : $" ({existing.DecisionNote})"); break;

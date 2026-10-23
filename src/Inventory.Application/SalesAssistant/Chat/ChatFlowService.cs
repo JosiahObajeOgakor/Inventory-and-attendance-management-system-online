@@ -65,6 +65,8 @@ public sealed partial class ChatFlowService(
         public List<int> ProductIds { get; set; } = [];
         public int? Qty { get; set; }
         public int? Available { get; set; }
+        /// <summary>How many answers didn't settle it; after two the question is dropped so the customer is never stuck.</summary>
+        public int Tries { get; set; }
     }
     private const string KWhich = "which", KQty = "qty", KStock = "stock";
 
@@ -192,6 +194,8 @@ public sealed partial class ChatFlowService(
         var cat = await CatAsync(t, ct);
         t.C.State = ChatStates.Collecting;
 
+        // a hello or "show me products" while we were waiting for an answer starts afresh instead of repeating the question
+        if (t.D.Waiting is not null && (ChatLexicon.IsGreeting(t.Norm) || ChatLexicon.StartsWithGreeting(t.Norm) || ChatLexicon.IsProducts(t.Norm))) t.D.Waiting = null;
         if (t.D.Waiting is not null)
         {
             if (!await ResolveWaitingAsync(t, cat, ct)) return;
@@ -209,6 +213,8 @@ public sealed partial class ChatFlowService(
             return;
         }
 
+        // "I have a question about your products": invite the question rather than dumping the list
+        if (ChatLexicon.IsQuestionIntro(t.Norm)) { t.Say("ask_away"); return; }
         if (ChatLexicon.IsProducts(t.Norm)) { CatalogueReply(t, cat); return; }
         if (raws.Count == 0 || ChatLexicon.IsGreeting(t.Norm))
         {
@@ -233,6 +239,9 @@ public sealed partial class ChatFlowService(
         {
             var p = ProductMatcher.Match(todo[i], cat);
             var rest = () => t.D.Todo = todo.Skip(i + 1).ToList();
+            // the customer typed a product's full name ("DEKRA CAN"): that product, even if a shorter word also fits another one
+            var named = ExactPick(t.Text, p.Matches.Count > 0 ? p.Matches : p.Near);
+            if (named is not null && (p.Matches.Count > 1 || p.Matches.Count == 0)) { if (!AddLine(t, named, p.Raw.Qty)) { rest(); return false; } continue; }
             if (p.Matches.Count == 0)
             {
                 if (p.Near.Count > 0) { AskWhich(t, p.Near.Select(n => n.Id).ToList(), p.Raw.Qty); rest(); return false; }
@@ -267,6 +276,18 @@ public sealed partial class ChatFlowService(
         return true;
     }
 
+    /// <summary>
+    /// The one product whose every name word the customer typed (read from their own words, before filler such as "can" is removed). When several fit,
+    /// the longest name wins ("dekra can" is DEKRA CAN, not DEKRA). Null when none or a tie.
+    /// </summary>
+    internal static CatalogItem? ExactPick(string text, IEnumerable<CatalogItem> candidates)
+    {
+        static string[] Words(string s) => System.Text.RegularExpressions.Regex.Split(s.ToLowerInvariant(), @"[^a-z0-9]+").Where(w => w.Length > 0).ToArray();
+        var said = Words(text).ToHashSet();
+        var full = candidates.Select(c => (c, words: Words(c.Name))).Where(x => x.words.Length > 0 && x.words.All(said.Contains)).OrderByDescending(x => x.words.Length).ToList();
+        return full.Count == 1 || (full.Count > 1 && full[0].words.Length > full[1].words.Length) ? full[0].c : null;
+    }
+
     private void AskWhich(Turn t, List<int> ids, int? qty)
     {
         t.D.Waiting = new Pending { Kind = KWhich, ProductIds = ids, Qty = qty };
@@ -278,7 +299,8 @@ public sealed partial class ChatFlowService(
     private async Task<bool> ResolveWaitingAsync(Turn t, List<CatalogItem> cat, CancellationToken ct)
     {
         var w = t.D.Waiting!;
-        var candidates = cat.Where(c => w.ProductIds.Contains(c.Id)).ToList();
+        // in the order they were offered, so "2" means the second one listed
+        var candidates = w.ProductIds.Select(id => cat.FirstOrDefault(c => c.Id == id)).OfType<CatalogItem>().ToList();
         if (candidates.Count == 0) { t.D.Waiting = null; return true; }
         var number = ProductMatcher.FirstQuantity(t.Norm);
 
@@ -286,11 +308,14 @@ public sealed partial class ChatFlowService(
         {
             case KWhich:
             {
+                if (int.TryParse(t.Norm.Trim(), out var nth) && nth >= 1 && nth <= candidates.Count) { t.D.Waiting = null; return AddLine(t, candidates[nth - 1], w.Qty); }
+                if (ExactPick(t.Text, candidates) is { } exact) { t.D.Waiting = null; return AddLine(t, exact, w.Qty ?? ProductMatcher.FirstQuantity(t.Norm, ignoreWordOne: true)); }
                 var line = ProductMatcher.Split(t.Norm).FirstOrDefault();
                 var m = line is null ? null : ProductMatcher.Match(line, candidates);
                 if (m is null || m.Matches.Count != 1)
                 {
                     if (await TryAiAsync(t, cat, ct)) return false;
+                    if (++w.Tries >= 2) { t.D.Waiting = null; CatalogueReply(t, cat); return false; }   // never ask the same question a third time
                     t.Say("which", string.Join(" / ", candidates.Select(c => c.Name))); return false;
                 }
                 t.D.Waiting = null;
