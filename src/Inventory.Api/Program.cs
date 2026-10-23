@@ -115,6 +115,8 @@ builder.Services.Configure<Inventory.Infrastructure.Partners.VerificationOptions
 builder.Services.AddHttpClient<Inventory.Infrastructure.Partners.DojahVerifier>(c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<Inventory.Application.Partners.IBusinessVerifier>(sp => sp.GetRequiredService<Inventory.Infrastructure.Partners.DojahVerifier>());
 builder.Services.AddScoped<Inventory.Application.Partners.IStaffAlerts, Inventory.Infrastructure.Partners.StaffAlertService>();
+builder.Services.AddSingleton<Inventory.Application.Partners.ICompanyScopes, Inventory.Api.Infrastructure.TradeStoreScopes>();
+builder.Services.AddHostedService<Inventory.Api.Infrastructure.TradeFollowUpWorker>();
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.BroadcastWorker>();
 
 // ---- identity: cookie session, legacy-hash aware, lockout 5 tries / 15 min (rule A) ----

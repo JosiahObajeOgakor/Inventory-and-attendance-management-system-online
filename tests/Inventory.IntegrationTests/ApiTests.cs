@@ -343,8 +343,8 @@ public class UserAdminTests(ApiFixture api)
         var c = api.Client();
         Assert.Equal(HttpStatusCode.OK, (await c.PostAsJsonAsync("/api/auth/login", new LoginRequest("tunde", "Temp12345pw", "chewypets"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await c.GetAsync("/api/products")).StatusCode);
-        // Only opened for the business the admin allowed.
-        Assert.Equal(HttpStatusCode.Unauthorized, (await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("tunde", "Temp12345pw", "candid"))).StatusCode);
+        // Only opened for the business the admin allowed: the right password for another business is told plainly that this account can't open it.
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.Client().PostAsJsonAsync("/api/auth/login", new LoginRequest("tunde", "Temp12345pw", "candid"))).StatusCode);
     }
 
     [Fact]

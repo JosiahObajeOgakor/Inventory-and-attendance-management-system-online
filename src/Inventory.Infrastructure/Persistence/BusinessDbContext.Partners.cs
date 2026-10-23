@@ -8,6 +8,9 @@ public partial class BusinessDbContext
     public DbSet<TradePartner> TradePartners => Set<TradePartner>();
     public DbSet<TradePartnerDocument> TradePartnerDocuments => Set<TradePartnerDocument>();
     public DbSet<WalletEntry> WalletEntries => Set<WalletEntry>();
+    public DbSet<TradeApplicationDraft> TradeApplicationDrafts => Set<TradeApplicationDraft>();
+    public DbSet<TradeApplicationFile> TradeApplicationFiles => Set<TradeApplicationFile>();
+    public DbSet<EmailCode> EmailCodes => Set<EmailCode>();
 
     private static void ConfigurePartners(ModelBuilder b)
     {
@@ -66,6 +69,42 @@ public partial class BusinessDbContext
             e.HasIndex(x => x.Reference).IsUnique();
             e.HasIndex(x => new { x.TradePartnerId, x.Status });
             e.HasOne<TradePartner>().WithMany().HasForeignKey(x => x.TradePartnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        b.Entity<TradeApplicationDraft>(e =>
+        {
+            e.ToTable("trade_application_drafts");
+            e.Property(x => x.Email).HasMaxLength(150).IsRequired();
+            e.Property(x => x.DeviceTokenHash).HasMaxLength(64).IsRequired();
+            e.Property(x => x.DataJson).HasColumnType("text").IsRequired();
+            e.Property(x => x.EmailVerifiedAt).HasPrecision(6);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.LastActivityAt).HasPrecision(6);
+            e.Property(x => x.LastReminderAt).HasPrecision(6);
+            e.Property(x => x.WarnedAt).HasPrecision(6);
+            e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.DeviceTokenHash);
+            e.HasIndex(x => x.LastActivityAt);
+            e.HasMany(x => x.Files).WithOne().HasForeignKey(f => f.DraftId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<TradeApplicationFile>(e =>
+        {
+            e.ToTable("trade_application_files");
+            e.Property(x => x.Kind).HasMaxLength(10).IsRequired();
+            e.Property(x => x.FileName).HasMaxLength(150).IsRequired();
+            e.Property(x => x.ContentType).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Data).HasColumnType("mediumblob");
+            e.Property(x => x.UploadedAt).HasPrecision(6);
+        });
+        b.Entity<EmailCode>(e =>
+        {
+            e.ToTable("email_codes");
+            e.Property(x => x.Email).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Purpose).HasMaxLength(10).IsRequired();
+            e.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.ExpiresAt).HasPrecision(6);
+            e.Property(x => x.UsedAt).HasPrecision(6);
+            e.HasIndex(x => new { x.Email, x.Purpose, x.CreatedAt });
         });
     }
 }

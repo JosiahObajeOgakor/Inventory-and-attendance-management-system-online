@@ -1245,6 +1245,49 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("depreciation_runs", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.EmailCode", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email", "Purpose", "CreatedAt");
+
+                    b.ToTable("email_codes", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.Employee", b =>
                 {
                     b.Property<int>("Id")
@@ -3488,6 +3531,103 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.TradeApplicationDraft", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DeviceTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<DateTime?>("EmailVerifiedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("LastReminderAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("RemindersSent")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Step")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("WarnedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceTokenHash");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("LastActivityAt");
+
+                    b.ToTable("trade_application_drafts", (string)null);
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.TradeApplicationFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("varchar(60)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("mediumblob");
+
+                    b.Property<int>("DraftId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DraftId");
+
+                    b.ToTable("trade_application_files", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.TradePartner", b =>
                 {
                     b.Property<int>("Id")
@@ -4242,6 +4382,15 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.TradeApplicationFile", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.TradeApplicationDraft", null)
+                        .WithMany("Files")
+                        .HasForeignKey("DraftId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.TradePartner", b =>
                 {
                     b.HasOne("Inventory.Domain.Entities.Customer", "Customer")
@@ -4322,6 +4471,11 @@ namespace Inventory.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Inventory.Domain.Entities.Supply", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.TradeApplicationDraft", b =>
+                {
+                    b.Navigation("Files");
                 });
 
             modelBuilder.Entity("Inventory.Domain.Entities.TradePartner", b =>

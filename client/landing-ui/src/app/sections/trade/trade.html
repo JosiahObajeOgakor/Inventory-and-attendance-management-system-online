@@ -6,65 +6,206 @@
       <p class="trade__lede">Stock your shelves from the source. Registered businesses get wholesale or distributor pricing on every order, on WhatsApp or right here.</p>
       <div class="trade__ctas">
         <button type="button" class="btn btn--accent btn--lg" (click)="open()">Apply for trade prices</button>
-        <a class="trade__wa" [href]="whatsappApply" target="_blank" rel="noopener">or apply on WhatsApp</a>
+        <button type="button" class="trade__link" (click)="open(true)">Partner sign in</button>
+        <a class="trade__link" [href]="whatsappApply" target="_blank" rel="noopener">Apply on WhatsApp</a>
       </div>
     </div>
 
     <ol class="steps reveal" appReveal>
-      <li><span class="steps__n">1</span><div><strong>Apply in two minutes</strong><p>Your shop's details, CAC number, TIN and a photo of your CAC certificate.</p></div></li>
+      <li><span class="steps__n">1</span><div><strong>Apply in a few short steps</strong><p>Confirm your email, then your shop's details, CAC number, TIN and a photo of your CAC certificate. Each step is saved as you go.</p></div></li>
       <li><span class="steps__n">2</span><div><strong>We verify your business</strong><p>We check your registration with the CAC registry and a manager reviews it, usually within one working day.</p></div></li>
-      <li><span class="steps__n">3</span><div><strong>Your prices, everywhere</strong><p>Once approved, the number you registered sees your trade prices whenever you order.</p></div></li>
+      <li><span class="steps__n">3</span><div><strong>Your prices, everywhere</strong><p>Once approved, sign in to see your prices and orders, and the number you registered sees trade prices on WhatsApp.</p></div></li>
     </ol>
   </div>
 
   <dialog #apply class="sheet" aria-labelledby="apply-title" (click)="backdrop($event)">
-    @if (done()) {
-      <div class="sheet__body">
-        <h2 id="apply-title" class="sheet__title">Application received</h2>
-        <p>{{ done() }}</p>
-        <p class="muted">You'll keep seeing retail prices until a manager approves your account.</p>
-        <button type="button" class="btn btn--primary" (click)="close()">Done</button>
-      </div>
-    } @else {
-      <form #f class="sheet__body form" novalidate (submit)="submit(f); $event.preventDefault()">
-        <button type="button" class="sheet__close" (click)="close()" aria-label="Close">×</button>
-        <h2 id="apply-title" class="sheet__title">Apply for trade prices</h2>
-        <p class="muted">All fields are needed so we can verify your business. We never share your documents.</p>
+    <div class="sheet__body">
+      <button type="button" class="sheet__close" (click)="close()" aria-label="Close">×</button>
 
-        <fieldset class="choice"><legend>I want to buy as a</legend>
-          <label [class.on]="tier() === 'Wholesaler'"><input type="radio" name="tierPick" [checked]="tier() === 'Wholesaler'" (change)="tier.set('Wholesaler')" />
-            <strong>Wholesaler</strong><span>Pet shops and resellers</span></label>
-          <label [class.on]="tier() === 'Distributor'"><input type="radio" name="tierPick" [checked]="tier() === 'Distributor'" (change)="tier.set('Distributor')" />
-            <strong>Distributor</strong><span>Supplying other shops in your area</span></label>
-        </fieldset>
+      @switch (view()) {
+        @case ('done') {
+          <h2 id="apply-title" class="sheet__title">Application sent</h2>
+          <div class="done" role="status">
+            <span class="done__tick" aria-hidden="true">✓</span>
+            <p>{{ doneMessage() }}</p>
+            <p class="muted">You'll keep seeing retail prices until a manager approves your account. Once approved, use <strong>Partner sign in</strong> with the same email.</p>
+          </div>
+          <button type="button" class="btn btn--primary" (click)="close()">Done</button>
+        }
 
-        <fieldset class="choice choice--3"><legend>Buying from</legend>
-          <label [class.on]="store() === 'both'"><input type="radio" name="storePick" [checked]="store() === 'both'" (change)="store.set('both')" /><strong>Both stores</strong></label>
-          <label [class.on]="store() === 'chewypets'"><input type="radio" name="storePick" [checked]="store() === 'chewypets'" (change)="store.set('chewypets')" /><strong>Chewy Pet</strong></label>
-          <label [class.on]="store() === 'candid'"><input type="radio" name="storePick" [checked]="store() === 'candid'" (change)="store.set('candid')" /><strong>Candid Purrfect</strong></label>
-        </fieldset>
+        @case ('account') {
+          <div class="acct__head">
+            <h2 id="apply-title" class="sheet__title">Your partner account</h2>
+            <span class="muted sm">{{ accountEmail() }} · <button type="button" class="linkish" (click)="signOut()">Sign out</button></span>
+          </div>
+          @if (accounts().length > 1) {
+            <div class="tabs" role="tablist">
+              @for (a of accounts(); track a.store; let i = $index) {
+                <button type="button" role="tab" [class.on]="accountTab() === i" [attr.aria-selected]="accountTab() === i" (click)="accountTab.set(i)">{{ a.storeName }}</button>
+              }
+            </div>
+          }
+          @if (accounts()[accountTab()]; as a) {
+            <div class="acct__biz">
+              <strong>{{ a.businessName }}</strong>
+              <span class="badge" [class]="'badge badge--' + a.status.toLowerCase()">{{ a.status === 'Approved' ? a.tier : a.status }}</span>
+            </div>
+            @switch (a.status) {
+              @case ('Pending') { <p class="note">Your application to {{ a.storeName }} for {{ a.requestedTier.toLowerCase() }} prices is with our managers. We'll message you as soon as it's decided.</p> }
+              @case ('Rejected') { <p class="note note--bad">This application wasn't approved{{ a.note ? ': ' + a.note : '.' }} Message us on WhatsApp to talk it through.</p> }
+              @case ('Suspended') { <p class="note note--bad">Your trade account is on hold{{ a.note ? ': ' + a.note : '.' }} Please call us to restore it.</p> }
+              @case ('Approved') {
+                <div class="kpis">
+                  <div><span>Your tier</span><strong>{{ a.tier }}</strong></div>
+                  <div><span>You owe</span><strong>{{ naira(a.owed) }}</strong></div>
+                  <div><span>Wallet</span><strong>{{ naira(a.wallet) }}</strong></div>
+                </div>
+                <a class="btn btn--primary" [href]="orderLink(a)" target="_blank" rel="noopener">Order on WhatsApp at your prices</a>
+                <h3 class="h3">Your prices</h3>
+                <div class="table-wrap"><table class="tbl">
+                  <thead><tr><th>Product</th><th class="r">Your price</th><th class="r">Retail</th></tr></thead>
+                  <tbody>@for (p of a.prices; track p.id) {
+                    <tr [class.out]="!p.inStock"><td>{{ p.name }}<span class="muted sm"> · {{ p.unit }}@if (!p.inStock) { · out of stock }</span></td>
+                      <td class="r strong">{{ naira(p.price) }}@if (saving(p)) { <span class="save">−{{ saving(p) }}%</span> }</td><td class="r muted">{{ naira(p.retail) }}</td></tr>
+                  }</tbody>
+                </table></div>
+              }
+            }
+            <h3 class="h3">Recent orders</h3>
+            @if (a.orders.length) {
+              <div class="table-wrap"><table class="tbl">
+                <thead><tr><th>Order</th><th>Date</th><th class="r">Total</th><th>Status</th></tr></thead>
+                <tbody>@for (o of a.orders; track o.number) { <tr><td class="mono">{{ o.number }}</td><td>{{ o.date }}</td><td class="r">{{ naira(o.total) }}</td><td>{{ o.status }}</td></tr> }</tbody>
+              </table></div>
+            } @else { <p class="muted sm">No orders yet.</p> }
+          }
+        }
 
-        <div class="grid">
-          <label class="f"><span>Business (pet shop) name</span><input name="businessName" required minlength="2" maxlength="150" autocomplete="organization" /></label>
-          <label class="f"><span>Your name</span><input name="contactName" required minlength="2" maxlength="100" autocomplete="name" /></label>
-          <label class="f"><span>WhatsApp number</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="0803 123 4567" /></label>
-          <label class="f"><span>Email</span><input name="email" type="email" required maxlength="150" autocomplete="email" /></label>
-          <label class="f f--wide"><span>Shop address</span><input name="address" required minlength="8" maxlength="300" autocomplete="street-address" /></label>
-          <label class="f"><span>CAC number</span><input name="cacNumber" required maxlength="20" placeholder="RC1234567 or BN1234567" autocapitalize="characters" /></label>
-          <label class="f"><span>TIN</span><input name="taxId" required maxlength="20" inputmode="numeric" placeholder="12345678-0001" /></label>
-          <label class="f f--wide"><span>About your business</span>
-            <textarea name="description" rows="3" required minlength="20" maxlength="1000" placeholder="What you sell, where, and roughly how many bags a month."></textarea></label>
-          <label class="f f--wide upload"><span>CAC certificate (PDF or photo, up to 3 MB)</span>
-            <input #file type="file" accept="application/pdf,image/jpeg,image/png,image/webp" (change)="pick(file)" />
-            @if (cacInfo()) { <small class="ok">✓ {{ cacInfo() }}</small> }</label>
-        </div>
-        <!-- left empty by people; bots fill it -->
-        <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+        @default {
+          <h2 id="apply-title" class="sheet__title">{{ step() === 1 && awaitingCode() === 'login' ? 'Sign in' : 'Apply for trade prices' }}</h2>
 
-        @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
-        <button type="submit" class="btn btn--primary btn--lg" [disabled]="sending()">{{ sending() ? 'Sending…' : 'Send application' }}</button>
-        <p class="fine">By applying you agree that we may check your CAC registration with the registry. See our <a href="/privacy/">privacy notice</a>.</p>
-      </form>
-    }
+          <!-- the tracker: every step, which are done, which is on screen -->
+          <nav class="tracker" aria-label="Application progress">
+            <div class="tracker__bar"><span [style.width.%]="((step() - 1) / (steps.length - 1)) * 100"></span></div>
+            <ol>
+              @for (s of steps; track s; let i = $index) {
+                <li [class.done]="i + 1 < furthest() || (i + 1 < step())" [class.current]="i + 1 === step()">
+                  <button type="button" (click)="goTo(i + 1)" [disabled]="i + 1 > furthest() || i === 0 || !!awaitingCode()" [attr.aria-current]="i + 1 === step() ? 'step' : null">
+                    <span class="tracker__dot" aria-hidden="true">{{ i + 1 < furthest() && i + 1 !== step() ? '✓' : i + 1 }}</span><span class="tracker__label">{{ s }}</span>
+                  </button>
+                </li>
+              }
+            </ol>
+            <p class="tracker__now">Step {{ step() }} of {{ steps.length }} · {{ steps[step() - 1] }}@if (step() > 1) { <span class="saved"> · saved automatically</span> }</p>
+          </nav>
+
+          @if (resumed()) { <p class="note note--ok" role="status">{{ resumed() }}</p> }
+
+          @switch (step()) {
+            @case (1) {
+              @if (!awaitingCode()) {
+                <form #fe class="form" novalidate (submit)="start(fe); $event.preventDefault()">
+                  <p class="muted">Start with your email. We'll send a code to confirm it, and you can carry on from any device later. Already a partner? Enter your email to sign in.</p>
+                  <label class="f"><span>Email address</span><input name="email" type="email" required maxlength="150" autocomplete="email" [value]="email()" /></label>
+                  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                  <div class="nav"><button type="submit" class="btn btn--primary btn--lg" [disabled]="busy()">{{ busy() ? 'Sending…' : 'Continue' }}</button></div>
+                </form>
+              } @else {
+                <form #fc class="form" novalidate (submit)="verify(fc); $event.preventDefault()">
+                  <p class="muted">{{ info() }}</p>
+                  <label class="f"><span>6-digit code</span><input class="code" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" placeholder="••••••" /></label>
+                  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                  <div class="nav">
+                    <button type="button" class="btn btn--ghost" (click)="changeEmail()">Change email</button>
+                    <button type="submit" class="btn btn--primary btn--lg" [disabled]="busy()">{{ busy() ? 'Checking…' : (awaitingCode() === 'login' ? 'Sign in' : 'Confirm email') }}</button>
+                  </div>
+                  <p class="fine">Didn't get it? Check spam, or
+                    <button type="button" class="linkish" (click)="resend()" [disabled]="cooldown() > 0 || busy()">{{ cooldown() > 0 ? 'resend in ' + cooldown() + 's' : 'send a new code' }}</button>.</p>
+                </form>
+              }
+            }
+
+            @case (2) {
+              <form #f2 class="form" novalidate (submit)="save(2, f2); $event.preventDefault()">
+                <fieldset class="choice"><legend>I want to buy as a</legend>
+                  <label><input type="radio" name="tier" value="Wholesaler" [checked]="value('tier') !== 'Distributor'" /><strong>Wholesaler</strong><span>Pet shops and resellers</span></label>
+                  <label><input type="radio" name="tier" value="Distributor" [checked]="value('tier') === 'Distributor'" /><strong>Distributor</strong><span>Supplying other shops in your area</span></label>
+                </fieldset>
+                <fieldset class="choice choice--3"><legend>Buying from</legend>
+                  <label><input type="radio" name="stores" value="both" [checked]="!value('stores') || value('stores') === 'both'" /><strong>Both stores</strong></label>
+                  @for (s of state()?.stores ?? []; track s.key) { <label><input type="radio" name="stores" [value]="s.key" [checked]="value('stores') === s.key" /><strong>{{ s.name }}</strong></label> }
+                </fieldset>
+                <label class="f"><span>Business (pet shop) name</span><input name="businessName" required minlength="2" maxlength="150" autocomplete="organization" [value]="value('businessName')" /></label>
+                <label class="f"><span>About your business</span><textarea name="description" rows="3" required minlength="20" maxlength="1000" placeholder="What you sell, where, and roughly how many bags a month.">{{ value('description') }}</textarea></label>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <div class="nav"><span></span><button type="submit" class="btn btn--primary btn--lg" [disabled]="busy()">{{ busy() ? 'Saving…' : 'Save and continue' }}</button></div>
+              </form>
+            }
+
+            @case (3) {
+              <form #f3 class="form" novalidate (submit)="save(3, f3); $event.preventDefault()">
+                <label class="f"><span>Your name</span><input name="contactName" required minlength="2" maxlength="100" autocomplete="name" [value]="value('contactName')" /></label>
+                <label class="f"><span>WhatsApp number</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="0803 123 4567" [value]="value('phone')" /></label>
+                <label class="f"><span>Shop address</span><input name="address" required minlength="8" maxlength="300" autocomplete="street-address" [value]="value('address')" /></label>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <div class="nav"><button type="button" class="btn btn--ghost" (click)="goTo(2)">Back</button>
+                  <button type="submit" class="btn btn--primary btn--lg" [disabled]="busy()">{{ busy() ? 'Saving…' : 'Save and continue' }}</button></div>
+              </form>
+            }
+
+            @case (4) {
+              <form #f4 class="form" novalidate (submit)="save(4, f4); $event.preventDefault()">
+                <p class="muted">We check your CAC number with the registry, so give it exactly as it is on your certificate.</p>
+                <label class="f"><span>CAC number</span><input name="cacNumber" required maxlength="20" placeholder="RC1234567 or BN1234567" autocapitalize="characters" [value]="value('cacNumber')" /></label>
+                <label class="f"><span>TIN</span><input name="taxId" required maxlength="20" inputmode="numeric" placeholder="12345678-0001" [value]="value('taxId')" /></label>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <div class="nav"><button type="button" class="btn btn--ghost" (click)="goTo(3)">Back</button>
+                  <button type="submit" class="btn btn--primary btn--lg" [disabled]="busy()">{{ busy() ? 'Saving…' : 'Save and continue' }}</button></div>
+              </form>
+            }
+
+            @case (5) {
+              <div class="form">
+                <p class="muted">A clear photo or a PDF scan, up to 3 MB. Photos are shrunk on your phone before upload.</p>
+                @for (d of [{ kind: 'cac', label: 'CAC certificate', need: true }, { kind: 'id', label: 'ID of the owner (optional)', need: false }]; track d.kind) {
+                  <div class="doc" [class.doc--ok]="file(d.kind)">
+                    <div><strong>{{ d.label }}</strong>@if (d.need) { <span class="req"> required</span> }
+                      @if (file(d.kind); as f) { <div class="muted sm">✓ {{ f.fileName }} · {{ kb(f.size) }}</div> }</div>
+                    <div class="doc__actions">
+                      <label class="btn btn--ghost btn--sm upload-btn">{{ file(d.kind) ? 'Replace' : 'Upload' }}
+                        <input #up type="file" accept="application/pdf,image/jpeg,image/png,image/webp" (change)="upload(d.kind, up)" [disabled]="busy()" /></label>
+                      @if (file(d.kind); as f) { <button type="button" class="linkish" (click)="removeFile(f)" [disabled]="busy()">Remove</button> }
+                    </div>
+                  </div>
+                }
+                @if (busy()) { <p class="muted sm" role="status">Uploading…</p> }
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <div class="nav"><button type="button" class="btn btn--ghost" (click)="goTo(4)">Back</button>
+                  <button type="button" class="btn btn--primary btn--lg" (click)="documentsDone()" [disabled]="busy() || !file('cac')">Continue to review</button></div>
+              </div>
+            }
+
+            @case (6) {
+              <div class="form">
+                <div class="review">
+                  <section><header><h3>Business</h3><button type="button" class="linkish" (click)="goTo(2)">Edit</button></header>
+                    <p><strong>{{ value('businessName') }}</strong> · {{ value('tier') }} · buying from {{ storeLabel() }}</p><p class="muted">{{ value('description') }}</p></section>
+                  <section><header><h3>Contact</h3><button type="button" class="linkish" (click)="goTo(3)">Edit</button></header>
+                    <p>{{ value('contactName') }} · {{ value('phone') }} · {{ state()?.email }}</p><p class="muted">{{ value('address') }}</p></section>
+                  <section><header><h3>Registration</h3><button type="button" class="linkish" (click)="goTo(4)">Edit</button></header>
+                    <p>CAC {{ value('cacNumber') }} · TIN {{ value('taxId') }}</p></section>
+                  <section><header><h3>Documents</h3><button type="button" class="linkish" (click)="goTo(5)">Edit</button></header>
+                    <p>@for (f of state()?.files ?? []; track f.id) { <span class="pill">✓ {{ f.kind === 'cac' ? 'CAC certificate' : f.kind === 'id' ? 'ID' : 'Document' }}</span> }</p></section>
+                </div>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <div class="nav"><button type="button" class="btn btn--ghost" (click)="goTo(5)">Back</button>
+                  <button type="button" class="btn btn--primary btn--lg" (click)="submit()" [disabled]="busy()">{{ busy() ? 'Sending…' : 'Send application' }}</button></div>
+                <p class="fine">By sending you agree that we may check your CAC registration with the registry. See our <a href="/privacy/">privacy notice</a>.</p>
+              </div>
+            }
+          }
+        }
+      }
+    </div>
   </dialog>
 </section>

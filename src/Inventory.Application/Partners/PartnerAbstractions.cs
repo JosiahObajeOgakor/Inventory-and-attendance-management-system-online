@@ -25,3 +25,12 @@ public interface IStaffAlerts
     Task TellStaffAsync(StaffAlert alert, CancellationToken ct);
     Task TellContactAsync(ContactAlert alert, CancellationToken ct);
 }
+
+/// <summary>Runs work inside another store's database and services (one schema per store), e.g. submitting one application to both stores.</summary>
+public interface ICompanyScopes
+{
+    /// <summary>The stores trade partners can apply to (Partners:Stores, default "chewypets,candid"), in order; the first holds the drafts.</summary>
+    IReadOnlyList<string> TradeStores { get; }
+    string DisplayName(string key);
+    Task<T> InAsync<T>(string key, Func<IServiceProvider, Task<T>> work);
+}

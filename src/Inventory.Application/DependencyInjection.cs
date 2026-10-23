@@ -94,6 +94,8 @@ public static class DependencyInjection
         s.AddScoped<Queries.DebtorQueries>();
         s.AddScoped<Website.WebsiteService>();
         s.AddScoped<Partners.TradePartnerService>();
+        s.AddScoped<Partners.TradeRegistrationService>();
+        s.AddScoped<Partners.PartnerDashboard>();
         s.AddScoped<Campaigns.CampaignIdeas>();
         s.AddScoped<Website.WebCheckoutService>();
         s.AddScoped<Ledger.GeneralLedger>();
