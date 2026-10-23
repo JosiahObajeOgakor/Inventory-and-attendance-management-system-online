@@ -18,7 +18,9 @@ namespace Inventory.IntegrationTests;
 public class RecordsAndRolesTests(MySqlFixture mysql)
 {
     private static readonly SystemClock Clock = new();
-    private static readonly CurrentUser Manager = new(3, "Mo Manager", RoleNames.Manager);
+    private static readonly CurrentUser Manager = new(3, "Mo Manager", RoleNames.Manager, null, RoleTemplates.All[RoleNames.Manager].ToHashSet());
+    /// <summary>A clerk as they are when signed in: carrying the clerk role's permissions.</summary>
+    private static readonly CurrentUser SignedInClerk = new(1, "David Okon", RoleNames.Clerk, null, RoleTemplates.All[RoleNames.Clerk].ToHashSet());
     private static ProductService Products(BusinessDbContext db) => new(db, Wire.Tx(db), new StockService(db, Clock), Clock, Wire.Co());
 
     [Fact]
@@ -41,7 +43,7 @@ public class RecordsAndRolesTests(MySqlFixture mysql)
         var seed = await SeedAsync(cs, stock: 10);
         var past = new DateOnly(2021, 3, 15);
         await using (var db = NewContext(cs))
-            await Assert.ThrowsAsync<ForbiddenActionException>(() => SalesFor(db).SaveAsync(With(Sale(seed, 1), past), Clerk, null));
+            await Assert.ThrowsAsync<ForbiddenActionException>(() => SalesFor(db).SaveAsync(With(Sale(seed, 1), past), SignedInClerk, null));
         await using (var db = NewContext(cs))
             await Assert.ThrowsAsync<BusinessRuleException>(() => SalesFor(db).SaveAsync(With(Sale(seed, 1), new DateOnly(2019, 12, 31)), Manager, null));
         SaleResult ok;
