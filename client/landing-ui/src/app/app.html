@@ -232,3 +232,13 @@
 </footer>
 
 <app-chat-widget />
+
+@if (pixels.ask()) {
+  <aside class="consent" role="region" aria-label="Cookie choice">
+    <p>We use cookies from Meta, Google and TikTok to see which of our ads bring you here. Nothing loads unless you agree. <a href="/privacy/">Privacy notice</a></p>
+    <div class="consent__actions">
+      <button type="button" class="btn btn--primary" (click)="pixels.decide(true)">Accept</button>
+      <button type="button" class="consent__no" (click)="pixels.decide(false)">No thanks</button>
+    </div>
+  </aside>
+}

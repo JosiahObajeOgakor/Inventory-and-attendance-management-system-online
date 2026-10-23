@@ -615,6 +615,15 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("varchar(80)");
 
+                    b.Property<DateTime?>("PendingAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PendingBy")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("PendingChange")
+                        .HasColumnType("longtext");
+
                     b.Property<int>("RunMinute")
                         .HasColumnType("int");
 
@@ -739,6 +748,9 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.Property<string>("Error")
                         .HasMaxLength(300)
                         .HasColumnType("varchar(300)");
+
+                    b.Property<bool>("IsService")
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Message")
                         .IsRequired()

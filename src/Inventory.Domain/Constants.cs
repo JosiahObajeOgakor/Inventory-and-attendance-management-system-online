@@ -7,7 +7,9 @@ public static class RoleNames
     /// <summary>Supervises clerks; adds and edits records like the CEO but cannot delete. The CEO can make a clerk manager (and back) at any time.</summary>
     public const string Manager = "MANAGER";
     public const string Clerk = "CLERK";
-    public static readonly string[] All = [Admin, Manager, Clerk];
+    /// <summary>Digital marketer: Campaigns, the Marketing apps and the Website only. Anything they put live (a broadcast, a rule, a post) waits for an admin's approval.</summary>
+    public const string Marketer = "MARKETER";
+    public static readonly string[] All = [Admin, Manager, Clerk, Marketer];
     /// <summary>Legacy role names in the SQL Server data, mapped on import.</summary>
     public const string LegacyAdmin = "Admin";
     public const string LegacyClerk = "Warehouse Clerk";

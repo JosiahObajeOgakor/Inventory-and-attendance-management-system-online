@@ -226,6 +226,79 @@ public class ChatSalesTests(MySqlFixture mysql)
         Assert.Contains(ChatOrderText.Naira(retail * 2), await r.Say(Musa, "2 adult dog food"));   // pending means retail
     }
 
+    // ------------------------------------------------------------------ automation follow-ups: an unpaid payment and a cancelled order
+
+    private sealed class ShiftedClock(TimeSpan by) : Inventory.Application.Abstractions.IClock
+    {
+        public DateTime UtcNow => DateTime.UtcNow + by;
+        public DateOnly BusinessToday => DateOnly.FromDateTime(UtcNow.AddHours(1));
+        public DateTime BusinessNow => UtcNow.AddHours(1);
+    }
+    private sealed class NoEmail : ICampaignEmailSender
+    {
+        public bool IsConfigured => false;
+        public Task<bool> TrySendAsync(string toEmail, string? toName, string fromName, string subject, string html, string text, string unsubscribeUrl, CancellationToken ct) => Task.FromResult(false);
+    }
+    private sealed class NoSms : ISmsSender { public bool IsConfigured => false; public Task<bool> TrySendAsync(string toDigits, string text, CancellationToken ct) => Task.FromResult(false); }
+
+    private static async Task<AppRecord> RuleAsync(Rig r, string trigger, string message)
+    {
+        var rule = new AppRecord { App = "marketing-automation", Kind = "rule", Title = trigger, Status = "On", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            Data = System.Text.Json.JsonSerializer.Serialize(new { trigger, hours = 2, channel = "WhatsApp", message }) };
+        r.Db.AppRecords.Add(rule); await r.Db.SaveChangesAsync();
+        return rule;
+    }
+
+    private static Inventory.Application.AppsEngine.AutomationService Automation(Rig r, Inventory.Application.Abstractions.IClock clock)
+    {
+        var co = new CompanyContext(new CompanyInfo("test", "Test Co", "TestCo", "x", "Test Co Ltd", DefaultWarehouseId: r.Seed.WarehouseId));
+        return new(r.Db, clock, new Inventory.Application.AppsEngine.BroadcastQueue(r.Db, clock, r.Sender, new NoEmail(), new NoSms(), co));
+    }
+
+    [Fact]
+    public async Task An_unpaid_payment_is_followed_up_once_after_the_wait_even_for_a_customer_who_never_answered_the_opt_in_question()
+    {
+        var r = await BuildAsync(stock: 10);
+        await r.Say(Ngozi, "2 adult dog food", "Ngozi");
+        await r.Say(Ngozi, "yes");                                                             // a payment account is issued and never paid
+        var ngozi = await r.Db.Customers.SingleAsync(c => c.Phone == Ngozi);
+        ngozi.MarketingStatus = MarketingStatuses.Unknown; await r.Db.SaveChangesAsync();       // e.g. a customer from before consent was asked
+        var rule = await RuleAsync(r, Inventory.Application.AppsEngine.AutomationService.Abandoned, "Hi {name}, your order {order} for {amount} is waiting: {pay}");
+
+        Assert.Empty(await Automation(r, new SystemClock()).MatchesAsync(rule, default));     // not before the 2-hour wait
+        var later = Automation(r, new ShiftedClock(TimeSpan.FromHours(3)));
+        var m = Assert.Single(await later.MatchesAsync(rule, default));
+        Assert.Contains("8880007001", m.Text);                                                  // the account to pay into
+        Assert.Contains("₦", m.Text);
+        Assert.Equal(1, await later.RunRuleAsync(rule, default));
+        Assert.Equal(0, await later.RunRuleAsync(rule, default));                               // once only
+        var queued = await r.Db.CampaignRecipients.AsNoTracking().SingleAsync();
+        Assert.True(queued.IsService);
+
+        ngozi.MarketingStatus = MarketingStatuses.OptedOut; await r.Db.SaveChangesAsync();      // opting out after it was queued still stops it
+        var co = new CompanyContext(new CompanyInfo("test", "Test Co", "TestCo", "x", "Test Co Ltd", DefaultWarehouseId: r.Seed.WarehouseId));
+        var sent = r.Sender.Sent.Count;
+        await new Inventory.Application.AppsEngine.BroadcastDispatcher(r.Db, new MorningClock(), r.Sender, new NoEmail(), new NoSms(), co, Options.Create(new Inventory.Application.Campaigns.CampaignOptions())).DispatchAsync(10, default);
+        Assert.Equal(sent, r.Sender.Sent.Count);
+        r.Db.ChangeTracker.Clear();
+        Assert.Equal(RecipientStatuses.Skipped, (await r.Db.CampaignRecipients.AsNoTracking().SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task A_cancelled_chat_order_is_followed_up_and_goes_out_on_WhatsApp()
+    {
+        var r = await BuildAsync(stock: 10);
+        await r.Say(Ngozi, "2 adult dog food", "Ngozi");
+        await r.Say(Ngozi, "cancel");
+        var rule = await RuleAsync(r, Inventory.Application.AppsEngine.AutomationService.Cancelled, "Hi {name}, still need dog food? Reply and we'll sort it.");
+        var later = Automation(r, new ShiftedClock(TimeSpan.FromHours(3)));
+        Assert.Equal(1, await later.RunRuleAsync(rule, default));
+
+        var co = new CompanyContext(new CompanyInfo("test", "Test Co", "TestCo", "x", "Test Co Ltd", DefaultWarehouseId: r.Seed.WarehouseId));
+        await new Inventory.Application.AppsEngine.BroadcastDispatcher(r.Db, new MorningClock(), r.Sender, new NoEmail(), new NoSms(), co, Options.Create(new Inventory.Application.Campaigns.CampaignOptions())).DispatchAsync(10, default);
+        Assert.Contains(r.Sender.Sent, s => s.To == Ngozi && s.Text.Contains("still need dog food"));
+    }
+
     [Fact]
     public async Task A_product_without_a_price_is_never_offered()
     {

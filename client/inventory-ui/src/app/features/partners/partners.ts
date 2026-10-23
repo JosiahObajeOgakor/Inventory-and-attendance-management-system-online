@@ -152,7 +152,7 @@ export class PartnersPage implements OnInit {
   protected readonly openId = signal<number | null>(null);
   protected readonly note = signal('');
   protected readonly shown = computed(() => this.all().filter(p => p.status === this.status()));
-  protected readonly counts = computed(() => this.all().reduce<Record<string, number>>((m, p) => (m[p.status] = (m[p.status] ?? 0) + 1, m), {}));
+  protected readonly counts = computed(() => this.all().reduce<Partial<Record<string, number>>>((m, p) => (m[p.status] = (m[p.status] ?? 0) + 1, m), {}));
 
   ngOnInit() { void this.load(); }
 

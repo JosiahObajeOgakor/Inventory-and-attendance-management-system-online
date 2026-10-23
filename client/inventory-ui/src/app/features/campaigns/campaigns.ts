@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { messageOf } from '../../core/api.service';
+import { Auth } from '../../core/auth.service';
 import { Confirm, Toasts } from '../../shared/feedback';
 import { StampTimePipe } from '../../shared/ui';
 
@@ -10,6 +11,8 @@ interface Campaign {
   id: number; type: string; name: string; description: string; enabled: boolean; sendWhatsApp: boolean; sendEmail: boolean; runTime: string; everyNDays: number;
   startDate: string | null; endDate: string | null; cooldownDays: number; maxRecipients: number; thresholdDays: number; fallbackRepurchaseDays: number;
   lastRunOn: string | null; lastRunAt: string | null; lastRunSent: number; lastRunNote: string | null; forAdmin: boolean;
+  /** A digital marketer's proposed settings, waiting for an admin. */
+  pendingBy: string | null; pendingAt: string | null; pending: { enabled: boolean; runTime: string; everyNDays: number; maxRecipients: number; sendWhatsApp: boolean; sendEmail: boolean } | null;
 }
 interface RunResult { planned: number; sent: number; failed: number; skipped: number; samples: string[]; note: string; }
 interface Consent { optedIn: number; optedOut: number; unknown: number; }
@@ -143,10 +146,17 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
             </details>
           }
 
+          @if (c.pending; as p) {
+            <div class="notice proposal">
+              <strong>Waiting for approval:</strong> {{ c.pendingBy }} proposes {{ p.enabled ? 'ON' : 'OFF' }} at {{ p.runTime }}, every {{ p.everyNDays }} day(s), up to {{ p.maxRecipients }} customers, by {{ p.sendWhatsApp && p.sendEmail ? 'WhatsApp and email' : p.sendWhatsApp ? 'WhatsApp' : 'email' }}.
+              @if (auth.isAdmin()) { <span class="inline"><button type="button" class="btn btn-sm btn-primary" [disabled]="busy()" (click)="decide(c, true)">Approve</button><button type="button" class="btn btn-sm" [disabled]="busy()" (click)="decide(c, false)">Reject</button></span> }
+            </div>
+          }
+
           <div class="actions">
-            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="save(c)">Save</button>
+            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="save(c)">{{ auth.isMarketer() ? 'Send for approval' : 'Save' }}</button>
             <button type="button" class="btn" [disabled]="busy()" (click)="preview(c)">Show me today's messages</button>
-            <button type="button" class="btn" [disabled]="busy()" (click)="runNow(c)">Run now</button>
+            @if (auth.isAdmin()) { <button type="button" class="btn" [disabled]="busy()" (click)="runNow(c)">Run now</button> }
             @if (c.lastRunNote) { <span class="muted sm">Last run {{ c.lastRunAt ? (c.lastRunAt | stampTime) : '' }}: {{ c.lastRunNote }}</span> }
           </div>
 
@@ -192,6 +202,7 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
     .bar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; text-align: center; } .bar span { display: block; background: var(--brand); border-radius: 2px 2px 0 0; min-height: 1px; }
     .bar small { font-size: .62rem; color: var(--muted, #777); height: .9rem; } .btn-sm { padding: .15rem .55rem; font-size: .78rem; }
     section.flash { outline: 3px solid var(--brand); }
+    .proposal { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin: .6rem 0; }
     .pill { display: inline-block; padding: .05rem .5rem; border-radius: 99px; background: #dff3e6; font-size: .75rem; } .pill.bad { background: #f8d9d6; } .pill.skip { background: #eee; }
   `,
 })
@@ -199,6 +210,7 @@ export class CampaignsPage implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly toasts = inject(Toasts);
   private readonly confirm = inject(Confirm);
+  protected readonly auth = inject(Auth);
   protected readonly campaigns = signal<Campaign[]>([]);
   protected readonly consent = signal<Consent | null>(null);
   protected readonly log = signal<LogRow[]>([]);
@@ -251,7 +263,17 @@ export class CampaignsPage implements OnInit {
     try {
       const saved = await firstValueFrom(this.http.put<Campaign>(`/api/campaigns/${c.id}`, this.body(c)));
       this.campaigns.update(l => l.map(x => x.id === saved.id ? saved : x));
-      this.toasts.ok(`${saved.name} is ${saved.enabled ? `on — next run ${saved.runTime}` : 'off'}.`);
+      this.toasts.ok(this.auth.isMarketer() ? `Sent to an administrator for approval. ${saved.name} changes once they approve.` : `${saved.name} is ${saved.enabled ? `on — next run ${saved.runTime}` : 'off'}.`);
+    } catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
+  }
+
+  /** An admin approves or rejects a digital marketer's proposed settings. */
+  protected async decide(c: Campaign, approve: boolean) {
+    this.busy.set(true); this.error.set('');
+    try {
+      const saved = await firstValueFrom(this.http.post<Campaign>(`/api/campaigns/${c.id}/${approve ? 'approve' : 'reject'}-change`, {}));
+      this.campaigns.update(l => l.map(x => x.id === saved.id ? saved : x));
+      this.toasts.ok(approve ? `Approved: ${saved.name} is ${saved.enabled ? 'on' : 'off'}.` : 'Proposal rejected.');
     } catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
   }
 

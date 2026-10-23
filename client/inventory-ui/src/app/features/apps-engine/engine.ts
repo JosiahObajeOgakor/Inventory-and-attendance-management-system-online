@@ -73,6 +73,8 @@ interface Option { id: number; name: string; }
             @for (n of nextOf(v.kind, r.status); track n) { <button type="button" class="btn btn-sm" (click)="move(r, n)">Mark {{ n }}</button> }
             @for (a of actionsFor(v.kind, r.status); track a.key) { <button type="button" class="btn btn-sm" [class.btn-primary]="a.primary" [disabled]="busy()" (click)="run(r, a)">{{ a.label }}</button> }
             @for (f of r.flags; track f) { <span class="flag">⚠ {{ f }}</span> }</div>
+          @if (r.status === 'Awaiting approval') { <p class="notice">Waiting for an administrator's approval{{ approvalBy(r) }}. It goes live as soon as they approve it.</p> }
+          @if (rejection(r); as rj) { <p class="notice bad">Rejected by {{ rj.by }}: {{ rj.note }} Change it and try again.</p> }
         }
         <form id="ef" class="form-grid" (ngSubmit)="save()">
           @for (f of v.kind.fields; track f.key) {
@@ -224,6 +226,8 @@ export class EnginePage {
   protected shown(r: RecordRow, f: FieldDef): string { return this.show(r, f); }
   protected tone(k: KindDef, status: string) { return k.statuses.find(s => s.name === status)?.tone ?? 'info'; }
   protected nextOf(k: KindDef, status: string): string[] { return k.statuses.find(s => s.name === status)?.next ?? []; }
+  protected approvalBy(r: RecordRow): string { const p = r.data?.['_approval'] as { by?: string } | undefined; return p?.by ? ` (asked by ${p.by})` : ''; }
+  protected rejection(r: RecordRow): { by: string; note: string } | null { const x = r.data?.['_rejected'] as { by?: string; note?: string } | undefined; return x?.note ? { by: x.by ?? 'an administrator', note: x.note } : null; }
   protected actionsFor(k: KindDef, status: string): ActionDef[] { return (k.actions ?? []).filter(a => !a.inStatuses || a.inStatuses.includes(status)); }
   protected childKinds(k: KindDef): KindDef[] { return this.ov()?.def.kinds.filter(c => c.parent === k.key) ?? []; }
   protected lines(key: string): { productId: number | null; quantity: number; price: number | null }[] { return (this.form[key] ??= []); }
@@ -255,9 +259,9 @@ export class EnginePage {
       if (w === 'product' && this.lookups()['product']) continue;
       try {
         let list: Option[] = [];
-        if (w === 'customer') list = await this.allCustomers();
+        if (w === 'customer') list = await this.api.options('customer');
         else if (w === 'employee') list = (await this.api2.employees()).filter(e => e.isActive).map(e => ({ id: e.id, name: e.fullName }));
-        else if (w === 'product') list = (await this.core.products({ pageSize: 200 })).items.map(p => ({ id: p.id, name: `${p.name} (${p.sku})` }));
+        else if (w === 'product') list = await this.api.options('product');
         else if (w.startsWith('record:')) list = (await this.api.list(o.def.key, w.slice(7))).map(r => ({ id: r.id, name: r.title }));
         this.lookups.update(l => ({ ...l, [w]: list }));
       } catch { /* the list stays empty; the form says so */ }
@@ -265,15 +269,7 @@ export class EnginePage {
   }
 
   /** Every customer (page by page), with the phone so two of the same name can be told apart. */
-  private async allCustomers(): Promise<Option[]> {
-    const out: Option[] = [];
-    for (let page = 1; page <= 50; page++) {
-      const r = await this.core.customers({ page, pageSize: 200 });
-      out.push(...r.items.map(c => ({ id: c.id, name: c.phone ? `${c.name} · ${c.phone}` : c.name })));
-      if (r.items.length < 200 || out.length >= r.total) break;
-    }
-    return out;
-  }
+
 
   // ---- opening, saving
   private blank(k: KindDef): Data {

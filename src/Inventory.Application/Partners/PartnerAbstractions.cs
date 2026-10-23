@@ -14,7 +14,8 @@ public interface IBusinessVerifier
 }
 
 /// <summary>A message for the people who run the business: the admin on WhatsApp, SMS and email, the clerks on email only (a copy).</summary>
-public sealed record StaffAlert(string Subject, string Text, string? Html = null);
+/// <param name="AdminOnly">Only the admin hears (no clerk copy): e.g. something waiting for the admin's approval.</param>
+public sealed record StaffAlert(string Subject, string Text, string? Html = null, bool AdminOnly = false);
 
 /// <summary>A message to a partner: WhatsApp when their chat is open, SMS, and email. Each channel is tried on its own.</summary>
 public sealed record ContactAlert(string Name, string Phone, string? Email, string Subject, string Text);

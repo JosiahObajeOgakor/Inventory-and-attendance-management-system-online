@@ -70,11 +70,15 @@ public sealed class BroadcastQueue(IBusinessDbContext db, IClock clock, IChatSen
         return last.Where(l => l.Last <= cutoff).Select(l => l.Key).ToHashSet();
     }
 
-    public static string Fill(string template, Target t, string? amount = null) =>
-        template.Replace("{name}", string.IsNullOrWhiteSpace(t.Name) ? "there" : t.Name, StringComparison.OrdinalIgnoreCase).Replace("{amount}", amount ?? "", StringComparison.OrdinalIgnoreCase);
+    public static string Fill(string template, Target t, string? amount = null, string? order = null, string? pay = null) =>
+        template.Replace("{name}", string.IsNullOrWhiteSpace(t.Name) ? "there" : t.Name, StringComparison.OrdinalIgnoreCase).Replace("{amount}", amount ?? "", StringComparison.OrdinalIgnoreCase)
+            .Replace("{order}", order ?? "", StringComparison.OrdinalIgnoreCase).Replace("{pay}", pay ?? "", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Writes one pending message per person (skipping anyone already queued under the same key). The dispatcher sends them, inside the allowed hours.</summary>
-    public async Task<int> EnqueueAsync(int recordId, string channel, string? subject, IEnumerable<(Target Who, string Text, string DedupeKey)> items, CancellationToken ct)
+    /// <summary>
+    /// Writes one pending message per person (skipping anyone already queued under the same key). The dispatcher sends them, inside the allowed hours.
+    /// <paramref name="service"/>: messages about the customer's own order, which may reach a customer who never answered the opt-in question (never one who opted out).
+    /// </summary>
+    public async Task<int> EnqueueAsync(int recordId, string channel, string? subject, IEnumerable<(Target Who, string Text, string DedupeKey)> items, CancellationToken ct, bool service = false)
     {
         EnsureChannel(channel);
         var existing = (await db.CampaignRecipients.AsNoTracking().Where(r => r.RecordId == recordId && r.DedupeKey != null).Select(r => r.DedupeKey!).ToListAsync(ct)).ToHashSet();
@@ -85,8 +89,8 @@ public sealed class BroadcastQueue(IBusinessDbContext db, IClock clock, IChatSen
             if (address is null || !existing.Add(key)) continue;
             rows.Add(new CampaignRecipient
             {
-                RecordId = recordId, CustomerId = who.CustomerId, Channel = channel, Address = address, Name = who.Name.Length > 120 ? who.Name[..120] : who.Name, Subject = subject,
-                Message = text.Length > 4000 ? text[..4000] : text, DedupeKey = key, CreatedAt = clock.UtcNow,
+                RecordId = recordId, CustomerId = who.CustomerId > 0 ? who.CustomerId : null, Channel = channel, Address = address, Name = who.Name.Length > 120 ? who.Name[..120] : who.Name, Subject = subject,
+                Message = text.Length > 4000 ? text[..4000] : text, DedupeKey = key, IsService = service, CreatedAt = clock.UtcNow,
             });
         }
         if (rows.Count == 0) return 0;
@@ -124,7 +128,8 @@ public sealed class BroadcastDispatcher(IBusinessDbContext db, IClock clock, ICh
     {
         // STOP or "unsubscribe" may have arrived since this was queued.
         var status = r.CustomerId is int cid ? await db.Customers.AsNoTracking().Where(c => c.Id == cid).Select(c => c.MarketingStatus).FirstOrDefaultAsync(ct) : null;
-        if (status != MarketingStatuses.OptedIn) return (RecipientStatuses.Skipped, "The customer has not opted in, or has opted out.");
+        if (r.IsService ? status == MarketingStatuses.OptedOut : status != MarketingStatuses.OptedIn)
+            return (RecipientStatuses.Skipped, r.IsService ? "The customer has opted out of messages." : "The customer has not opted in, or has opted out.");
         string? unsub = null;
         if (!string.IsNullOrEmpty(Opt.SecretKey) && !string.IsNullOrEmpty(Opt.PublicBaseUrl) && r.CustomerId is int uid) unsub = UnsubscribeLinks.Url(Opt.PublicBaseUrl, Opt.SecretKey, company.Key, uid);
         const string NoUnsub = "Needs Campaigns:SecretKey and a public base URL so every message can carry a working unsubscribe link.";
@@ -172,7 +177,7 @@ public sealed class BroadcastDispatcher(IBusinessDbContext db, IClock clock, ICh
 }
 
 /// <summary>Email, SMS and WhatsApp broadcasts: pick the audience, count it, send it, read the delivery report.</summary>
-public abstract class BroadcastHookBase(string app, string channel, BroadcastQueue queue) : IAppHook
+public abstract class BroadcastHookBase(string app, string channel, BroadcastQueue queue, CampaignIdeas ideas) : IAppHook
 {
     public string App => app;
 
@@ -193,6 +198,16 @@ public abstract class BroadcastHookBase(string app, string channel, BroadcastQue
             var why = await c.Db.CampaignRecipients.AsNoTracking().Where(x => x.RecordId == r.Id && x.Error != null).Select(x => x.Error!).Take(200).ToListAsync(ct);
             return new ActionResultDto($"Delivered: {N(RecipientStatuses.Sent)}\nWaiting to go out: {N(RecipientStatuses.Pending) + N(RecipientStatuses.Sending)}\nNot sent on purpose: {N(RecipientStatuses.Skipped)}\nFailed: {N(RecipientStatuses.Failed)}"
                 + (why.Count > 0 ? "\n\nWhy some were not sent:\n" + string.Join("\n", why.GroupBy(w => w).OrderByDescending(g => g.Count()).Take(3).Select(g => $"{g.Count()} × {g.Key}")) : ""));
+        }
+        if (action == "ai")
+        {
+            var idea = await ideas.DraftAsync(d.Str("focus"), ct);
+            d.Set("message", channel == "SMS" ? idea.Message.Replace("\n• ", "; ").Replace("\n", " ") : idea.Message);
+            if (channel == "Email" && string.IsNullOrWhiteSpace(d.Str("subject"))) d.Set("subject", idea.Title.Length > 78 ? idea.Title[..78] : idea.Title);
+            if (d.Str("audience") is null or "All opted-in customers") d.Set("audience", idea.Audience);
+            d.Set("focus", idea.Focus);
+            r.Data = d.ToJsonString(); r.UpdatedAt = c.Clock.UtcNow;
+            return new ActionResultDto($"Drafted {(idea.ByAi ? "with AI" : "from the vetted wording")} for \"{idea.Focus}\".\nWhy these products: {idea.Why}.\nSuggested audience: {idea.Audience}.\n\nRead it, edit anything you like, then send it. Prices come from the price list.");
         }
         var audience = d.Str("audience") ?? BroadcastQueue.Audiences[0];
         var picked = (d["customers"] as JsonArray)?.Select(x => x is JsonValue v && v.TryGetValue<int>(out var i) ? i : 0).Where(x => x > 0).ToList() ?? [];
@@ -223,9 +238,9 @@ public abstract class BroadcastHookBase(string app, string channel, BroadcastQue
     }
 }
 
-public sealed class EmailMarketingHook(BroadcastQueue q) : BroadcastHookBase("email-marketing", "Email", q);
-public sealed class SmsMarketingHook(BroadcastQueue q) : BroadcastHookBase("sms-marketing", "SMS", q);
-public sealed class WhatsAppMarketingHook(BroadcastQueue q) : BroadcastHookBase("whatsapp", "WhatsApp", q);
+public sealed class EmailMarketingHook(BroadcastQueue q, CampaignIdeas i) : BroadcastHookBase("email-marketing", "Email", q, i);
+public sealed class SmsMarketingHook(BroadcastQueue q, CampaignIdeas i) : BroadcastHookBase("sms-marketing", "SMS", q, i);
+public sealed class WhatsAppMarketingHook(BroadcastQueue q, CampaignIdeas i) : BroadcastHookBase("whatsapp", "WhatsApp", q, i);
 
 /// <summary>The rules behind Marketing Automation: who matches each, and queueing a message to them once.</summary>
 public sealed class AutomationService(IBusinessDbContext db, IClock clock, BroadcastQueue queue)
@@ -233,17 +248,66 @@ public sealed class AutomationService(IBusinessDbContext db, IClock clock, Broad
     public const string First = "A customer buys for the first time";
     public const string Lapsed = "A customer hasn't bought for a while";
     public const string Overdue = "An invoice is overdue";
+    public const string Abandoned = "A payment was started but not completed";
+    public const string Cancelled = "An order was cancelled in the chat";
+    public static readonly string[] Triggers = [Abandoned, Cancelled, First, Lapsed, Overdue];
+    /// <summary>Follow-ups about the customer's own order: allowed for anyone who hasn't opted out (see <see cref="CampaignRecipient.IsService"/>).</summary>
+    public static bool IsService(string? trigger) => trigger is Abandoned or Cancelled;
+    /// <summary>Older than this and the moment has passed: a week-old abandoned payment isn't followed up.</summary>
+    private static readonly TimeSpan LookBack = TimeSpan.FromDays(7);
 
-    /// <summary>Everyone the rule matches today and hasn't already been queued: who, the personalised text and the key that stops a repeat. Only customers who opted in.</summary>
+    /// <summary>Everyone the rule matches now and hasn't already been queued: who, the personalised text and the key that stops a repeat.</summary>
     public async Task<List<(Target Who, string Text, string Key)>> MatchesAsync(AppRecord rule, CancellationToken ct)
     {
-        var d = Dx.Parse(rule.Data); var channel = d.Str("channel") ?? "Email";
+        var d = Dx.Parse(rule.Data); var channel = d.Str("channel") ?? "Email"; var trigger = d.Str("trigger");
         var template = d.Str("message") ?? ""; var days = Math.Max(0, d.Int("days") ?? 30); var today = clock.BusinessToday;
-        var customers = await db.Customers.AsNoTracking().Where(c => c.MarketingStatus == MarketingStatuses.OptedIn && c.CustomerType != CustomerTypes.WalkIn).Select(c => new { c.Id, c.Name, c.Phone, c.Email }).ToListAsync(ct);
+        var service = IsService(trigger);
+        var customers = await db.Customers.AsNoTracking()
+            .Where(c => (service ? c.MarketingStatus != MarketingStatuses.OptedOut : c.MarketingStatus == MarketingStatuses.OptedIn) && (service || c.CustomerType != CustomerTypes.WalkIn))
+            .Select(c => new { c.Id, c.Name, c.Phone, c.Email }).ToListAsync(ct);
         var who = customers.ToDictionary(c => c.Id, c => new Target(c.Id, c.Name, c.Phone, c.Email));
         var found = new List<(Target, string, string)>();
-        switch (d.Str("trigger"))
+        var wait = TimeSpan.FromHours(Math.Clamp(d.Int("hours") ?? 2, 0, 72));
+        var now = clock.UtcNow;
+        switch (trigger)
         {
+            case Abandoned:
+            {
+                // an unpaid payment link or account on a quotation that is still open: the shopper got as far as paying and stopped
+                var links = await (from l in db.PaymentLinks.AsNoTracking()
+                                   join q in db.Quotations.AsNoTracking() on l.DocId equals q.Id
+                                   where l.DocType == "Quotation" && l.Status == PaymentLinkStatuses.Pending && q.Status == QuotationStatuses.Open
+                                         && l.CreatedAt <= now - wait && l.CreatedAt >= now - LookBack
+                                   select new { l.Id, l.DocId, q.CustomerId, q.QuotationNumber, l.Amount, l.Url, l.AccountNumber, l.BankName }).ToListAsync(ct);
+                // a newer link for the same order supersedes an older one: one message per order
+                foreach (var l in links.GroupBy(x => x.DocId).Select(g => g.OrderByDescending(x => x.Id).First()).Where(x => who.ContainsKey(x.CustomerId)))
+                {
+                    var pay = !string.IsNullOrWhiteSpace(l.Url) && l.Url.StartsWith("https://", StringComparison.Ordinal) ? l.Url
+                        : l.AccountNumber is { Length: > 0 } acct ? $"{acct} ({l.BankName})" : "";
+                    found.Add((who[l.CustomerId], BroadcastQueue.Fill(template, who[l.CustomerId], AppHelpers.Naira(l.Amount), l.QuotationNumber, pay), $"abandoned-q{l.DocId}"));
+                }
+                break;
+            }
+            case Cancelled:
+            {
+                var events = await (from e in db.ChatEvents.AsNoTracking()
+                                    join cv in db.ChatConversations.AsNoTracking() on e.ConversationId equals cv.Id
+                                    where e.Kind == ChatEventKinds.Cancelled && e.At <= now - wait && e.At >= now - LookBack
+                                    select new { e.Id, EventCustomer = e.CustomerId, cv.Channel, cv.ExternalId, ConvCustomer = cv.CustomerId }).ToListAsync(ct);
+                var phones = await db.Customers.AsNoTracking().Where(c => c.Phone != null && c.MarketingStatus != MarketingStatuses.OptedOut).Select(c => new { c.Id, c.Phone }).ToListAsync(ct);
+                foreach (var e in events)
+                {
+                    var id = e.EventCustomer ?? e.ConvCustomer
+                             ?? (e.Channel == ChatChannels.WhatsApp ? phones.FirstOrDefault(p => CampaignRunner.ToWhatsAppDigits(p.Phone!) == e.ExternalId)?.Id : null);
+                    Target? t = id is int cid ? who.GetValueOrDefault(cid) : null;
+                    // someone who cancelled on WhatsApp before giving a name has no customer record yet, but their number is known
+                    if (t is null && id is null && e.Channel == ChatChannels.WhatsApp && channel == "WhatsApp") t = new Target(0, "", e.ExternalId, null);
+                    if (t is not null) found.Add((t, BroadcastQueue.Fill(template, t), $"cancel-e{e.Id}"));
+                }
+                // one follow-up per person however many times they cancelled this week
+                found = found.GroupBy(f => BroadcastQueue.AddressFor(channel, f.Item1) ?? f.Item3).Select(g => g.First()).ToList();
+                break;
+            }
             case First:
                 var firsts = await db.Invoices.AsNoTracking().Where(i => i.VoidedAt == null && !i.IsSample).GroupBy(i => i.CustomerId).Select(g => new { g.Key, First = g.Min(i => i.InvoiceDate) }).ToListAsync(ct);
                 foreach (var f in firsts.Where(f => f.First >= today.AddDays(-7) && who.ContainsKey(f.Key))) found.Add((who[f.Key], BroadcastQueue.Fill(template, who[f.Key]), $"first-{f.Key}"));
@@ -266,16 +330,27 @@ public sealed class AutomationService(IBusinessDbContext db, IClock clock, Broad
     {
         var d = Dx.Parse(rule.Data);
         var matches = await MatchesAsync(rule, ct);
-        return matches.Count == 0 ? 0 : await queue.EnqueueAsync(rule.Id, d.Str("channel") ?? "Email", d.Str("subject"), matches, ct);
+        return matches.Count == 0 ? 0 : await queue.EnqueueAsync(rule.Id, d.Str("channel") ?? "Email", d.Str("subject"), matches, ct, IsService(d.Str("trigger")));
     }
 
-    /// <summary>Runs every rule that is On. Used by the hourly schedule.</summary>
+    /// <summary>"HH:mm" Lagos time from the rule's "Send at" field, or null when it goes out as soon as it matches.</summary>
+    public static int? SendAtMinute(AppRecord rule)
+    {
+        var s = Dx.Parse(rule.Data).Str("sendAt");
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        var p = s.Trim().Split(':');
+        return p.Length == 2 && int.TryParse(p[0], out var h) && int.TryParse(p[1], out var m) && h is >= 0 and < 24 && m is >= 0 and < 60 ? h * 60 + m : null;
+    }
+
+    /// <summary>Runs every rule that is On (every few minutes). A rule with a "Send at" time waits until that time of day before queueing anything.</summary>
     public async Task<int> RunAllAsync(CancellationToken ct)
     {
         var total = 0;
+        var minuteNow = CampaignSchedule.LocalNow(clock.UtcNow).Minute;
         foreach (var id in await db.AppRecords.AsNoTracking().Where(r => r.App == "marketing-automation" && r.Kind == "rule" && r.Status == "On").Select(r => r.Id).ToListAsync(ct))
         {
             var rule = await db.AppRecords.SingleAsync(r => r.Id == id, ct);
+            if (SendAtMinute(rule) is int at && minuteNow < at) continue;
             try { total += await RunRuleAsync(rule, ct); }
             catch (BusinessRuleException) { /* the channel isn't set up: leave the rule alone until it is */ }
         }
@@ -291,6 +366,13 @@ public sealed class AutomationHook(AutomationService svc) : IAppHook
     {
         if (data.Str("channel") == "Email" && string.IsNullOrWhiteSpace(data.Str("subject"))) throw new BusinessRuleException("Give the email a subject.");
         if ((data.Int("days") ?? 0) < 0) throw new BusinessRuleException("Days can't be negative.");
+        if ((data.Int("hours") ?? 0) is < 0 or > 72) throw new BusinessRuleException("Wait 0 to 72 hours.");
+        if (data.Str("sendAt") is { Length: > 0 } at)
+        {
+            var p = at.Trim().Split(':');
+            if (p.Length != 2 || !int.TryParse(p[0], out var h) || !int.TryParse(p[1], out var m) || h is < 0 or > 23 || m is < 0 or > 59) throw new BusinessRuleException("Send at must look like 10:00.");
+            if (CampaignSchedule.IsQuietHour(h * 60 + m)) throw new BusinessRuleException("Customers can only be messaged between 07:00 and 20:30.");
+        }
         return Task.CompletedTask;
     }
 

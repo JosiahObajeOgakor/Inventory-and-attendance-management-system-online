@@ -4,6 +4,7 @@ import { RevealDirective } from '../../core/reveal.directive';
 import { Stores as StoreList, waLink } from '../../core/stores';
 import { whatsappHref } from '../../core/whatsapp';
 import { Shop } from '../shop/shop';
+import { Pixels } from '../../core/pixels';
 
 /**
  * "Shop with us": two short questions instead of a wall of products. First, would you like to see what's in stock (to buy or enquire)? Then,
@@ -19,6 +20,7 @@ import { Shop } from '../shop/shop';
 export class StoresSection {
   protected readonly t = inject(I18n).t;
   protected readonly stores = inject(StoreList);
+  private readonly pixels = inject(Pixels);
   protected readonly mainOpen = signal(false);
   /** Back from the AlatPay page (?paid=1). */
   protected readonly backFromPayment = signal(false);
@@ -41,7 +43,7 @@ export class StoresSection {
       };
       follow();
       window.addEventListener('hashchange', follow);
-      if (new URLSearchParams(location.search).get('paid') === '1') { this.backFromPayment.set(true); this.openMain(); }
+      if (new URLSearchParams(location.search).get('paid') === '1') { this.backFromPayment.set(true); this.openMain(); this.pixels.purchase(); }
     });
   }
 

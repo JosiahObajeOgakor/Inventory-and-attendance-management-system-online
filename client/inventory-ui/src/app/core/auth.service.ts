@@ -17,6 +17,8 @@ export class Auth {
   readonly isCeo = computed(() => this.me()?.role === 'ADMIN');
   /** CEO or manager: every management screen and every add/edit. Only the CEO can delete. */
   readonly isAdmin = computed(() => this.me()?.role === 'ADMIN' || this.me()?.role === 'MANAGER');
+  /** Digital marketer: Campaigns, the Marketing apps and the Website only; what they put live waits for an admin's approval. */
+  readonly isMarketer = computed(() => this.me()?.role === 'MARKETER');
   readonly canDelete = this.isCeo;
   readonly roleLabel = computed(() => roleLabel(this.me()?.role));
   /** Accounting, approvals, tax and periods follow the management screens: CEO or manager. */
@@ -66,7 +68,7 @@ export class Auth {
 }
 
 export function roleLabel(role: string | undefined): string {
-  return role === 'ADMIN' ? 'CEO' : role === 'MANAGER' ? 'Manager' : 'Clerk';
+  return role === 'ADMIN' ? 'CEO' : role === 'MANAGER' ? 'Manager' : role === 'MARKETER' ? 'Digital marketer' : 'Clerk';
 }
 
 function storageGet(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }

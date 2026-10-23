@@ -162,7 +162,8 @@ builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPolicy(Policies.Ceo, p => p.RequireRole(RoleNames.Admin))
     .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager))
-    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Clerk));
+    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Clerk))
+    .AddPolicy(Policies.Marketing, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Marketer));
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -211,6 +212,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<CsrfHeaderMiddleware>();
 app.UseMiddleware<MustChangePasswordMiddleware>();
+app.UseMiddleware<MarketerFence>();
 app.UseAuthorization();
 app.MapControllers();
 

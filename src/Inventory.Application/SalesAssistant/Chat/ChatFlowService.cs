@@ -174,10 +174,11 @@ public sealed partial class ChatFlowService(
         t.C.AiCalls = 0;
     }
 
-    private static void Cancel(Turn t)
+    private void Cancel(Turn t)
     {
         var hadAccount = t.C.State == ChatStates.AwaitingPayment;
         var quotation = t.C.QuotationId;
+        if (t.D.Lines.Count > 0 || hadAccount) Track(t, ChatEventKinds.Cancelled, null, quotation?.ToString());
         ResetSale(t);
         if (hadAccount) t.C.QuotationId = quotation;     // keep the link so a transfer already on its way is still matched
         t.Say("cancelled");

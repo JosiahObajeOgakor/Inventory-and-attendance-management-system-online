@@ -12,6 +12,8 @@ public static class Policies
     /// <summary>The CEO only: deleting, clearing history, people and roles.</summary>
     public const string Ceo = "Ceo";
     public const string Staff = "Staff";
+    /// <summary>CEO, manager or digital marketer: Campaigns, the Marketing apps and the Website.</summary>
+    public const string Marketing = "Marketing";
     public const string AuthRateLimit = "auth";
     public const string WhatsAppRateLimit = "whatsapp";
     public const string WebChatRateLimit = "webchat";

@@ -11,7 +11,7 @@ namespace Inventory.Application.AppsEngine;
 /// Stores, checks and lists the records of every record-keeping app, from the app's definition (<see cref="AppCatalog"/>). What a field may hold, which statuses
 /// a record can move between and who may see the app are all decided here, once; an app's own rules live in its <see cref="IAppHook"/>.
 /// </summary>
-public sealed class AppRecordService(IBusinessDbContext db, IClock clock, ICompanyContext company, IEnumerable<IAppHook> hooks)
+public sealed partial class AppRecordService(IBusinessDbContext db, IClock clock, ICompanyContext company, IEnumerable<IAppHook> hooks, Partners.IStaffAlerts? alerts = null)
 {
     private const int Max = 1000;
 
@@ -107,10 +107,13 @@ public sealed class AppRecordService(IBusinessDbContext db, IClock clock, ICompa
         else
         {
             r = await db.AppRecords.SingleOrDefaultAsync(x => x.Id == id && x.App == app && x.Kind == kind, ct) ?? throw new NotFoundException("Record");
+            if (r.Status == AwaitingApproval && IsMarketer(user)) throw new BusinessRuleException("This is waiting for an administrator's approval. Ask them to reject it if you need to change it.");
         }
 
         var data = new JsonObject();
         var before = isNew ? new JsonObject() : Dx.Parse(r.Data);
+        // bookkeeping the engine keeps on a record (approval request, rejection note) isn't a form field: keep it
+        foreach (var (key, value) in before.Where(kv => kv.Key.StartsWith('_')).ToList()) data[key] = value?.DeepClone();
         foreach (var f in k.Fields)
         {
             // Fields the app's own code sets (a signature, an invoice number) are never taken from the form: they keep what they had.
@@ -221,6 +224,7 @@ public sealed class AppRecordService(IBusinessDbContext db, IClock clock, ICompa
         if (r.Status == status) return;
         var cur = k.Statuses.FirstOrDefault(s => s.Name == r.Status);
         if (!k.Statuses.Any(s => s.Name == status) || cur is null || !cur.Next.Contains(status)) throw new BusinessRuleException($"A {k.Label.ToLowerInvariant()} that is {r.Status.ToLowerInvariant()} can't go to {status.ToLowerInvariant()}.");
+        if (NeedsApproval(user, app, status, null)) { await SubmitAsync(d, r, "status", status, user, ct); return; }
         var hook = Hook(app);
         if (hook is not null) await hook.BeforeStatusAsync(Ctx(d, user, baseUrl), r, status, ct);
         var from = r.Status; r.Status = status; r.UpdatedAt = clock.UtcNow;
@@ -236,6 +240,14 @@ public sealed class AppRecordService(IBusinessDbContext db, IClock clock, ICompa
         var def = KindOf(d, r.Kind).Actions?.FirstOrDefault(a => a.Key == action) ?? throw new NotFoundException("Action");
         if (def.InStatuses is { Length: > 0 } && !def.InStatuses.Contains(r.Status)) throw new BusinessRuleException($"That can't be done while it is {r.Status.ToLowerInvariant()}.");
         var hook = Hook(app) ?? throw new BusinessRuleException("This action isn't available.");
+        if (NeedsApproval(user, app, null, action))
+        {
+            // check it would work before bothering the admin (an empty audience, no message), then hand it over
+            if (hook is BroadcastHookBase) await hook.ActionAsync(Ctx(d, user, baseUrl), r, "count", null, ct);
+            if (string.IsNullOrWhiteSpace(Dx.Parse(r.Data).Str("message"))) throw new BusinessRuleException("Write the message first.");
+            await SubmitAsync(d, r, "action", action, user, ct);
+            return new ActionResultDto("Sent to an administrator for approval. It goes out as soon as they approve it, and you'll see it here.");
+        }
         var result = await hook.ActionAsync(Ctx(d, user, baseUrl), r, action, text, ct);
         db.AuditLogs.Add(new AuditLog { UserId = user.Id, UserName = user.FullName, Action = $"{app.ToUpperInvariant()}_{action.ToUpperInvariant()}", Entity = "AppRecord", EntityId = id.ToString(), At = clock.UtcNow, Detail = r.Title });
         await db.SaveChangesAsync(ct);

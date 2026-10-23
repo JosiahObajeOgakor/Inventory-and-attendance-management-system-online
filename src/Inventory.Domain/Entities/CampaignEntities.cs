@@ -52,6 +52,10 @@ public class Campaign
     public string? LastRunNote { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string? UpdatedBy { get; set; }
+    /// <summary>A digital marketer's proposed settings (JSON), waiting for an admin to approve; null when nothing is waiting.</summary>
+    public string? PendingChange { get; set; }
+    public string? PendingBy { get; set; }
+    public DateTime? PendingAt { get; set; }
 }
 
 public static class CampaignMessageStatuses

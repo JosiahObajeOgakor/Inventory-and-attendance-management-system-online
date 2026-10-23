@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Inventory.Api.Controllers;
 
 /// <summary>The public website's content that staff manage: reviews visitors left (approve or reject) and partner logos (shown only with permission).</summary>
-[ApiController, Route("api/website"), Authorize(Policy = Policies.Admin), RequiresNewFeatures(Marketing = true)]
+[ApiController, Route("api/website"), Authorize(Policy = Policies.Marketing), RequiresNewFeatures(Marketing = true)]
 public class WebsiteController(ICurrentUser cu, WebsiteService svc) : AppController(cu)
 {
     [HttpGet("reviews")] public Task<List<ReviewDto>> Reviews([FromQuery] string? status, CancellationToken ct) => svc.ReviewsAsync(string.IsNullOrWhiteSpace(status) ? null : status, ct);

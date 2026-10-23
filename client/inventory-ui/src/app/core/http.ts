@@ -1,6 +1,6 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { Auth } from './auth.service';
 import { MARKETING_APPS } from './product-catalog';
@@ -41,6 +41,22 @@ export const appGuard: CanActivateFn = route => {
 export const adminGuard: CanActivateFn = () => {
   const auth = inject(Auth);
   return auth.isAdmin() ? true : inject(Router).createUrlTree(['/dashboard']);
+};
+
+/** CEO, manager or digital marketer: Campaigns, the Marketing apps and the Website. */
+export const marketingRoleGuard: CanActivateFn = () => {
+  const auth = inject(Auth);
+  return auth.isAdmin() || auth.isMarketer() ? true : inject(Router).createUrlTree(['/dashboard']);
+};
+
+/** A digital marketer stays inside marketing: any other page sends them to Campaigns. (The API enforces the same fence on every endpoint.) */
+export const marketerFenceGuard: CanActivateChildFn = (_route, state) => {
+  const auth = inject(Auth);
+  if (!auth.isMarketer()) return true;
+  const path = state.url.split(/[?#]/)[0];
+  const app = path.startsWith('/apps/') ? path.split('/')[2] : null;
+  const ok = ['/campaigns', '/website', '/appearance'].some(p => path === p || path.startsWith(p + '/')) || (app !== null && MARKETING_APPS.includes(app));
+  return ok ? true : inject(Router).createUrlTree(['/campaigns']);
 };
 
 /** The CEO only (people & roles, clearing history). */

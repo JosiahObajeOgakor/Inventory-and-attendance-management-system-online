@@ -12,15 +12,18 @@ using Microsoft.Extensions.Options;
 namespace Inventory.Api.Controllers;
 
 /// <summary>Switch campaigns on or off, set when they run, look at a sample of what they would say today, run one now, and see exactly what was sent. Administrators only.</summary>
-[ApiController, Route("api/campaigns"), Authorize(Policy = Policies.Admin), RequiresNewFeatures(Marketing = true)]
+[ApiController, Route("api/campaigns"), Authorize(Policy = Policies.Marketing), RequiresNewFeatures(Marketing = true)]
 public class CampaignsController(ICurrentUser cu, CampaignService svc, Inventory.Application.Queries.ChatFunnelQueries funnel) : AppController(cu)
 {
     /// <summary>Who chats, from where, in what language, when, how far they get, and who can be followed up — for targeting the campaigns below.</summary>
     [HttpGet("insights")] public Task<Inventory.Application.Queries.ChatFunnel> Insights([FromQuery] int days, CancellationToken ct) => funnel.GetAsync(days == 0 ? 30 : days, ct);
     [HttpGet] public Task<List<CampaignDto>> List(CancellationToken ct) => svc.ListAsync(ct);
-    [HttpPut("{id:int}")] public Task<CampaignDto> Update(int id, CampaignUpdate u, CancellationToken ct) => svc.UpdateAsync(id, u, Me.FullName, ct);
+    /// <summary>A digital marketer's change is a proposal until an admin approves it; an admin's or manager's takes effect at once.</summary>
+    [HttpPut("{id:int}")] public Task<CampaignDto> Update(int id, CampaignUpdate u, CancellationToken ct) => svc.UpdateAsync(id, u, Me.FullName, ct, Inventory.Application.AppsEngine.AppRecordService.IsMarketer(Me));
+    [HttpPost("{id:int}/approve-change"), Authorize(Policy = Policies.Admin)] public Task<CampaignDto> ApproveChange(int id, CancellationToken ct) => svc.ApproveChangeAsync(id, Me.FullName, ct);
+    [HttpPost("{id:int}/reject-change"), Authorize(Policy = Policies.Admin)] public Task<CampaignDto> RejectChange(int id, CancellationToken ct) => svc.RejectChangeAsync(id, Me.FullName, ct);
     [HttpPost("{id:int}/preview")] public Task<RunResult> Preview(int id, CancellationToken ct) => svc.PreviewAsync(id, ct);
-    [HttpPost("{id:int}/run")] public Task<RunResult> Run(int id, CancellationToken ct) => svc.RunNowAsync(id, Me.FullName, ct);
+    [HttpPost("{id:int}/run"), Authorize(Policy = Policies.Admin)] public Task<RunResult> Run(int id, CancellationToken ct) => svc.RunNowAsync(id, Me.FullName, ct);
     [HttpGet("log")] public Task<List<CampaignMessageDto>> Log([FromQuery] int? campaignId, [FromQuery] int take, CancellationToken ct) => svc.LogAsync(campaignId, take == 0 ? 100 : take, ct);
     [HttpGet("consent")] public Task<ConsentStats> Consent(CancellationToken ct) => svc.StatsAsync(ct);
 }

@@ -1,7 +1,7 @@
 // Shapes returned by the ASP.NET Core API (System.Text.Json, camelCase). Money is a JSON number; DateOnly is "yyyy-MM-dd".
 
 /** ADMIN is the CEO; a MANAGER adds and edits like the CEO but can't delete; a CLERK sells. */
-export type Role = 'ADMIN' | 'MANAGER' | 'CLERK';
+export type Role = 'ADMIN' | 'MANAGER' | 'CLERK' | 'MARKETER';
 
 export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; hasMarketing?: boolean; }
 export interface Me {

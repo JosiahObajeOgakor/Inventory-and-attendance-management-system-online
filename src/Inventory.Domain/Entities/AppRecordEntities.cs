@@ -54,6 +54,8 @@ public class CampaignRecipient
     public string? Error { get; set; }
     /// <summary>Stops the same person being sent the same thing twice by the same rule (e.g. "customer-12:2026-10"). Null for one-off campaigns.</summary>
     public string? DedupeKey { get; set; }
+    /// <summary>About the customer's own order (an unpaid payment, a cancelled order), not an advert: it may go to a customer who never answered the opt-in question, but never to one who opted out.</summary>
+    public bool IsService { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? SentAt { get; set; }
 }

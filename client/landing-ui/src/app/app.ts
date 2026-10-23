@@ -13,6 +13,7 @@ import { Testimonials } from './sections/testimonials/testimonials';
 import { Trade } from './sections/trade/trade';
 import { RevealDirective } from './core/reveal.directive';
 import { whatsappDisplay, whatsappHref } from './core/whatsapp';
+import { Pixels } from './core/pixels';
 
 const BACKYARD_SRC = '/backyard.mp4';
 
@@ -29,6 +30,7 @@ export class App {
   protected readonly year = new Date().getFullYear();
   private readonly stores = inject(Stores);
   protected readonly i18n = inject(I18n);
+  protected readonly pixels = inject(Pixels);
   protected readonly t = this.i18n.t;
   protected readonly langs = LANGS;
   protected readonly main = computed(() => this.stores.find('chewypets') ?? null);

@@ -44,7 +44,12 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
 
     [HttpGet("status"), AllowAnonymous]
     /// <summary>The landing page reads the WhatsApp number from here, so its links go to the number the sales assistant really answers on (the Twilio sandbox on a test machine).</summary>
-    public object Status() => new { configured = true, whatsappNumber = WhatsAppDigits() };
+    public object Status() => new
+    {
+        configured = true, whatsappNumber = WhatsAppDigits(),
+        // ad-platform pixels for the landing page (Tracking:MetaPixelId, GoogleTagId, TikTokPixelId); the page loads them only after the visitor accepts cookies
+        tracking = new { metaPixelId = config["Tracking:MetaPixelId"], googleTagId = config["Tracking:GoogleTagId"], tiktokPixelId = config["Tracking:TikTokPixelId"] },
+    };
 
     private string? WhatsAppDigits()
     {

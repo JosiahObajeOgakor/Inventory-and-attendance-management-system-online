@@ -45,7 +45,7 @@ import { StampTimePipe } from '../../shared/ui';
           <div class="field"><label for="u-u">Username</label><input id="u-u" class="input" formControlName="username" autocapitalize="none" autocomplete="off" /></div>
           <div class="field"><label for="u-p">First password</label><input id="u-p" class="input" type="text" formControlName="password" autocomplete="off" /><span class="hint">They must change it when they first sign in.</span></div>
         }
-        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role"><option value="CLERK">Clerk</option><option value="MANAGER">Manager</option><option value="ADMIN">CEO</option></select>
+        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role"><option value="CLERK">Clerk</option><option value="MARKETER">Digital marketer</option><option value="MANAGER">Manager</option><option value="ADMIN">CEO</option></select>
           <span class="hint">{{ roleHint(form.controls.role.value) }}</span></div>
         <fieldset class="field"><legend class="label">Can open</legend>
           @for (c of companyOptions(); track c.key) { <label class="check"><input type="checkbox" [checked]="hasCompany(c.key)" (change)="toggleCompany(c.key, $any($event.target).checked)" /> {{ c.displayName }}</label> }</fieldset>
@@ -93,6 +93,7 @@ export class UsersPage implements OnInit {
   protected roleHint(role: string) {
     return role === 'ADMIN' ? 'Everything, including deleting records, clearing history and managing people.'
       : role === 'MANAGER' ? 'Supervises clerks. Adds and edits records like the CEO, but cannot delete.'
+      : role === 'MARKETER' ? 'Campaigns, the Marketing apps and the Website only. Anything they send, switch on or publish waits for your approval.'
       : 'Makes sales, quotations and waybills. Cannot add or delete records.';
   }
 

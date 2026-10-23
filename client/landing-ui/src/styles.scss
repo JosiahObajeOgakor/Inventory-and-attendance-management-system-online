@@ -295,3 +295,15 @@ section {
   transition: background 0.15s ease, transform 0.15s ease;
 }
 .photo-card__arrow:hover { background: var(--orange-bright); transform: rotate(45deg); }
+
+// Ad cookies choice (shown only when an ad pixel is set up and the visitor hasn't decided)
+.consent {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 60; max-width: 34rem;
+  display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center;
+  padding: 1rem 1.1rem; border-radius: 16px; background: var(--ink); color: var(--cream);
+  box-shadow: 0 24px 48px -20px rgba(23, 11, 34, .6); font-size: .92rem; line-height: 1.5;
+}
+.consent p { flex: 1 1 16rem; }
+.consent a { color: var(--gold-bright); }
+.consent__actions { display: flex; gap: .6rem; align-items: center; }
+.consent__no { background: none; border: 1px solid rgba(251, 241, 228, .4); color: var(--cream); border-radius: 999px; padding: .6rem 1rem; font: inherit; cursor: pointer; min-height: 44px; }

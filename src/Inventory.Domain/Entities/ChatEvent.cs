@@ -27,6 +27,8 @@ public static class ChatEventKinds
     public const string Sale = "sale";
     /// <summary>The assistant gave up and handed over to a person.</summary>
     public const string Handoff = "handoff";
+    /// <summary>The shopper cancelled an order in the chat (Reference: the quotation id, when there was one). Drives the "order cancelled" follow-up.</summary>
+    public const string Cancelled = "cancelled";
 }
 
 /// <summary>One thing a customer asked the sales assistant for (WhatsApp or website chat). Counted on the dashboard so the owner can see what the channel brings in.</summary>

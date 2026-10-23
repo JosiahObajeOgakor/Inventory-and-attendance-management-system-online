@@ -4,6 +4,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ShopStore, waLink } from '../../core/stores';
 import { Track } from '../../core/track';
+import { Pixels } from '../../core/pixels';
 import { whatsappHref } from '../../core/whatsapp';
 
 /** One product as the shop shows it (GET /api/webchat/products): today's retail price from the stock system; exact counts stay private. */
@@ -30,6 +31,7 @@ export class Shop {
   protected readonly t = inject(I18n).t;
   private readonly http = inject(HttpClient);
   private readonly track = inject(Track);
+  private readonly pixels = inject(Pixels);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
 
   /** Which store; null while the store list is still loading (the landing brand is assumed). */
@@ -137,6 +139,7 @@ export class Shop {
     this.product.set({ ...i, inStock: true, species: null, lifeStage: null, proteinPct: null, fatPct: null, fiberPct: null, moisturePct: null, nutritionSummary: null, description: null, feedingGuide: null });
     this.productError.set('');
     this.productDialog()?.nativeElement.showModal();
+    this.pixels.viewContent(i.name, i.price);
     this.http.get<ShopProduct>(`/api/webchat/products/${i.id}`, { params: { store: this.storeKey() } }).subscribe({
       next: p => this.product.set(p),
       error: () => this.productError.set("We couldn't load the full details just now."),

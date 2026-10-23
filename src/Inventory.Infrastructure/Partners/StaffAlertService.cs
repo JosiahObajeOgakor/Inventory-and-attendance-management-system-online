@@ -31,7 +31,7 @@ public sealed class StaffAlertService(IChatSender whatsApp, ISmsSender sms, IEma
         if (!email.IsConfigured) return;
         var staff = new List<string>();
         if (!string.IsNullOrWhiteSpace(o.AdminEmail)) staff.Add(o.AdminEmail.Trim());
-        foreach (var role in new[] { RoleNames.Clerk, RoleNames.LegacyClerk })
+        foreach (var role in a.AdminOnly ? Array.Empty<string>() : new[] { RoleNames.Clerk, RoleNames.LegacyClerk })
             foreach (var u in await users.GetUsersInRoleAsync(role))
                 if (u.IsActive && u.CanOpen(company.Key) && !string.IsNullOrWhiteSpace(u.Email)) staff.Add(u.Email!.Trim());
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

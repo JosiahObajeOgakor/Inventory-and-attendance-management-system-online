@@ -4,6 +4,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { RevealDirective } from '../../core/reveal.directive';
 import { whatsappHref } from '../../core/whatsapp';
+import { Pixels } from '../../core/pixels';
 
 type StoreChoice = 'chewypets' | 'candid' | 'both';
 const MAX_BYTES = 3_000_000;
@@ -21,6 +22,7 @@ const TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 })
 export class Trade {
   private readonly http = inject(HttpClient);
+  private readonly pixels = inject(Pixels);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('apply');
   protected readonly whatsappApply = whatsappHref('TRADE: I want to register my business for trade prices.');
@@ -71,6 +73,7 @@ export class Trade {
         message = r.message;
       }
       this.done.set(message);
+      this.pixels.lead();
       form.reset(); this.cac.set(null); this.cacInfo.set('');
     } catch (e) {
       const err = e as HttpErrorResponse;

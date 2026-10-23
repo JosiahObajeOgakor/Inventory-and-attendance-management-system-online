@@ -11,13 +11,13 @@ public sealed record CampaignUpdate(bool Enabled, bool SendWhatsApp, bool SendEm
 
 public sealed record CampaignDto(int Id, string Type, string Name, string Description, bool Enabled, bool SendWhatsApp, bool SendEmail, string RunTime, int EveryNDays,
     DateOnly? StartDate, DateOnly? EndDate, int CooldownDays, int MaxRecipients, int ThresholdDays, int FallbackRepurchaseDays, DateOnly? LastRunOn, DateTime? LastRunAt,
-    int LastRunSent, string? LastRunNote, bool ForAdmin);
+    int LastRunSent, string? LastRunNote, bool ForAdmin, string? PendingBy = null, DateTime? PendingAt = null, CampaignUpdate? Pending = null);
 
 public sealed record CampaignMessageDto(long Id, string Campaign, string Customer, string Recipient, string Channel, string Language, string Status, string? Detail, string? Mode, string Text, DateTime At);
 public sealed record ConsentStats(int OptedIn, int OptedOut, int Unknown);
 
 /// <summary>Admin-facing operations on campaigns and the scheduler's "run whatever is due" entry point.</summary>
-public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner, IClock clock, ILogger<CampaignService> log)
+public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner, IClock clock, ILogger<CampaignService> log, Partners.IStaffAlerts? alerts = null)
 {
     private static readonly (string Type, string Name, string Description, int Minute, int Every, int Threshold, bool Whatsapp, bool Email)[] Defaults =
     [
@@ -46,12 +46,49 @@ public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner
         if (missing.Count > 0) await db.SaveChangesAsync(ct);
     }
 
-    public async Task<CampaignDto> UpdateAsync(int id, CampaignUpdate u, string by, CancellationToken ct)
+    /// <param name="needsApproval">A digital marketer's change: checked now, but only saved as a proposal until an admin approves it.</param>
+    public async Task<CampaignDto> UpdateAsync(int id, CampaignUpdate u, string by, CancellationToken ct, bool needsApproval = false)
     {
         var c = await db.Campaigns.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Campaign");
+        if (needsApproval)
+        {
+            Validate(c, u);
+            c.PendingChange = System.Text.Json.JsonSerializer.Serialize(u); c.PendingBy = by; c.PendingAt = clock.UtcNow;
+            db.AuditLogs.Add(new AuditLog { UserName = by, Action = "CAMPAIGN_CHANGE_PROPOSED", Entity = "Campaign", EntityId = c.Id.ToString(), At = clock.UtcNow, Detail = $"{c.Name}: {(u.Enabled ? "on" : "off")} at {u.RunTime}" });
+            await db.SaveChangesAsync(ct);
+            if (alerts is not null)
+                await alerts.TellStaffAsync(new Partners.StaffAlert($"Approval needed — campaign \"{c.Name}\"",
+                    $"📝 APPROVAL NEEDED\n{by} proposes: \"{c.Name}\" {(u.Enabled ? "ON" : "OFF")} at {u.RunTime} every {u.EveryNDays} day(s), up to {u.MaxRecipients} customers.\nApprove or reject in Inventory → Approvals.", AdminOnly: true), ct);
+            return ToDto(c);
+        }
+        return await ApplyAsync(c, u, by, ct);
+    }
+
+    /// <summary>An admin accepts a marketer's proposed settings: they take effect exactly as proposed.</summary>
+    public async Task<CampaignDto> ApproveChangeAsync(int id, string by, CancellationToken ct)
+    {
+        var c = await db.Campaigns.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Campaign");
+        var u = c.PendingChange is null ? null : System.Text.Json.JsonSerializer.Deserialize<CampaignUpdate>(c.PendingChange) ?? throw new BusinessRuleException("Nothing is waiting for approval.");
+        if (u is null) throw new BusinessRuleException("Nothing is waiting for approval.");
+        var proposer = c.PendingBy;
+        c.PendingChange = null; c.PendingBy = null; c.PendingAt = null;
+        return await ApplyAsync(c, u, $"{by} (approved {proposer}'s change)", ct);
+    }
+
+    public async Task<CampaignDto> RejectChangeAsync(int id, string by, CancellationToken ct)
+    {
+        var c = await db.Campaigns.FirstOrDefaultAsync(x => x.Id == id, ct) ?? throw new NotFoundException("Campaign");
+        if (c.PendingChange is null) throw new BusinessRuleException("Nothing is waiting for approval.");
+        db.AuditLogs.Add(new AuditLog { UserName = by, Action = "CAMPAIGN_CHANGE_REJECTED", Entity = "Campaign", EntityId = c.Id.ToString(), At = clock.UtcNow, Detail = $"{c.Name}: proposed by {c.PendingBy}" });
+        c.PendingChange = null; c.PendingBy = null; c.PendingAt = null;
+        await db.SaveChangesAsync(ct);
+        return ToDto(c);
+    }
+
+    private static void Validate(Campaign c, CampaignUpdate u)
+    {
         var minute = ParseTime(u.RunTime);
-        var admin = c.Type == CampaignTypes.AdminRestock;
-        if (!admin && CampaignSchedule.IsQuietHour(minute)) throw new BusinessRuleException("Customers can only be messaged between 07:00 and 20:30.");
+        if (c.Type != CampaignTypes.AdminRestock && CampaignSchedule.IsQuietHour(minute)) throw new BusinessRuleException("Customers can only be messaged between 07:00 and 20:30.");
         if (u.EveryNDays is < 1 or > 60) throw new BusinessRuleException("Run every 1 to 60 days.");
         if (u.CooldownDays is < 0 or > 60) throw new BusinessRuleException("Cooldown must be 0 to 60 days.");
         if (u.MaxRecipients is < 1 or > 1000) throw new BusinessRuleException("Most customers per run must be 1 to 1000.");
@@ -59,6 +96,12 @@ public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner
         if (u.FallbackRepurchaseDays is < 3 or > 120) throw new BusinessRuleException("Default repurchase interval must be 3 to 120 days.");
         if (u.StartDate is { } s && u.EndDate is { } e && e < s) throw new BusinessRuleException("The end date is before the start date.");
         if (!u.SendWhatsApp && !u.SendEmail) throw new BusinessRuleException("Pick at least one channel.");
+    }
+
+    private async Task<CampaignDto> ApplyAsync(Campaign c, CampaignUpdate u, string by, CancellationToken ct)
+    {
+        Validate(c, u);
+        var minute = ParseTime(u.RunTime);
 
         c.Enabled = u.Enabled; c.SendWhatsApp = u.SendWhatsApp; c.SendEmail = u.SendEmail; c.RunMinute = minute; c.EveryNDays = u.EveryNDays; c.StartDate = u.StartDate; c.EndDate = u.EndDate;
         c.CooldownDays = u.CooldownDays; c.MaxRecipients = u.MaxRecipients; c.ThresholdDays = u.ThresholdDays; c.FallbackRepurchaseDays = u.FallbackRepurchaseDays;
@@ -136,5 +179,6 @@ public sealed class CampaignService(IBusinessDbContext db, CampaignRunner runner
     }
 
     private static CampaignDto ToDto(Campaign c) => new(c.Id, c.Type, c.Name, Describe(c.Type), c.Enabled, c.SendWhatsApp, c.SendEmail, CampaignSchedule.Describe(c.RunMinute), c.EveryNDays,
-        c.StartDate, c.EndDate, c.CooldownDays, c.MaxRecipients, c.ThresholdDays, c.FallbackRepurchaseDays, c.LastRunOn, c.LastRunAt, c.LastRunSent, c.LastRunNote, c.Type == CampaignTypes.AdminRestock);
+        c.StartDate, c.EndDate, c.CooldownDays, c.MaxRecipients, c.ThresholdDays, c.FallbackRepurchaseDays, c.LastRunOn, c.LastRunAt, c.LastRunSent, c.LastRunNote, c.Type == CampaignTypes.AdminRestock,
+        c.PendingBy, c.PendingAt, c.PendingChange is null ? null : System.Text.Json.JsonSerializer.Deserialize<CampaignUpdate>(c.PendingChange));
 }

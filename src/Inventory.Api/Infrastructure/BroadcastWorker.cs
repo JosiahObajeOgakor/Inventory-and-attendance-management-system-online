@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Inventory.Api.Infrastructure;
 
 /// <summary>
-/// Sends the queued email, SMS and WhatsApp broadcasts a few at a time (never in quiet hours), and once an hour checks every Marketing Automation rule that is
+/// Sends the queued email, SMS and WhatsApp broadcasts a few at a time (never in quiet hours), and every 5 minutes checks every Marketing Automation rule that is
 /// switched on. Follows the Campaigns switch: <c>Campaigns:SchedulerEnabled=false</c> stops it too.
 /// </summary>
 public sealed class BroadcastWorker(IServiceProvider services, CompanyRegistry registry, IOptions<CampaignOptions> options, ILogger<BroadcastWorker> log) : BackgroundService
@@ -21,7 +21,7 @@ public sealed class BroadcastWorker(IServiceProvider services, CompanyRegistry r
             var tick = 0;
             do
             {
-                var rules = tick++ % 120 == 0;                          // every hour
+                var rules = tick++ % 10 == 0;                           // every 5 minutes: an abandoned payment is chased while the shopper still cares
                 foreach (var company in registry.All.Where(c => c.HasNewFeatures || c.HasMarketing))
                 {
                     try
