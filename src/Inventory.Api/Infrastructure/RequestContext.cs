@@ -10,6 +10,8 @@ public static class AppClaims
     public const string Company = "company";
     public const string FullName = "full_name";
     public const string Branch = "branch";
+    /// <summary>One claim per permission the user's roles grant (Inventory.Domain.Permissions codes).</summary>
+    public const string Permission = "perm";
 }
 
 /// <summary>The company the signed-in user opened. Comes from the auth cookie, never from a request parameter.</summary>
@@ -52,7 +54,8 @@ public sealed class HttpCurrentUser(IHttpContextAccessor http) : ICurrentUser
             var id = p.FindFirstValue(ClaimTypes.NameIdentifier);
             return int.TryParse(id, out var n)
                 ? new CurrentUser(n, p.FindFirstValue(AppClaims.FullName) ?? p.Identity.Name ?? "", p.FindFirstValue(ClaimTypes.Role) ?? "",
-                    int.TryParse(p.FindFirstValue(AppClaims.Branch), out var branch) ? branch : null)
+                    int.TryParse(p.FindFirstValue(AppClaims.Branch), out var branch) ? branch : null,
+                    p.FindAll(AppClaims.Permission).Select(c => c.Value).ToHashSet())
                 : null;
         }
     }

@@ -11,7 +11,7 @@ public sealed record MatchRequest(long GlLineId);
 public sealed record CompleteRequest(DateOnly StatementDate, decimal StatementBalance);
 
 /// <summary>Bank accounts, statement import, matching and reconciliation.</summary>
-[ApiController, Route("api/banking"), ServiceFilter(typeof(LedgerSyncFilter)), Authorize(Policy = Policies.Admin), RequiresNewFeatures]
+[ApiController, Route("api/banking"), ServiceFilter(typeof(LedgerSyncFilter)), Authorize(Policy = Perm.BankReconcile), RequiresNewFeatures]
 public class BankingController(ICurrentUser cu, BankReconciliationService svc) : AppController(cu)
 {
     [HttpGet("accounts")]

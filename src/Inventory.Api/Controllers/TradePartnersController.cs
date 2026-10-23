@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Inventory.Api.Controllers;
 
 /// <summary>Managers review trade applications (with the CAC check and the uploaded documents), approve at a tier, reject, suspend, reinstate or delete.</summary>
-[ApiController, Route("api/trade-partners"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/trade-partners"), Authorize(Policy = Perm.PartnersManage)]
 public class TradePartnersController(ICurrentUser cu, TradePartnerService svc) : AppController(cu)
 {
     [HttpGet] public Task<List<TradePartnerDto>> List([FromQuery] string? status, CancellationToken ct) => svc.ListAsync(string.IsNullOrWhiteSpace(status) ? null : status, ct);

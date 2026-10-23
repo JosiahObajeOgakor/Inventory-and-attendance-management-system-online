@@ -71,6 +71,19 @@ public sealed class DatabaseProvisioner(CompanyRegistry registry, IServiceProvid
             var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
             foreach (var r in RoleNames.All)
                 if (!await roles.RoleExistsAsync(r)) await roles.CreateAsync(new IdentityRole<int>(r));
+            // A role gets its starting permissions once (while it has none); after that it belongs to the CEO. ADMIN also picks up permissions added
+            // in later releases, so an upgrade never locks the owner out of a new feature. Roles kept from the old system follow their modern twin.
+            var templates = RoleTemplates.All.Concat([new(RoleNames.LegacyAdmin, RoleTemplates.All[RoleNames.Admin]), new(RoleNames.LegacyClerk, RoleTemplates.All[RoleNames.Clerk])]);
+            var seeded = new HashSet<int>();
+            foreach (var (name, grants) in templates)
+            {
+                // role names match regardless of case ("Admin" is ADMIN): each role is seeded once
+                if (await roles.FindByNameAsync(name) is not { } role || !seeded.Add(role.Id)) continue;
+                var have = await store.RolePermissions.Where(p => p.RoleId == role.Id).Select(p => p.Permission).ToListAsync(ct);
+                var add = have.Count == 0 ? grants : name is RoleNames.Admin or RoleNames.LegacyAdmin ? Permissions.All.Except(have).ToArray() : [];
+                foreach (var p in add.Distinct()) store.RolePermissions.Add(new RolePermission { RoleId = role.Id, Permission = p });
+            }
+            await store.SaveChangesAsync(ct);
         }
         foreach (var c in registry.All)
         {

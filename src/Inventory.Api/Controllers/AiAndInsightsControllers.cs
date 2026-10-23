@@ -20,7 +20,7 @@ public sealed record SendQuotationRequest(string? To, string? Note);
 public sealed record SendPriceListRequest(int? CustomerId, string? Tier, string? To, string? Note);
 
 /// <summary>The assistant reads cost, profit and debt, so like the Finance screen it is for administrators only.</summary>
-[ApiController, Route("api/ai"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/ai"), Authorize(Policy = Perm.AiAsk)]
 public class AiController(ICurrentUser cu, AssistantService assistant, InsightService insights) : AppController(cu)
 {
     [HttpGet("status")]
@@ -39,7 +39,7 @@ public sealed record SendAlertsRequest(string? Email, string? WhatsApp);
 /// The daily digest — what has run out, what expires soon, who owes money, and which customers are overdue to buy again. It is sent by itself
 /// each morning; these endpoints are for looking at it now, or having it sent again on demand.
 /// </summary>
-[ApiController, Route("api/alerts"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/alerts"), Authorize(Policy = Perm.AnalyticsView)]
 public class AlertsController(ICurrentUser cu, BusinessAlertService alerts) : AppController(cu)
 {
     [HttpGet]
@@ -50,7 +50,7 @@ public class AlertsController(ICurrentUser cu, BusinessAlertService alerts) : Ap
     public async Task<object> Send(SendAlertsRequest r, CancellationToken ct) => new { message = await alerts.SendAsync(r.Email, r.WhatsApp, ct) };
 }
 
-[ApiController, Route("api/dashboard"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/dashboard"), Authorize(Policy = Perm.AnalyticsView)]
 public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q, ChatInsightsQueries chat) : AppController(cu)
 {
     /// <summary>What the WhatsApp / website sales assistant brought in over the last N days.</summary>
@@ -74,49 +74,49 @@ public class DashboardOverviewController(ICurrentUser cu, OverviewQueries q, Cha
 public class EmailController(ICurrentUser cu, DocumentEmailService svc, IEmailSender sender, DocumentSendService whatsapp) : AppController(cu)
 {
     /// <summary><c>configured</c> = email can be sent; <c>whatsApp</c> = this business's WhatsApp number can send documents.</summary>
-    [HttpGet("status"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("status"), Authorize(Policy = Perm.DocumentsView)]
     public object Status() => new { configured = sender.IsConfigured, whatsApp = whatsapp.WhatsAppReady };
 
     // ---- a sale's receipt, to the customer (anyone who can sell can send it)
-    [HttpPost("receipts/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("receipts/{id:int}/preview"), Authorize(Policy = Perm.DocumentsEmail)]
     public Task<EmailPreview> PreviewReceipt(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewReceiptAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("receipts/{id:int}/send"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("receipts/{id:int}/send"), Authorize(Policy = Perm.DocumentsEmail)]
     public async Task<EmailSent> SendReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendReceiptAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("receipts/{id:int}/whatsapp"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("receipts/{id:int}/whatsapp"), Authorize(Policy = Perm.DocumentsEmail)]
     public async Task<DocumentSent> WhatsAppReceipt(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.ReceiptToWhatsAppAsync(id, r.To, Me, ct);
 
     // ---- a purchase from a supplier's own items, to that supplier
-    [HttpPost("supplies/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("supplies/{id:int}/preview"), Authorize(Policy = Perm.PurchasesView)]
     public Task<EmailPreview> PreviewSupply(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewSupplyAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("supplies/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("supplies/{id:int}/send"), Authorize(Policy = Perm.PurchasesView)]
     public async Task<EmailSent> SendSupply(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendSupplyAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("supplies/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("supplies/{id:int}/whatsapp"), Authorize(Policy = Perm.PurchasesView)]
     public async Task<DocumentSent> WhatsAppSupply(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.SupplyToWhatsAppAsync(id, r.To, Me, ct);
 
     // ---- a purchase order, to the supplier (purchasing is for managers and the CEO)
-    [HttpPost("purchases/{id:int}/preview"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("purchases/{id:int}/preview"), Authorize(Policy = Perm.PurchasesView)]
     public Task<EmailPreview> PreviewPurchase(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewPurchaseAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("purchases/{id:int}/send"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("purchases/{id:int}/send"), Authorize(Policy = Perm.PurchasesView)]
     public async Task<EmailSent> SendPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendPurchaseAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("purchases/{id:int}/whatsapp"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("purchases/{id:int}/whatsapp"), Authorize(Policy = Perm.PurchasesView)]
     public async Task<DocumentSent> WhatsAppPurchase(int id, SendQuotationRequest r, CancellationToken ct) => await whatsapp.PurchaseToWhatsAppAsync(id, r.To, Me, ct);
 
-    [HttpPost("quotations/{id:int}/preview"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("quotations/{id:int}/preview"), Authorize(Policy = Perm.DocumentsEmail)]
     public Task<EmailPreview> PreviewQuotation(int id, SendQuotationRequest r, CancellationToken ct) => svc.PreviewQuotationAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("quotations/{id:int}/send"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("quotations/{id:int}/send"), Authorize(Policy = Perm.DocumentsEmail)]
     public async Task<EmailSent> SendQuotation(int id, SendQuotationRequest r, CancellationToken ct) => await svc.SendQuotationAsync(id, r.To, r.Note, Me, ct);
 
-    [HttpPost("price-list/preview"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("price-list/preview"), Authorize(Policy = Perm.DocumentsEmail)]
     public Task<EmailPreview> PreviewPriceList(SendPriceListRequest r, CancellationToken ct) => svc.PreviewPriceListAsync(r.CustomerId, r.Tier, r.To, r.Note, Me, ct);
 
-    [HttpPost("price-list/send"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("price-list/send"), Authorize(Policy = Perm.DocumentsEmail)]
     public async Task<EmailSent> SendPriceList(SendPriceListRequest r, CancellationToken ct) => await svc.SendPriceListAsync(r.CustomerId, r.Tier, r.To, r.Note, Me, ct);
 }
 
@@ -127,22 +127,22 @@ public sealed record PurchaseAdviceRequest(int SupplierId, List<PurchaseLineIn> 
 [ApiController, Route("api/analytics")]
 public class AnalyticsController(ICurrentUser cu, AnalyticsService svc) : AppController(cu)
 {
-    [HttpGet("forecast"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("forecast"), Authorize(Policy = Perm.AnalyticsView)]
     public Task<List<ForecastRow>> Forecast(CancellationToken ct) => svc.ForecastAsync(ct);
 
-    [HttpGet("sold-together"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("sold-together"), Authorize(Policy = Perm.AnalyticsView)]
     public Task<List<BasketRuleRow>> SoldTogether(CancellationToken ct) => svc.SoldTogetherAsync(ct);
 
-    [HttpGet("unusual"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("unusual"), Authorize(Policy = Perm.AnalyticsView)]
     public Task<List<UnusualRow>> Unusual(CancellationToken ct) => svc.UnusualMovementsAsync(ct);
 
-    [HttpGet("suggested-order/{supplierId:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("suggested-order/{supplierId:int}"), Authorize(Policy = Perm.AnalyticsView)]
     public Task<List<SuggestedLine>> SuggestedOrder(int supplierId, CancellationToken ct) => svc.SuggestOrderAsync(supplierId, ct);
 
-    [HttpPost("sale-advice"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("sale-advice"), Authorize(Policy = Perm.SalesCreate)]
     public Task<List<AdviceLine>> SaleAdvice(SaleAdviceRequest r, CancellationToken ct) => svc.SaleAdviceAsync(r.CustomerId, r.Lines ?? [], ct);
 
-    [HttpPost("purchase-advice"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("purchase-advice"), Authorize(Policy = Perm.AnalyticsView)]
     public Task<List<AdviceLine>> PurchaseAdvice(PurchaseAdviceRequest r, CancellationToken ct) => svc.PurchaseAdviceAsync(r.SupplierId, r.Lines ?? [], ct);
 }
 
@@ -150,7 +150,7 @@ public sealed record ArchiveRequest(DateOnly Cutoff, string Confirm);
 public sealed record ClearHistoryRequest(string[]? What, string Confirm);
 
 /// <summary>Database size and archive. Administrators only; archiving is destructive, so it needs the word ARCHIVE typed and refuses recent dates.</summary>
-[ApiController, Route("api/admin/archive"), Authorize(Policy = Policies.Ceo)]
+[ApiController, Route("api/admin/archive"), Authorize(Policy = Perm.StorageManage)]
 public class ArchiveController(ICurrentUser cu, ArchiveService svc) : AppController(cu)
 {
     [HttpGet("usage")]

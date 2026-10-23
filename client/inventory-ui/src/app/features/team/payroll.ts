@@ -37,7 +37,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
                 @if (!r.paid) {
                   <button type="button" class="btn btn-sm" (click)="openEdit(r)">Edit</button>
                   <button type="button" class="btn btn-sm btn-primary" (click)="pay(r)">Pay</button>
-                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(r)">Remove</button> }
+                  @if (auth.can('payroll.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(r)">Remove</button> }
                 }
               </td>
             </tr>

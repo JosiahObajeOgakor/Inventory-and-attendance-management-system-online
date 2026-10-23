@@ -61,7 +61,7 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
                   <li><button type="button" (click)="chooseCustomer(c)"><span>{{ c.name }}</span><span class="muted">{{ c.customerType }}{{ c.phone ? ' · ' + c.phone : '' }}</span></button></li>
                 }
               </ul>
-              @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="newCustomerOpen.set(true)"><app-icon name="plus" [size]="16" /> New customer</button> }
+              @if (auth.can('customers.create')) { <button type="button" class="btn btn-sm" (click)="newCustomerOpen.set(true)"><app-icon name="plus" [size]="16" /> New customer</button> }
             }
           </section>
 
@@ -184,7 +184,7 @@ const splitSerials = (t: string) => t.split(/[\r\n,;\t]+/).map(x => x.trim()).fi
 
           @if (!quote && !edit) {
           <div class="form-grid one">
-            @if (auth.isAdmin()) {
+            @if (auth.can('sales.edit')) {
               <div class="field"><label for="sd">Sale date</label><input id="sd" class="input" type="date" min="2020-01-01" [max]="today" formControlName="saleDate" />
                 <span class="hint">Leave as today, or pick an earlier date (back to 2020) to record a past sale.</span></div>
             }

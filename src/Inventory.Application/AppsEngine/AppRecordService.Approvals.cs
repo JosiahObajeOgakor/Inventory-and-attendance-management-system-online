@@ -33,10 +33,11 @@ public sealed partial class AppRecordService
         ["surveys"] = (["Open"], []),
     };
 
-    public static bool IsMarketer(CurrentUser u) => u.Role == RoleNames.Marketer;
+    /// <summary>Someone whose role may prepare marketing but not put it live by themselves (no "Publish without approval" permission).</summary>
+    public static bool NeedsApproval(CurrentUser u) => !u.Can(Permissions.MarketingPublish);
 
     private static bool NeedsApproval(CurrentUser user, string app, string? status, string? action) =>
-        IsMarketer(user) && GoLive.TryGetValue(app, out var g) && ((status is not null && g.Statuses.Contains(status)) || (action is not null && g.Actions.Contains(action)));
+        NeedsApproval(user) && GoLive.TryGetValue(app, out var g) && ((status is not null && g.Statuses.Contains(status)) || (action is not null && g.Actions.Contains(action)));
 
     private async Task SubmitAsync(AppDef d, AppRecord r, string kind, string value, CurrentUser user, CancellationToken ct)
     {
@@ -72,7 +73,7 @@ public sealed partial class AppRecordService
     /// <summary>Does what the marketer asked, in the approving admin's name. If it can't be done (nobody reachable any more), the record goes back and the reason is shown.</summary>
     public async Task<ActionResultDto> ApproveAsync(string app, int id, CurrentUser admin, string baseUrl, CancellationToken ct)
     {
-        if (IsMarketer(admin)) throw new ForbiddenActionException("Only an administrator can approve.");
+        if (!admin.Can(Permissions.MarketingApprove)) throw new ForbiddenActionException("Your role can't approve marketing.");
         var (d, r, kind, value) = await PendingAsync(app, id, ct);
         var data = Dx.Parse(r.Data); var from = (data[PendingKey] as JsonObject)?.Str("from") ?? KindOf(d, r.Kind).Statuses[0].Name;
         data.Remove(PendingKey); data["_approvedBy"] = admin.FullName;
@@ -85,7 +86,7 @@ public sealed partial class AppRecordService
 
     public async Task RejectAsync(string app, int id, string? note, CurrentUser admin, CancellationToken ct)
     {
-        if (IsMarketer(admin)) throw new ForbiddenActionException("Only an administrator can reject.");
+        if (!admin.Can(Permissions.MarketingApprove)) throw new ForbiddenActionException("Your role can't approve marketing.");
         var (d, r, kind, value) = await PendingAsync(app, id, ct);
         var data = Dx.Parse(r.Data); var from = (data[PendingKey] as JsonObject)?.Str("from") ?? KindOf(d, r.Kind).Statuses[0].Name;
         data.Remove(PendingKey);

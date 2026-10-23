@@ -13,16 +13,13 @@ export class Auth {
   readonly ready = signal(false);
   /** The business chosen on the sign-in screen (before there is a session). */
   readonly selected = signal<string>(storageGet('company') ?? 'chewypets');
-  /** The CEO (role ADMIN): everything, including deleting records, clearing history and managing people. */
-  readonly isCeo = computed(() => this.me()?.role === 'ADMIN');
-  /** CEO or manager: every management screen and every add/edit. Only the CEO can delete. */
-  readonly isAdmin = computed(() => this.me()?.role === 'ADMIN' || this.me()?.role === 'MANAGER');
-  /** Digital marketer: Campaigns, the Marketing apps and the Website only; what they put live waits for an admin's approval. */
-  readonly isMarketer = computed(() => this.me()?.role === 'MARKETER');
-  readonly canDelete = this.isCeo;
+  /** What the signed-in person's role allows (the CEO ticks these under People & access → Roles; the API enforces the same list). */
+  readonly permissions = computed(() => new Set(this.me()?.permissions ?? []));
   readonly roleLabel = computed(() => roleLabel(this.me()?.role));
-  /** Accounting, approvals, tax and periods follow the management screens: CEO or manager. */
-  can(_permission: string): boolean { return this.isAdmin(); }
+  /** True when the person's role includes this permission (e.g. 'sales.create'). Shapes the screens; the API checks again on every call. */
+  can(permission: string): boolean { return this.permissions().has(permission); }
+  /** Anyone who manages the business (not just a till): they get the session timeout and the live overview. */
+  readonly manages = computed(() => this.can('analytics.view') || this.can('users.manage') || this.can('campaigns.manage') || this.can('finance.view'));
   readonly company = computed(() => this.me()?.company ?? this.selected());
   readonly companyName = computed(() => this.me()?.companies.find(c => c.key === this.company())?.displayName ?? '');
 
@@ -68,7 +65,7 @@ export class Auth {
 }
 
 export function roleLabel(role: string | undefined): string {
-  return role === 'ADMIN' ? 'CEO' : role === 'MANAGER' ? 'Manager' : role === 'MARKETER' ? 'Digital marketer' : 'Clerk';
+  return role === 'ADMIN' ? 'CEO' : role === 'MANAGER' ? 'Manager' : role === 'MARKETER' ? 'Digital marketer' : role === 'CLERK' ? 'Clerk' : role ?? '';
 }
 
 function storageGet(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } }

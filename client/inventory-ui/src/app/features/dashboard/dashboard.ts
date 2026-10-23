@@ -11,7 +11,7 @@ import { AdminDashboard } from './admin-dashboard';
   imports: [RouterLink, NairaPipe, DayPipe, Stamp, AdminDashboard],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (auth.isAdmin()) { <app-admin-dashboard /> } @else {
+    @if (auth.can('analytics.view')) { <app-admin-dashboard /> } @else {
     <div class="page">
       <div class="page-head">
         <h1>Dashboard</h1>
@@ -21,14 +21,14 @@ import { AdminDashboard } from './admin-dashboard';
       @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
 
       @if (d(); as d) {
-        <div class="grid" [class.cols-4]="auth.isAdmin()" [class.cols-3]="!auth.isAdmin()">
+        <div class="grid" [class.cols-4]="auth.can('analytics.view')" [class.cols-3]="!auth.can('analytics.view')">
           <div class="card kpi"><span class="eyebrow">Stock value at cost</span><div class="value money">{{ d.stockValue | naira }}</div></div>
           <div class="card kpi" [class.warn]="d.lowStockCount > 0">
             <span class="eyebrow">Batches at or below reorder level</span>
             <div class="value">{{ d.lowStockCount }}</div>
           </div>
           <div class="card kpi"><span class="eyebrow">Invoices today</span><div class="value">{{ d.todaysInvoices }}</div></div>
-          @if (auth.isAdmin()) {
+          @if (auth.can('analytics.view')) {
             <div class="card kpi">
               <span class="eyebrow">Gross profit this month</span>
               <div class="value money">{{ d.grossProfitThisMonth | naira }}</div>
@@ -101,7 +101,7 @@ export class DashboardPage implements OnInit {
   protected readonly error = signal('');
 
   async ngOnInit() {
-    if (this.auth.isAdmin()) return;   // administrators get the live overview instead
+    if (this.auth.can('analytics.view')) return;   // administrators get the live overview instead
     try { this.d.set(await this.api.dashboard()); } catch (e) { this.error.set(messageOf(e)); }
   }
 }

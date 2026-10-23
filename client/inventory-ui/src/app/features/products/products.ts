@@ -33,18 +33,18 @@ const num = (v: number | null | undefined): string => (v === null || v === undef
         <h1>Products</h1>
         <div class="actions">
           <a class="btn" href="/api/exports/inventory" download><app-icon name="download" [size]="18" /> Excel</a>
-          <button type="button" class="btn" (click)="catalogOpen.set(true)"><app-icon name="file" [size]="18" /> Price list / catalog{{ picked().length ? ' (' + picked().length + ')' : '' }}</button>@if (auth.isAdmin()) { <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> New product</button> }</div>
+          <button type="button" class="btn" (click)="catalogOpen.set(true)"><app-icon name="file" [size]="18" /> Price list / catalog{{ picked().length ? ' (' + picked().length + ')' : '' }}</button>@if (auth.can('products.create')) { <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> New product</button> }</div>
       </div>
 
       <section class="card">
         <div class="toolbar">
           <div class="search grow"><app-icon name="search" [size]="17" />
             <input class="input" type="search" placeholder="Search name, SKU, barcode, category or type" aria-label="Search products" (input)="list.setSearch($any($event.target).value)" /></div>
-          @if (auth.isAdmin()) { <label class="check"><input type="checkbox" (change)="inactive = $any($event.target).checked; list.goTo(1)" /> Show inactive</label> }
+          @if (auth.can('products.edit')) { <label class="check"><input type="checkbox" (change)="inactive = $any($event.target).checked; list.goTo(1)" /> Show inactive</label> }
         </div>
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap"><table class="table">
-          <thead><tr><th class="tick"><span class="sr-only">Choose for the catalog</span></th><th>Product</th><th>Category</th><th class="num">In stock</th><th class="num">Retail</th><th class="num">Wholesale</th><th class="num">Distributor</th>@if (auth.isAdmin()) { <th class="num">Cost</th> }<th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th class="tick"><span class="sr-only">Choose for the catalog</span></th><th>Product</th><th>Category</th><th class="num">In stock</th><th class="num">Retail</th><th class="num">Wholesale</th><th class="num">Distributor</th>@if (auth.can('cost.view')) { <th class="num">Cost</th> }<th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             @for (p of list.items(); track p.id) {
               <tr [class.inactive]="!p.isActive">
@@ -53,12 +53,12 @@ const num = (v: number | null | undefined): string => (v === null || v === undef
                 <td>{{ p.category }}</td>
                 <td class="num mono" [class.low]="p.totalQuantity <= p.reorderLevel">{{ p.totalQuantity }} <span class="muted">{{ p.unit }}</span></td>
                 <td class="num mono">{{ p.priceRetail | naira }}</td><td class="num mono">{{ p.priceWholesaler | naira }}</td><td class="num mono">{{ p.priceDistributor | naira }}</td>
-                @if (auth.isAdmin()) { <td class="num mono muted">{{ p.costPrice | naira }}</td> }
+                @if (auth.can('cost.view')) { <td class="num mono muted">{{ p.costPrice | naira }}</td> }
                 <td class="actions">
-                  @if (auth.isAdmin()) {
+                  @if (auth.can('products.edit')) {
                     <a class="btn btn-sm" [href]="'/api/products/' + p.id + '/label.pdf'" target="_blank" rel="noopener">Label</a>
                     <button type="button" class="btn btn-sm" (click)="openEdit(p)">Edit</button>
-                    @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(p)">Delete</button> }
+                    @if (auth.can('products.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(p)">Delete</button> }
                   }
                 </td>
               </tr>
@@ -76,7 +76,7 @@ const num = (v: number | null | undefined): string => (v === null || v === undef
         <div class="field"><label for="f-name">Name</label><input id="f-name" class="input" formControlName="name" /></div>
         <div class="field"><label for="f-cat">Category</label>
           <div class="inline"><select id="f-cat" class="input" formControlName="categoryId">@for (c of categories(); track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }</select>
-            @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="openCategory()">Add</button> }</div>
+            @if (auth.can('catalog.setup')) { <button type="button" class="btn btn-sm" (click)="openCategory()">Add</button> }</div>
           @if (!categories().length) { <span class="hint">No categories yet. Click <strong>Add</strong> to create one, e.g. “Dog food” or “Cat food”.</span> }</div>
         <div class="field"><label for="f-unit">Sold in</label>
           <select id="f-unit" class="input" formControlName="unit">
@@ -85,11 +85,11 @@ const num = (v: number | null | undefined): string => (v === null || v === undef
         <div class="field"><label for="f-r">Retail price</label><input id="f-r" class="input num" type="number" min="0" step="0.01" formControlName="priceRetail" /></div>
         <div class="field"><label for="f-w">Wholesale price</label><input id="f-w" class="input num" type="number" min="0" step="0.01" formControlName="priceWholesaler" /></div>
         <div class="field"><label for="f-d">Distributor price</label><input id="f-d" class="input num" type="number" min="0" step="0.01" formControlName="priceDistributor" /></div>
-        @if (auth.isAdmin()) { <div class="field"><label for="f-c">Cost price</label><input id="f-c" class="input num" type="number" min="0" step="0.01" formControlName="costPrice" /></div> }
+        @if (auth.can('cost.view')) { <div class="field"><label for="f-c">Cost price</label><input id="f-c" class="input num" type="number" min="0" step="0.01" formControlName="costPrice" /></div> }
         <div class="field"><label for="f-ro">Reorder when stock reaches</label><input id="f-ro" class="input num" type="number" min="0" formControlName="reorderLevel" /></div>
         <div class="field"><label for="f-bc">Barcode</label><input id="f-bc" class="input mono" formControlName="barcode" /><span class="hint">Leave blank and one is made for you.</span></div>
 
-        @if (auth.isAdmin() && suppliers().length) {
+        @if (auth.can('suppliers.manage') && suppliers().length) {
           <div class="field span-2"><span class="label">Supplied by</span>
             <div class="sup">
               @for (s of suppliers(); track s.id) {
@@ -117,7 +117,7 @@ const num = (v: number | null | undefined): string => (v === null || v === undef
               @if (!photoMissing()) { <img [src]="'/api/products/' + e.id + '/image?v=' + photoStamp()" alt="" (error)="photoMissing.set(true)" (load)="photoMissing.set(false)" /> }
               @else { <span class="no-photo">No photo yet</span> }
               <label class="btn btn-sm">{{ photoMissing() ? 'Add photo' : 'Change photo' }}<input type="file" accept="image/png,image/jpeg" hidden (change)="upload(e, $any($event.target))" /></label>
-              @if (!photoMissing() && auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="removePhoto(e)">Remove</button> }
+              @if (!photoMissing() && auth.can('products.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="removePhoto(e)">Remove</button> }
             </div><span class="hint">PNG or JPEG, up to 2 MB. A square photo on a plain background looks best.</span></div>
         }
         @if (!editing()) {
@@ -210,7 +210,7 @@ export class ProductsPage implements OnInit {
     void this.list.load();
     void this.api.categories().then(c => this.categories.set(c));
     void this.api.warehouses().then(w => this.warehouses.set(w));
-    if (this.auth.isAdmin()) void this.api.suppliers({ pageSize: 200 }).then(s => this.suppliers.set(s.items), () => { /* the picker just isn't shown */ });
+    if (this.auth.can('suppliers.manage')) void this.api.suppliers({ pageSize: 200 }).then(s => this.suppliers.set(s.items), () => { /* the picker just isn't shown */ });
   }
 
   // ---- who supplies the product (puts it on those suppliers' item lists)
@@ -232,7 +232,7 @@ export class ProductsPage implements OnInit {
   protected openEdit(p: Product) {
     this.editing.set(p); this.photoMissing.set(false); this.photoStamp.set(Date.now());
     this.supplierIds.set([]); this.suppliersKnown = false;
-    if (this.auth.isAdmin()) void this.api2.productSuppliers(p.id).then(xs => {
+    if (this.auth.can('suppliers.manage')) void this.api2.productSuppliers(p.id).then(xs => {
       if (this.editing()?.id === p.id) { this.supplierIds.set(xs.map(x => x.supplierId)); this.suppliersKnown = true; }
     }, () => { /* links stay as they are */ });
     this.form.patchValue({ sku: p.sku, name: p.name, categoryId: p.categoryId, unit: p.unit, reorderLevel: p.reorderLevel, costPrice: p.costPrice ?? 0,
@@ -272,7 +272,7 @@ export class ProductsPage implements OnInit {
       tracksSerial: this.editing()?.tracksSerial ?? false,
       description: v.description.trim() || null, species: v.species || null, lifeStage: v.lifeStage || null, proteinPct: pct(v.proteinPct), fatPct: pct(v.fatPct),
       fiberPct: pct(v.fiberPct), moisturePct: pct(v.moisturePct), nutritionSummary: v.nutritionSummary.trim() || null, feedingGuide: v.feedingGuide.trim() || null,
-      supplierIds: this.auth.isAdmin() && this.suppliersKnown && this.suppliers().length ? this.supplierIds() : null,
+      supplierIds: this.auth.can('suppliers.manage') && this.suppliersKnown && this.suppliers().length ? this.supplierIds() : null,
     };
     this.busy.set(true);
     try {

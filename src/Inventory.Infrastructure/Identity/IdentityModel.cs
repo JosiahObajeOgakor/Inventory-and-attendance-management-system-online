@@ -40,12 +40,24 @@ public class UserBranch
     public int BranchId { get; set; }
 }
 
+/// <summary>One permission granted by one role. Seeded from Inventory.Domain.RoleTemplates; after that the CEO decides what each role may do.</summary>
+public class RolePermission
+{
+    public int RoleId { get; set; }
+    public string Permission { get; set; } = "";
+}
+
 public class IdentityStore(DbContextOptions<IdentityStore> options)
     : IdentityDbContext<AppUser, IdentityRole<int>, int>(options)
 {
     public DbSet<LoginAuditEntry> LoginAudit => Set<LoginAuditEntry>();
     public DbSet<Inventory.Infrastructure.Ai.AiUsageEntry> AiUsage => Set<Inventory.Infrastructure.Ai.AiUsageEntry>();
     public DbSet<UserBranch> UserBranches => Set<UserBranch>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+
+    /// <summary>Every permission the user's roles grant, for the sign-in cookie.</summary>
+    public async Task<IReadOnlyList<string>> PermissionsForAsync(int userId, CancellationToken ct = default) =>
+        await (from ur in UserRoles join rp in RolePermissions on ur.RoleId equals rp.RoleId where ur.UserId == userId select rp.Permission).Distinct().ToListAsync(ct);
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -63,6 +75,13 @@ public class IdentityStore(DbContextOptions<IdentityStore> options)
             e.ToTable("ai_usage");
             e.Property(x => x.AtUtc).HasPrecision(6);
             e.HasIndex(x => new { x.UserId, x.AtUtc });
+        });
+        b.Entity<RolePermission>(e =>
+        {
+            e.ToTable("role_permissions");
+            e.HasKey(x => new { x.RoleId, x.Permission });
+            e.Property(x => x.Permission).HasMaxLength(60);
+            e.HasOne<IdentityRole<int>>().WithMany().HasForeignKey(x => x.RoleId).OnDelete(DeleteBehavior.Cascade);
         });
         b.Entity<UserBranch>(e =>
         {

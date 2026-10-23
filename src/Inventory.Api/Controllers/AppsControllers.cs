@@ -5,6 +5,7 @@ using Inventory.Application.TimeOff;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Inventory.Domain;
 
 namespace Inventory.Api.Controllers;
 
@@ -14,27 +15,28 @@ public sealed record StatusRequest(string Status);
 /// The record-keeping apps this business has bought (Sign, Events, Fleet…): one set of endpoints, driven by each app's definition. Administrators only
 /// (this installation has two roles), and only for apps listed in <see cref="AppAccess"/>.
 /// </summary>
-[ApiController, Route("api/apps"), Authorize(Policy = Policies.Marketing)]
+/// <remarks>Each app has its own permission (Inventory.Domain.Permissions.ForApp), checked in <see cref="Refuse"/>.</remarks>
+[ApiController, Route("api/apps"), Authorize]
 public class AppsRecordsController(ICurrentUser cu, AppRecordService svc, ICompanyContext company, AppAccess access, FiguresService figures, IBusinessDbContext db) : AppController(cu)
 {
     private string BaseUrl => $"{Request.Scheme}://{Request.Host}/api/site/{company.Key}";
-    private bool Marketer => AppRecordService.IsMarketer(Me);
+    private bool CanUse(string app) => Permissions.ForApp.TryGetValue(app, out var p) && Me.Can(p);
 
-    /// <summary>Null when the app is part of this installation (and, for a digital marketer, is a Marketing app); otherwise the refusal to send back.</summary>
+    /// <summary>Null when the app is part of this installation and the user's role may use it; otherwise the refusal to send back.</summary>
     private IActionResult? Refuse(string app)
     {
         AppRecordService.Def(app);   // not one of the apps at all: 404
-        if (Marketer && !AppAccess.Marketing.Contains(app)) return StatusCode(403, new ProblemDetails { Status = 403, Title = "Your login is for marketing only." });
+        if (!CanUse(app)) return StatusCode(403, new ProblemDetails { Status = 403, Title = "Your role doesn't include this app.", Detail = "Ask the CEO to switch it on under People & access → Roles." });
         return access.For(company.HasNewFeatures, company.HasMarketing).IsEnabled(app) ? null : StatusCode(403, new ProblemDetails { Status = 403, Title = "This app isn't part of your plan.", Detail = "Ask SpringUpTech to add it." });
     }
 
     /// <summary>The apps switched on here, for the menu (a digital marketer sees the Marketing apps only).</summary>
     [HttpGet("enabled")]
-    public IActionResult Enabled() => Ok(access.For(company.HasNewFeatures, company.HasMarketing).Enabled.Where(a => !Marketer || AppAccess.Marketing.Contains(a)));
+    public IActionResult Enabled() => Ok(access.For(company.HasNewFeatures, company.HasMarketing).Enabled.Where(CanUse));
 
     /// <summary>Names to pick from in a form (customers for a broadcast, products for a post): id and name only, never balances, prices or costs.</summary>
     [HttpGet("options/{kind}")]
-    public async Task<IActionResult> Options(string kind, CancellationToken ct) => kind switch
+    public async Task<IActionResult> Options(string kind, CancellationToken ct) => !Permissions.ForApp.Values.Any(Me.Can) ? Forbid() : kind switch
     {
         "customer" => Ok(await db.Customers.AsNoTracking().OrderBy(c => c.Name).Take(5000)
             .Select(c => new { c.Id, Name = c.Phone != null && c.Phone.Length > 4 ? c.Name + " · …" + c.Phone.Substring(c.Phone.Length - 4) : c.Name, c.MarketingStatus }).ToListAsync(ct)),
@@ -43,13 +45,13 @@ public class AppsRecordsController(ICurrentUser cu, AppRecordService svc, ICompa
     };
 
     /// <summary>What digital marketers have asked to put live, waiting for an admin.</summary>
-    [HttpGet("approvals"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("approvals"), Authorize(Policy = Perm.MarketingApprove)]
     public Task<List<ApprovalDto>> Approvals(CancellationToken ct) => svc.ApprovalsAsync(ct);
 
-    [HttpPost("{app}/records/{id:int}/approve"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("{app}/records/{id:int}/approve"), Authorize(Policy = Perm.MarketingApprove)]
     public async Task<IActionResult> Approve(string app, int id, CancellationToken ct) => Refuse(app) ?? Ok(await svc.ApproveAsync(app, id, Me, BaseUrl, ct));
 
-    [HttpPost("{app}/records/{id:int}/reject"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("{app}/records/{id:int}/reject"), Authorize(Policy = Perm.MarketingApprove)]
     public async Task<IActionResult> Reject(string app, int id, ActionInput input, CancellationToken ct)
     {
         if (Refuse(app) is { } no) return no;
@@ -101,7 +103,7 @@ public class AppsRecordsController(ICurrentUser cu, AppRecordService svc, ICompa
 }
 
 /// <summary>Time Off: leave types, requests, approval and balances.</summary>
-[ApiController, Route("api/time-off"), Authorize(Policy = Policies.Admin), RequiresNewFeatures]
+[ApiController, Route("api/time-off"), Authorize(Policy = Perm.TimeOffManage), RequiresNewFeatures]
 public class TimeOffController(ICurrentUser cu, TimeOffService svc, AppAccess access) : AppController(cu)
 {
     private IActionResult? Refuse() => access.IsEnabled("time-off") ? null : StatusCode(403, new ProblemDetails { Status = 403, Title = "Time Off isn't part of your plan.", Detail = "Ask SpringUpTech to add it." });

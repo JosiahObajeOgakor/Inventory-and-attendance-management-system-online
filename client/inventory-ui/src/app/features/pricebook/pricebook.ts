@@ -34,7 +34,7 @@ function adjusted(price: number, pct: number, step: number): number {
           <select class="input tier" aria-label="Price list to print" [ngModel]="pdfTier()" (ngModelChange)="pdfTier.set($event)"><option>Retailer</option><option>Wholesaler</option><option>Distributor</option></select>
           <a class="btn" [href]="'/api/price-list.pdf?tier=' + pdfTier()" target="_blank" rel="noopener"><app-icon name="download" [size]="18" /> Download PDF</a>
           <button type="button" class="btn" (click)="emailOpen.set(true)"><app-icon name="arrow" [size]="18" /> Email price list</button>
-          @if (auth.isAdmin()) { <button type="button" class="btn btn-primary" (click)="openAdd()"><app-icon name="plus" [size]="18" /> Add products</button> }
+          @if (auth.can('pricebook.edit')) { <button type="button" class="btn btn-primary" (click)="openAdd()"><app-icon name="plus" [size]="18" /> Add products</button> }
         </div>
       </div>
       @if (data(); as d) {
@@ -43,14 +43,14 @@ function adjusted(price: number, pct: number, step: number): number {
 
       <div class="tabs" role="tablist">
         <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'prices'" (click)="tab.set('prices')">Current prices</button>
-        @if (auth.isAdmin()) { <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'history'" (click)="openHistory()">History</button> }
+        @if (auth.can('pricebook.edit')) { <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'history'" (click)="openHistory()">History</button> }
       </div>
 
       @if (tab() === 'prices') {
         <section class="card">
           <div class="toolbar">
             <div class="search grow"><app-icon name="search" [size]="17" /><input class="input" type="search" placeholder="Search product, code or category" aria-label="Search price book" (input)="onSearch($any($event.target).value)" /></div>
-            @if (auth.isAdmin()) {
+            @if (auth.can('pricebook.edit')) {
               <div class="bulk">
                 <label class="lab" for="bp">Move every price by</label>
                 <input id="bp" class="input num pct" type="number" step="0.5" [ngModel]="pct()" (ngModelChange)="pct.set($event)" /> %
@@ -68,7 +68,7 @@ function adjusted(price: number, pct: number, step: number): number {
                 @let e = edits()[p.productId];
                 <tr [class.changed]="!!e">
                   <td><span class="strong">{{ p.product }}</span><div class="muted mono sm">{{ p.sku }}</div></td><td>{{ p.category }}</td>
-                  @if (auth.isAdmin()) {
+                  @if (auth.can('pricebook.edit')) {
                     <td class="num"><input class="input num cell" type="number" min="0" step="0.01" [value]="e?.d ?? p.distributor" [attr.aria-label]="'Distributor price of ' + p.product" (input)="edit(p, 'd', $any($event.target).value)" /></td>
                     <td class="num"><input class="input num cell" type="number" min="0" step="0.01" [value]="e?.w ?? p.wholesaler" [attr.aria-label]="'Wholesaler price of ' + p.product" (input)="edit(p, 'w', $any($event.target).value)" /></td>
                     <td class="num"><input class="input num cell" type="number" min="0" step="0.01" [value]="e?.r ?? p.retail" [attr.aria-label]="'Retail price of ' + p.product" (input)="edit(p, 'r', $any($event.target).value)" /></td>

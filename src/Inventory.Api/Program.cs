@@ -133,14 +133,17 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(o =>
     .AddPasswordValidator<DesktopPasswordPolicy>()
     .AddDefaultTokenProviders();   // needed for admin password resets
 builder.Services.AddScoped<IPasswordHasher<AppUser>, LegacyAwarePasswordHasher>();
+builder.Services.AddScoped<IUserClaimsPrincipalFactory<AppUser>, AppClaimsFactory>();
 // A role the CEO grants or revokes (e.g. manager delegated to a clerk and taken back) reaches that person's session within a minute.
 builder.Services.Configure<SecurityStampValidatorOptions>(o =>
 {
     o.ValidationInterval = TimeSpan.FromMinutes(1);
-    // The refresh rebuilds the principal from the user store (fresh roles); carry over the claims we add at sign-in.
+    // The refresh rebuilds the principal from the user store (fresh roles); carry over the claims we add at sign-in, and read the permissions afresh,
+    // so a role the CEO edits under People & access → Roles applies to everyone in it within a minute.
+    // (the permissions themselves come from AppClaimsFactory, which builds the new principal)
     o.OnRefreshingPrincipal = ctx =>
     {
-        var carried = ctx.CurrentPrincipal?.Claims.Where(c => c.Type is AppClaims.Company or AppClaims.FullName or MustChangePasswordMiddleware.ClaimType).ToList() ?? [];
+        var carried = ctx.CurrentPrincipal?.Claims.Where(c => c.Type is AppClaims.Company or AppClaims.FullName or AppClaims.Branch or MustChangePasswordMiddleware.ClaimType).ToList() ?? [];
         if (ctx.NewPrincipal?.Identity is System.Security.Claims.ClaimsIdentity id)
             foreach (var c in carried) if (!id.HasClaim(c.Type, c.Value)) id.AddClaim(new System.Security.Claims.Claim(c.Type, c.Value));
         return Task.CompletedTask;
@@ -160,12 +163,10 @@ builder.Services.ConfigureApplicationCookie(o =>
 });
 
 // ---- authorization: deny by default, explicit policies per endpoint ----
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+// Every endpoint names the one permission it needs ([Authorize(Policy = Perm.X)]); the CEO decides which roles hold which permissions.
 builder.Services.AddAuthorizationBuilder()
-    .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
-    .AddPolicy(Policies.Ceo, p => p.RequireRole(RoleNames.Admin))
-    .AddPolicy(Policies.Admin, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager))
-    .AddPolicy(Policies.Staff, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Clerk))
-    .AddPolicy(Policies.Marketing, p => p.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Marketer));
+    .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -214,7 +215,6 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<CsrfHeaderMiddleware>();
 app.UseMiddleware<MustChangePasswordMiddleware>();
-app.UseMiddleware<MarketerFence>();
 app.UseAuthorization();
 app.MapControllers();
 

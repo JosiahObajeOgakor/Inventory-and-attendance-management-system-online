@@ -7,18 +7,26 @@ import { Icon } from '../../shared/icon';
 import { Modal } from '../../shared/modal';
 import { Toasts } from '../../shared/feedback';
 import { StampTimePipe } from '../../shared/ui';
+import { RoleRow, RolesEditor } from './roles';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-users',
-  imports: [ReactiveFormsModule, Icon, Modal, StampTimePipe],
+  imports: [ReactiveFormsModule, Icon, Modal, StampTimePipe, RolesEditor],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
       <div class="page-head">
         <h1>People & access</h1>
-        <div class="actions"><button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> Add person</button></div>
+        @if (tab() === 'people') { <div class="actions"><button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> Add person</button></div> }
+      </div>
+      <div class="tabs" role="tablist" aria-label="People or roles">
+        <button type="button" role="tab" class="tab" [class.on]="tab() === 'people'" [attr.aria-selected]="tab() === 'people'" (click)="tab.set('people')">People</button>
+        <button type="button" role="tab" class="tab" [class.on]="tab() === 'roles'" [attr.aria-selected]="tab() === 'roles'" (click)="tab.set('roles')">Roles: what each can do</button>
       </div>
       @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
+      @if (tab() === 'roles') { <app-roles (changed)="loadRoles()" /> } @else {
       <section class="card">
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Person</th><th>Role</th><th>Can open</th><th>Last sign-in</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
@@ -35,6 +43,7 @@ import { StampTimePipe } from '../../shared/ui';
           </tbody>
         </table></div>
       </section>
+      }
     </div>
 
     <app-modal [open]="formOpen()" [heading]="editing() ? 'Edit person' : 'Add person'" (closed)="formOpen.set(false)">
@@ -45,7 +54,7 @@ import { StampTimePipe } from '../../shared/ui';
           <div class="field"><label for="u-u">Username</label><input id="u-u" class="input" formControlName="username" autocapitalize="none" autocomplete="off" /></div>
           <div class="field"><label for="u-p">First password</label><input id="u-p" class="input" type="text" formControlName="password" autocomplete="off" /><span class="hint">They must change it when they first sign in.</span></div>
         }
-        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role"><option value="CLERK">Clerk</option><option value="MARKETER">Digital marketer</option><option value="MANAGER">Manager</option><option value="ADMIN">CEO</option></select>
+        <div class="field"><label for="u-r">Role</label><select id="u-r" class="input" formControlName="role">@for (r of roleNames(); track r) { <option [value]="r">{{ label(r) }}</option> }</select>
           <span class="hint">{{ roleHint(form.controls.role.value) }}</span></div>
         <fieldset class="field"><legend class="label">Can open</legend>
           @for (c of companyOptions(); track c.key) { <label class="check"><input type="checkbox" [checked]="hasCompany(c.key)" (change)="toggleCompany(c.key, $any($event.target).checked)" /> {{ c.displayName }}</label> }</fieldset>
@@ -63,7 +72,7 @@ import { StampTimePipe } from '../../shared/ui';
       }
       <ng-container modal-actions><button type="button" class="btn" (click)="resetting.set(null)">Cancel</button><button type="submit" form="rf" class="btn btn-primary" [disabled]="resetForm.invalid || busy()">Set password</button></ng-container>
     </app-modal>`,
-  styles: `.sm { font-size: .75rem; } .role { font-weight: 600; } .role[data-role='ADMIN'] { color: var(--brand); } .role[data-role='MANAGER'] { color: var(--ink-2, #33434f); } td.actions { white-space: nowrap; } fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: .5rem; }`,
+  styles: `.tabs { display: flex; gap: .25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--line, #e3e5ea); } .tab { background: none; border: 0; padding: .6rem .9rem; font: inherit; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted, #5b6170); min-height: 44px; } .tab.on { color: inherit; font-weight: 600; border-bottom-color: var(--brand); } .sm { font-size: .75rem; } .role { font-weight: 600; } .role[data-role='ADMIN'] { color: var(--brand); } .role[data-role='MANAGER'] { color: var(--ink-2, #33434f); } td.actions { white-space: nowrap; } fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: .5rem; }`,
 })
 export class UsersPage implements OnInit {
   private readonly api = inject(Api);
@@ -71,6 +80,11 @@ export class UsersPage implements OnInit {
   private readonly toasts = inject(Toasts);
   protected readonly auth = inject(Auth);
   protected readonly users = signal<UserRow[]>([]);
+  private readonly http = inject(HttpClient);
+  protected readonly tab = signal<'people' | 'roles'>('people');
+  protected readonly roles = signal<RoleRow[]>([]);
+  /** Every role, built-in first, so a custom one can be given to someone. */
+  protected readonly roleNames = computed(() => { const order = ['CLERK', 'MARKETER', 'MANAGER', 'ADMIN']; const names = this.roles().map(r => r.name); return [...order.filter(n => names.includes(n) || !names.length), ...names.filter(n => !order.includes(n)).sort()]; });
   protected readonly term = signal('');
   /** Every word typed must match the person's name, username, role, status or one of the businesses they can open. */
   protected readonly shown = computed(() => {
@@ -91,11 +105,11 @@ export class UsersPage implements OnInit {
 
   protected label(role: string) { return roleLabel(role); }
   protected roleHint(role: string) {
-    return role === 'ADMIN' ? 'Everything, including deleting records, clearing history and managing people.'
-      : role === 'MANAGER' ? 'Supervises clerks. Adds and edits records like the CEO, but cannot delete.'
-      : role === 'MARKETER' ? 'Campaigns, the Marketing apps and the Website only. Anything they send, switch on or publish waits for your approval.'
-      : 'Makes sales, quotations and waybills. Cannot add or delete records.';
+    if (role === 'ADMIN') return 'Everything, including deleting records, clearing history and managing people.';
+    const n = this.roles().find(r => r.name === role)?.permissions.length;
+    return n === undefined ? '' : `${n} permission${n === 1 ? '' : 's'} switched on. See or change them in the Roles tab.`;
   }
+  protected async loadRoles() { try { this.roles.set(await firstValueFrom(this.http.get<RoleRow[]>('/api/roles'))); } catch { /* the built-in roles still show */ } }
 
   /** Delegate the manager role to a clerk, or take it back. Takes effect on their session within a minute. */
   protected async setRole(u: UserRow, role: string) {
@@ -112,7 +126,7 @@ export class UsersPage implements OnInit {
   protected hasCompany(k: string) { return this.access.has(k); }
   protected toggleCompany(k: string, on: boolean) { if (on) this.access.add(k); else this.access.delete(k); }
 
-  ngOnInit() { void this.load(); }
+  ngOnInit() { void this.load(); void this.loadRoles(); }
   private async load() { try { this.users.set(await this.api.users()); } catch (e) { this.error.set(messageOf(e)); } }
 
   protected openNew() {

@@ -29,7 +29,7 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
                 <button type="button" class="btn btn-sm" (click)="openLoans(e)">Loans</button>
                 <button type="button" class="btn btn-sm" (click)="openEdit(e)">Edit</button>
                 <button type="button" class="btn btn-sm" (click)="toggle(e)">{{ e.isActive ? 'Switch off' : 'Switch on' }}</button>
-                @if (auth.canDelete() && !e.payrollMonths && !e.loans) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }
+                @if (auth.can('employees.delete') && !e.payrollMonths && !e.loans) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }
               </td>
             </tr>
           }
@@ -66,7 +66,7 @@ import { DayPipe, NairaPipe } from '../../shared/ui';
           @for (r of l.repayments; track $index) { <div class="rep"><span>{{ r.paidDate | day }} · {{ r.note ?? 'Repayment' }}</span><span class="mono">{{ r.amount | naira }}</span></div> }
           <footer>
             @if (!l.closed) { <button type="button" class="btn btn-sm" (click)="repay(l)">Record a repayment</button> }
-            @if (auth.canDelete() && !l.repayments.length) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteLoan(l)">Delete loan</button> }
+            @if (auth.can('payroll.delete') && !l.repayments.length) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteLoan(l)">Delete loan</button> }
           </footer>
         </article>
       } @empty { <div class="empty"><strong>No loans</strong></div> }

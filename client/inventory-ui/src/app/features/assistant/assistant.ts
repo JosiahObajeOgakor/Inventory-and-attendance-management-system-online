@@ -22,7 +22,7 @@ const SUGGESTIONS = [
   imports: [FormsModule, Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (auth.isAdmin()) {
+    @if (auth.can('ai.ask')) {
       <button type="button" class="fab" (click)="toggle()" [attr.aria-expanded]="open()" aria-controls="ai-panel" aria-label="Ask the assistant">
         <app-icon [name]="open() ? 'close' : 'spark'" [size]="22" />
       </button>

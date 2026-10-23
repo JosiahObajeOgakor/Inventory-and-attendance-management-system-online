@@ -32,7 +32,7 @@ import { DayPipe, NairaPipe, Pager } from '../../shared/ui';
               <tr><td><span class="docno">{{ w.waybillNumber }}</span></td><td>{{ w.issueDate | day }}</td><td class="mono">{{ w.invoiceNumber }}</td><td class="strong">{{ w.customer }}</td>
                 <td>{{ w.driverName ?? '—' }}</td><td class="mono">{{ w.vehiclePlate ?? '—' }}</td>
                 <td class="actions">
-                  @if (auth.isAdmin()) { <button type="button" class="btn btn-sm" (click)="openEdit(w)" [attr.aria-label]="'Edit ' + w.waybillNumber"><app-icon name="edit" [size]="15" /> Edit</button> }
+                  @if (auth.can('waybills.edit')) { <button type="button" class="btn btn-sm" (click)="openEdit(w)" [attr.aria-label]="'Edit ' + w.waybillNumber"><app-icon name="edit" [size]="15" /> Edit</button> }
                   <a class="btn btn-sm" [href]="'/api/waybills/' + w.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="15" /> PDF</a></td></tr>
             }
           </tbody>

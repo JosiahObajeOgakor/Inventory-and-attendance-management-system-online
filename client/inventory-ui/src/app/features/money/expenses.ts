@@ -46,7 +46,7 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
           <tbody>
             @for (e of data()?.page?.items ?? []; track e.id) {
               <tr><td>{{ e.expenseDate | day }}</td><td class="strong">{{ e.category }}</td><td>{{ e.note ?? '' }}</td><td class="num mono">{{ e.amount | naira }}</td>
-                <td class="actions"><button type="button" class="btn btn-sm" (click)="openEdit(e)">Edit</button> @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }</td></tr>
+                <td class="actions"><button type="button" class="btn btn-sm" (click)="openEdit(e)">Edit</button> @if (auth.can('expenses.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(e)">Delete</button> }</td></tr>
             }
           </tbody>
         </table></div>
@@ -79,7 +79,7 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
       <div class="cat-row add"><input #nc2 class="input" placeholder="New category, e.g. Fuel" maxlength="40" aria-label="New category name" (keydown.enter)="addCategory(nc2.value); nc2.value = ''" />
         <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="addCategory(nc2.value); nc2.value = ''">Add category</button></div>
       <ul class="cats">@for (c of allCategories(); track c.name) {
-        <li><span>{{ c.name }}</span>@if (c.custom) { <span class="muted sm">added</span> @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="removeCategory(c.name)">Remove</button> } } @else { <span class="muted sm">built in</span> }</li>
+        <li><span>{{ c.name }}</span>@if (c.custom) { <span class="muted sm">added</span> @if (auth.can('expenses.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="removeCategory(c.name)">Remove</button> } } @else { <span class="muted sm">built in</span> }</li>
       }</ul>
       <ng-container modal-actions><button type="button" class="btn" (click)="catsOpen.set(false)">Done</button></ng-container>
     </app-modal>`,

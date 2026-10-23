@@ -1,12 +1,15 @@
 // Shapes returned by the ASP.NET Core API (System.Text.Json, camelCase). Money is a JSON number; DateOnly is "yyyy-MM-dd".
 
 /** ADMIN is the CEO; a MANAGER adds and edits like the CEO but can't delete; a CLERK sells. */
-export type Role = 'ADMIN' | 'MANAGER' | 'CLERK' | 'MARKETER';
+/** The four built-in roles; the CEO can add more under People & access → Roles. */
+export type Role = 'ADMIN' | 'MANAGER' | 'CLERK' | 'MARKETER' | (string & {});
 
 export interface CompanyChoice { key: string; displayName: string; hasPriceLists?: boolean; buysGoods?: boolean; hasNewFeatures?: boolean; hasMarketing?: boolean; }
 export interface Me {
   id: number; username: string; fullName: string; role: Role; company: string;
   companies: CompanyChoice[]; mustChangePassword: boolean;
+  /** What this person's role may do (permission codes, see core/permission-catalog.ts). */
+  permissions: string[];
 }
 
 export interface Paged<T> { items: T[]; total: number; page: number; pageSize: number; }

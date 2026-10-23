@@ -31,13 +31,13 @@ import { DayPipe, NairaPipe, Pager, Stamp } from '../../shared/ui';
         @if (list.error()) { <p class="notice bad" style="margin:1rem" role="alert">{{ list.error() }}</p> }
         <div class="table-wrap">
           <table class="table">
-            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Paid by</th><th class="num">Total</th><th>Status</th>@if (auth.isAdmin()) { <th class="num">Est. profit</th> }</tr></thead>
+            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Paid by</th><th class="num">Total</th><th>Status</th>@if (auth.can('cost.view')) { <th class="num">Est. profit</th> }</tr></thead>
             <tbody>
               @for (i of list.items(); track i.id) {
                 <tr class="clickable" [routerLink]="['/sales', i.id]">
                   <td class="mono strong">{{ i.invoiceNumber }}</td><td>{{ i.customer }}</td><td>{{ i.invoiceDate | day }}</td><td>{{ i.paymentMethod }}</td>
                   <td class="num mono">{{ i.totalAmount | naira }}</td><td><app-stamp [label]="i.status" /></td>
-                  @if (auth.isAdmin()) { <td class="num mono">{{ i.estProfit | naira }}</td> }
+                  @if (auth.can('cost.view')) { <td class="num mono">{{ i.estProfit | naira }}</td> }
                 </tr>
               }
             </tbody>

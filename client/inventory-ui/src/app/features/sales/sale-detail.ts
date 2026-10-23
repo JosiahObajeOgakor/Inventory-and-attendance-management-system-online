@@ -21,10 +21,10 @@ import { SendDocument } from '../../shared/send-document';
           <a class="btn btn-primary" [href]="'/api/sales/' + id() + '/receipt.pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="18" /> Receipt (PDF)</a>
           @if (s() && s()!.status !== 'Voided') { <button type="button" class="btn" (click)="sendOpen.set(true)"><app-icon name="send" [size]="18" /> Send receipt</button> }
           <button type="button" class="btn" (click)="print()">Print this page</button>
-          @if (auth.isAdmin() && s() && s()!.status !== 'Voided') {
+          @if (auth.can('sales.edit') && s() && s()!.status !== 'Voided') {
             <a class="btn" [routerLink]="['/sales', id(), 'edit']"><app-icon name="edit" [size]="18" /> Edit sale</a>
           }
-          @if (auth.canDelete() && s()) { <button type="button" class="btn btn-danger" (click)="deleteIt()">Delete sale</button> }
+          @if (auth.can('sales.delete') && s()) { <button type="button" class="btn btn-danger" (click)="deleteIt()">Delete sale</button> }
         </div>
       </div>
 
@@ -46,12 +46,12 @@ import { SendDocument } from '../../shared/send-document';
           </dl>
 
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th>@if (auth.isAdmin()) { <th class="num no-print">Unit cost</th> }</tr></thead>
+            <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Line total</th>@if (auth.can('cost.view')) { <th class="num no-print">Unit cost</th> }</tr></thead>
             <tbody>
               @for (i of s.items; track i.productId) {
                 <tr><td><span class="strong">{{ i.product }}</span><div class="muted mono sm">{{ i.sku }}</div></td>
                   <td class="num mono">{{ i.quantity }} {{ i.unit }}</td><td class="num mono">{{ i.unitPrice | naira }}</td><td class="num mono">{{ i.lineTotal | naira }}</td>
-                  @if (auth.isAdmin()) { <td class="num mono muted no-print">{{ i.unitCost | naira }}</td> }</tr>
+                  @if (auth.can('cost.view')) { <td class="num mono muted no-print">{{ i.unitCost | naira }}</td> }</tr>
               }
             </tbody>
           </table></div>

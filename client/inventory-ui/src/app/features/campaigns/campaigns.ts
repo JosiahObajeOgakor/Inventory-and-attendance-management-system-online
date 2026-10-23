@@ -149,14 +149,14 @@ interface LogRow { id: number; campaign: string; customer: string; recipient: st
           @if (c.pending; as p) {
             <div class="notice proposal">
               <strong>Waiting for approval:</strong> {{ c.pendingBy }} proposes {{ p.enabled ? 'ON' : 'OFF' }} at {{ p.runTime }}, every {{ p.everyNDays }} day(s), up to {{ p.maxRecipients }} customers, by {{ p.sendWhatsApp && p.sendEmail ? 'WhatsApp and email' : p.sendWhatsApp ? 'WhatsApp' : 'email' }}.
-              @if (auth.isAdmin()) { <span class="inline"><button type="button" class="btn btn-sm btn-primary" [disabled]="busy()" (click)="decide(c, true)">Approve</button><button type="button" class="btn btn-sm" [disabled]="busy()" (click)="decide(c, false)">Reject</button></span> }
+              @if (auth.can('marketing.approve')) { <span class="inline"><button type="button" class="btn btn-sm btn-primary" [disabled]="busy()" (click)="decide(c, true)">Approve</button><button type="button" class="btn btn-sm" [disabled]="busy()" (click)="decide(c, false)">Reject</button></span> }
             </div>
           }
 
           <div class="actions">
-            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="save(c)">{{ auth.isMarketer() ? 'Send for approval' : 'Save' }}</button>
+            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="save(c)">{{ !auth.can('marketing.publish') ? 'Send for approval' : 'Save' }}</button>
             <button type="button" class="btn" [disabled]="busy()" (click)="preview(c)">Show me today's messages</button>
-            @if (auth.isAdmin()) { <button type="button" class="btn" [disabled]="busy()" (click)="runNow(c)">Run now</button> }
+            @if (auth.can('campaigns.run')) { <button type="button" class="btn" [disabled]="busy()" (click)="runNow(c)">Run now</button> }
             @if (c.lastRunNote) { <span class="muted sm">Last run {{ c.lastRunAt ? (c.lastRunAt | stampTime) : '' }}: {{ c.lastRunNote }}</span> }
           </div>
 
@@ -263,7 +263,7 @@ export class CampaignsPage implements OnInit {
     try {
       const saved = await firstValueFrom(this.http.put<Campaign>(`/api/campaigns/${c.id}`, this.body(c)));
       this.campaigns.update(l => l.map(x => x.id === saved.id ? saved : x));
-      this.toasts.ok(this.auth.isMarketer() ? `Sent to an administrator for approval. ${saved.name} changes once they approve.` : `${saved.name} is ${saved.enabled ? `on — next run ${saved.runTime}` : 'off'}.`);
+      this.toasts.ok(!this.auth.can('marketing.publish') ? `Sent to an administrator for approval. ${saved.name} changes once they approve.` : `${saved.name} is ${saved.enabled ? `on — next run ${saved.runTime}` : 'off'}.`);
     } catch (e) { this.error.set(messageOf(e)); } finally { this.busy.set(false); }
   }
 

@@ -33,7 +33,7 @@ import { NairaPipe, Pager } from '../../shared/ui';
             @for (s of list.items(); track s.id) {
               <tr><td><a class="strong" [routerLink]="['/suppliers', s.id]">{{ s.name }}</a></td><td>{{ s.category ?? '—' }}</td><td>{{ s.contactName ?? '' }}<div class="muted sm">{{ s.phone }}</div></td>
                 <td class="num mono" [class.owes]="s.balance > 0">{{ s.balance | naira }}</td>
-                <td class="actions"><a class="btn btn-sm btn-primary" [routerLink]="['/suppliers', s.id]">Open</a> <button type="button" class="btn btn-sm" (click)="openItems(s)">Items</button> <button type="button" class="btn btn-sm" (click)="openEdit(s)">Edit</button> @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }</td></tr>
+                <td class="actions"><a class="btn btn-sm btn-primary" [routerLink]="['/suppliers', s.id]">Open</a> <button type="button" class="btn btn-sm" (click)="openItems(s)">Items</button> <button type="button" class="btn btn-sm" (click)="openEdit(s)">Edit</button> @if (auth.can('suppliers.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }</td></tr>
             }
           </tbody>
         </table></div>

@@ -17,42 +17,42 @@ namespace Inventory.Api.Controllers;
 [ApiController, Route("api/quotations")]
 public class QuotationsController(ICurrentUser cu, QuotationService svc) : AppController(cu)
 {
-    [HttpGet, Authorize(Policy = Policies.Staff)]
+    [HttpGet, Authorize(Policy = Perm.SalesView)]
     public Task<PagedResult<QuotationRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => svc.ListAsync(paging, ct);
 
-    [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("{id:int}"), Authorize(Policy = Perm.SalesView)]
     public async Task<ActionResult<QuotationDetailDto>> Get(int id, CancellationToken ct) => await svc.GetAsync(id, ct) is { } q ? q : NotFound();
 
-    [HttpPost, Authorize(Policy = Policies.Staff)]
+    [HttpPost, Authorize(Policy = Perm.QuotationsCreate)]
     public async Task<IActionResult> Create(QuoteRequest req, CancellationToken ct) => Ok(await svc.CreateAsync(req, Me, ct));
 
-    [HttpPost("{id:int}/convert"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("{id:int}/convert"), Authorize(Policy = Perm.SalesCreate)]
     public async Task<IActionResult> Convert(int id, ConvertQuoteRequest req, CancellationToken ct) => Ok(await svc.ConvertAsync(id, req, Me, ct));
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Perm.QuotationsDelete)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteAsync(id, Me, ct); return NoContent(); }
 }
 
 [ApiController, Route("api/waybills")]
 public class WaybillsController(ICurrentUser cu, WaybillService svc) : AppController(cu)
 {
-    [HttpGet, Authorize(Policy = Policies.Staff)]
+    [HttpGet, Authorize(Policy = Perm.WaybillsManage)]
     public Task<PagedResult<WaybillRowDto>> List([FromQuery] PageRequest paging, CancellationToken ct) => svc.ListAsync(paging, ct);
 
-    [HttpGet("invoices"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("invoices"), Authorize(Policy = Perm.WaybillsManage)]
     public Task<PagedResult<PendingInvoiceDto>> Invoices([FromQuery] PageRequest paging, [FromQuery] bool pendingOnly, CancellationToken ct) => svc.InvoicesAsync(paging, pendingOnly, ct);
 
-    [HttpGet("prefill/{invoiceId:int}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("prefill/{invoiceId:int}"), Authorize(Policy = Perm.WaybillsManage)]
     public Task<WaybillPrefillDto> Prefill(int invoiceId, CancellationToken ct) => svc.PrefillAsync(invoiceId, ct);
 
-    [HttpPost, Authorize(Policy = Policies.Staff)]
+    [HttpPost, Authorize(Policy = Perm.WaybillsManage)]
     public async Task<IActionResult> Create(WaybillInput input, CancellationToken ct) => Ok(new { id = await svc.CreateAsync(input, Me, ct) });
 
-    [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("{id:int}"), Authorize(Policy = Perm.WaybillsManage)]
     public Task<WaybillDetailDto> Get(int id, CancellationToken ct) => svc.GetAsync(id, ct);
 
     /// <summary>Correct the driver, vehicle, destination, notes or date. The sale it belongs to stays the same. Admin only.</summary>
-    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpPut("{id:int}"), Authorize(Policy = Perm.WaybillsEdit)]
     public async Task<IActionResult> Update(int id, WaybillInput input, CancellationToken ct) { await svc.UpdateAsync(id, input, Me, ct); return NoContent(); }
 }
 
@@ -60,22 +60,22 @@ public class WaybillsController(ICurrentUser cu, WaybillService svc) : AppContro
 [ApiController, Route("api/attendance")]
 public class AttendanceController(ICurrentUser cu, AttendanceService svc) : AppController(cu)
 {
-    [HttpGet("today"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("today"), Authorize(Policy = Perm.AttendanceSelf)]
     public Task<AttendanceToday> Today(CancellationToken ct) => svc.TodayAsync(Me.Id, ct);
 
-    [HttpPost("check-in"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("check-in"), Authorize(Policy = Perm.AttendanceSelf)]
     public async Task<IActionResult> CheckIn(CancellationToken ct) => Ok(new { at = await svc.CheckInAsync(Me, ct) });
 
-    [HttpPost("check-out"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("check-out"), Authorize(Policy = Perm.AttendanceSelf)]
     public async Task<IActionResult> CheckOut(CancellationToken ct) { await svc.CheckOutAsync(Me, ct); return NoContent(); }
 
-    [HttpPost("decline"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("decline"), Authorize(Policy = Perm.AttendanceSelf)]
     public async Task<IActionResult> Decline(CancellationToken ct) { await svc.DeclineAsync(Me, ct); return NoContent(); }
 
-    [HttpGet("events"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("events"), Authorize(Policy = Perm.AttendanceView)]
     public Task<PagedResult<AttendanceEventDto>> Events([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] PageRequest paging, CancellationToken ct) => svc.EventsAsync(from, to, paging, ct);
 
-    [HttpGet("daily"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("daily"), Authorize(Policy = Perm.AttendanceView)]
     public Task<List<AttendanceDayDto>> Daily([FromQuery] DateOnly from, [FromQuery] DateOnly to, CancellationToken ct) => svc.DailySummaryAsync(from, to, ct);
 }
 
@@ -84,7 +84,7 @@ public sealed record GenerateMonthRequest(int Year, int Month);
 public sealed record LoanRequest(decimal Amount, string? Note);
 public sealed record ActiveRequest(bool Active);
 
-[ApiController, Route("api/employees"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/employees"), Authorize(Policy = Perm.EmployeesManage)]
 public class EmployeesController(ICurrentUser cu, PayrollService svc) : AppController(cu)
 {
     [HttpGet]
@@ -99,7 +99,7 @@ public class EmployeesController(ICurrentUser cu, PayrollService svc) : AppContr
     [HttpPut("{id:int}/active")]
     public async Task<IActionResult> SetActive(int id, ActiveRequest r, CancellationToken ct) { await svc.SetActiveAsync(id, r.Active, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Perm.EmployeesDelete)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteEmployeeAsync(id, Me, ct); return NoContent(); }
 
     [HttpGet("{id:int}/payroll")]
@@ -112,7 +112,7 @@ public class EmployeesController(ICurrentUser cu, PayrollService svc) : AppContr
     public async Task<IActionResult> AddLoan(int id, LoanRequest r, CancellationToken ct) => Ok(new { id = await svc.AddLoanAsync(id, r.Amount, r.Note, Me, ct) });
 }
 
-[ApiController, Route("api/payroll"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/payroll"), Authorize(Policy = Perm.PayrollManage)]
 public class PayrollController(ICurrentUser cu, PayrollService svc) : AppController(cu)
 {
     [HttpGet("{year:int}/{month:int}")]
@@ -124,7 +124,7 @@ public class PayrollController(ICurrentUser cu, PayrollService svc) : AppControl
     [HttpPut("rows/{id:int}")]
     public async Task<IActionResult> Edit(int id, PayrollEditInput i, CancellationToken ct) { await svc.EditRowAsync(id, i, Me, ct); return NoContent(); }
 
-    [HttpDelete("rows/{id:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("rows/{id:int}"), Authorize(Policy = Perm.PayrollDelete)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteRowAsync(id, Me, ct); return NoContent(); }
 
     [HttpPost("rows/{id:int}/pay")]
@@ -136,7 +136,7 @@ public class PayrollController(ICurrentUser cu, PayrollService svc) : AppControl
     [HttpPost("loans/{loanId:int}/repay")]
     public async Task<IActionResult> Repay(int loanId, LoanRequest r, CancellationToken ct) { await svc.RepayLoanAsync(loanId, r.Amount, r.Note, Me, ct); return NoContent(); }
 
-    [HttpDelete("loans/{loanId:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("loans/{loanId:int}"), Authorize(Policy = Perm.PayrollDelete)]
     public async Task<IActionResult> DeleteLoan(int loanId, CancellationToken ct) { await svc.DeleteLoanAsync(loanId, Me, ct); return NoContent(); }
 }
 
@@ -148,10 +148,10 @@ public sealed record WriteOffRequest(string Serial, string Reason);
 [ApiController, Route("api/serials")]
 public class SerialsController(ICurrentUser cu, SerialService svc) : AppController(cu)
 {
-    [HttpGet("product/{productId:int}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("product/{productId:int}"), Authorize(Policy = Perm.SerialsManage)]
     public Task<List<SerialDto>> List(int productId, [FromQuery] string? status, [FromQuery] int? warehouseId, [FromQuery] string? search, CancellationToken ct) => svc.ListAsync(productId, status, warehouseId, search, ct);
 
-    [HttpPost("product/{productId:int}/receive"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("product/{productId:int}/receive"), Authorize(Policy = Perm.SerialsManage)]
     public async Task<IActionResult> Receive(int productId, ReceiveSerialsRequest r, CancellationToken ct)
     {
         var list = SerialService.Split(r.Serials);
@@ -159,20 +159,20 @@ public class SerialsController(ICurrentUser cu, SerialService svc) : AppControll
         return Ok(new { received = list.Count });
     }
 
-    [HttpPost("product/{productId:int}/take-back"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("product/{productId:int}/take-back"), Authorize(Policy = Perm.SerialsManage)]
     public async Task<IActionResult> TakeBack(int productId, TakeBackRequest r, CancellationToken ct) { await svc.TakeBackAsync(productId, r.Serial.Trim(), r.WarehouseId, r.Reason, Me, ct); return NoContent(); }
 
-    [HttpPost("product/{productId:int}/write-off"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("product/{productId:int}/write-off"), Authorize(Policy = Perm.SerialsWriteOff)]
     public async Task<IActionResult> WriteOff(int productId, WriteOffRequest r, CancellationToken ct) { await svc.WriteOffAsync(productId, r.Serial.Trim(), r.Reason, Me, ct); return NoContent(); }
 
-    [HttpGet("discrepancies"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("discrepancies"), Authorize(Policy = Perm.SerialsWriteOff)]
     public Task<List<SerialDiscrepancyDto>> Discrepancies(CancellationToken ct) => svc.DiscrepanciesAsync(ct);
 }
 
 // ------------------------------------------------------------------ expenses & rebates (Admin)
 public sealed record RateRequest(decimal Pct);
 
-[ApiController, Route("api/expenses"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/expenses"), Authorize(Policy = Perm.ExpensesManage)]
 public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppController(cu)
 {
     [HttpGet("categories")]
@@ -185,7 +185,7 @@ public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppContro
     [HttpPost("categories")]
     public async Task<IActionResult> AddCategory(NameRequest r, CancellationToken ct) => Ok(new { name = await svc.AddCategoryAsync(r.Name, Me, ct) });
 
-    [HttpDelete("categories/{name}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("categories/{name}"), Authorize(Policy = Perm.ExpensesDelete)]
     public async Task<IActionResult> DeleteCategory(string name, CancellationToken ct) { await svc.DeleteCategoryAsync(name, Me, ct); return NoContent(); }
 
     [HttpGet]
@@ -197,11 +197,11 @@ public class ExpensesController(ICurrentUser cu, ExpenseService svc) : AppContro
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, ExpenseInput i, CancellationToken ct) { await svc.UpdateAsync(id, i, Me, ct); return NoContent(); }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Perm.ExpensesDelete)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteAsync(id, Me, ct); return NoContent(); }
 }
 
-[ApiController, Route("api/rebates"), Authorize(Policy = Policies.Admin)]
+[ApiController, Route("api/rebates"), Authorize(Policy = Perm.RebatesManage)]
 public class RebatesController(ICurrentUser cu, RebateService svc) : AppController(cu)
 {
     [HttpGet]
@@ -224,16 +224,16 @@ public sealed record AddPriceProductsRequest(List<NewPriceProduct> Products, str
 [ApiController, Route("api/price-book")]
 public class PriceBookController(ICurrentUser cu, PriceBookService svc) : AppController(cu)
 {
-    [HttpGet, Authorize(Policy = Policies.Staff)]
+    [HttpGet, Authorize(Policy = Perm.PriceBookView)]
     public Task<PriceBookDto> Current([FromQuery] PageRequest paging, [FromQuery] int? categoryId, CancellationToken ct) => svc.CurrentAsync(paging, categoryId, ct);
 
-    [HttpGet("history"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("history"), Authorize(Policy = Perm.PriceBookEdit)]
     public Task<PagedResult<PriceHistoryDto>> History([FromQuery] PageRequest paging, [FromQuery] int? productId, CancellationToken ct) => svc.HistoryAsync(paging, productId, ct);
 
-    [HttpPost("apply"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("apply"), Authorize(Policy = Perm.PriceBookEdit)]
     public async Task<IActionResult> Apply(ApplyPricesRequest r, CancellationToken ct) => Ok(new { changed = await svc.ApplyAsync(r.Updates, r.Note, Me, ct) });
 
-    [HttpPost("products"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("products"), Authorize(Policy = Perm.PriceBookEdit)]
     public async Task<IActionResult> AddProducts(AddPriceProductsRequest r, CancellationToken ct) => Ok(new { ids = await svc.AddProductsAsync(r.Products, r.Note, Me, ct) });
 }
 
@@ -241,7 +241,7 @@ public class PriceBookController(ICurrentUser cu, PriceBookService svc) : AppCon
 [ApiController, Route("api/customers")]
 public class CustomerMetricsController(ICurrentUser cu, CustomerMetricsService svc) : AppController(cu)
 {
-    [HttpGet("{id:int}/metrics"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("{id:int}/metrics"), Authorize(Policy = Perm.CustomersView)]
     public async Task<ActionResult<CustomerMetricsDto>> Get(int id, CancellationToken ct) => await svc.GetAsync(id, ct) is { } m ? m : NotFound();
 }
 
@@ -263,24 +263,24 @@ public class ExportsController(ICurrentUser cu, ExcelExporter x, IClock clock, I
         return (f, t);
     }
 
-    [HttpGet("inventory"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("inventory"), Authorize(Policy = Perm.StockView)]
     public async Task<IActionResult> Inventory(CancellationToken ct) => Xlsx(await x.InventoryAsync(IsAdmin, ct), "inventory");
 
-    [HttpGet("invoices"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("invoices"), Authorize(Policy = Perm.SalesView)]
     public async Task<IActionResult> Invoices([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) { var r = Range(from, to); return Xlsx(await x.InvoicesAsync(r.From, r.To, ct), "invoices"); }
 
-    [HttpGet("customers"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("customers"), Authorize(Policy = Perm.CustomersView)]
     public async Task<IActionResult> Customers(CancellationToken ct) => Xlsx(await x.CustomersAsync(ct), "customers");
 
-    [HttpGet("expenses"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("expenses"), Authorize(Policy = Perm.ExpensesManage)]
     public async Task<IActionResult> Expenses([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) { var r = Range(from, to); return Xlsx(await x.ExpensesAsync(r.From, r.To, ct), "expenses"); }
 
-    [HttpGet("ledger"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("ledger"), Authorize(Policy = Perm.FinanceView)]
     public async Task<IActionResult> Ledger([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) { var r = Range(from, to); return Xlsx(await x.LedgerAsync(r.From, r.To, ct), "ledger"); }
 
-    [HttpGet("report"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("report"), Authorize(Policy = Perm.FinanceView)]
     public async Task<IActionResult> Report([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) { var r = Range(from, to); return Xlsx(await x.ReportAsync(r.From, r.To, ct), "report"); }
 
-    [HttpGet("full"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("full"), Authorize(Policy = Perm.FinanceView)]
     public async Task<IActionResult> Full([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) { var r = Range(from, to); return Xlsx(await x.FullAsync(r.From, r.To, ct), "full-export"); }
 }

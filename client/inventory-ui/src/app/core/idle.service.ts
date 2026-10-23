@@ -38,12 +38,12 @@ export class Idle {
 
   private arm(): void {
     this.clearTimers();
-    if (!this.auth.isAdmin() && !this.auth.isMarketer()) return;
+    if (!this.auth.manages()) return;
     this.zone.runOutsideAngular(() => { this.idleTimer = setTimeout(() => this.warn(), Idle.IDLE_MS); });
   }
 
   private warn(): void {
-    if (!this.auth.isAdmin() && !this.auth.isMarketer()) return;
+    if (!this.auth.manages()) return;
     this.secondsLeft.set(Idle.WARN_S);
     this.warning.set(true);
     this.tick = setInterval(() => {

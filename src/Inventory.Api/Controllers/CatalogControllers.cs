@@ -14,49 +14,50 @@ public abstract class AppController(ICurrentUser current) : ControllerBase
 {
     protected CurrentUser Me => current.User ?? throw new UnauthorizedAccessException();
     /// <summary>CEO or manager (sees cost and profit).</summary>
-    protected bool IsAdmin => User.IsInRole(RoleNames.Admin) || User.IsInRole(RoleNames.Manager);
+    /// <summary>Cost prices and inactive products: for roles that may see costs.</summary>
+    protected bool IsAdmin => User.HasClaim(AppClaims.Permission, Permissions.CostView);
 }
 
 [ApiController, Route("api/products")]
 public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductService svc) : AppController(cu)
 {
-    [HttpGet, Authorize(Policy = Policies.Staff)]
+    [HttpGet, Authorize(Policy = Perm.ProductsView)]
     public Task<PagedResult<ProductDto>> List([FromQuery] PageRequest paging, [FromQuery] bool includeInactive, CancellationToken ct) =>
         q.ProductsAsync(paging, includeInactive && IsAdmin, IsAdmin, ct);
 
-    [HttpGet("{id:int}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("{id:int}"), Authorize(Policy = Perm.ProductsView)]
     public async Task<ActionResult<ProductDto>> Get(int id, CancellationToken ct) =>
         await q.ProductAsync(id, IsAdmin, ct) is { } p ? p : NotFound();
 
     /// <summary>The POS scan field: plain product barcode (our own QR tags are handled by /api/sales/by-number).</summary>
-    [HttpGet("by-barcode/{code}"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("by-barcode/{code}"), Authorize(Policy = Perm.ProductsView)]
     public async Task<ActionResult<ProductDto>> ByBarcode(string code, CancellationToken ct) =>
         await q.ProductByBarcodeAsync(code, IsAdmin, ct) is { } p ? p : NotFound();
 
-    [HttpPost, Authorize(Policy = Policies.Admin)]   // managers and the CEO add products; clerks don't add records
+    [HttpPost, Authorize(Policy = Perm.ProductsCreate)]   // managers and the CEO add products; clerks don't add records
     public async Task<IActionResult> Create(NewProductRequest req, CancellationToken ct)
     {
         var id = await svc.CreateAsync(req, Me, ct);
         return CreatedAtAction(nameof(Get), new { id }, new { id });
     }
 
-    [HttpPut("{id:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpPut("{id:int}"), Authorize(Policy = Perm.ProductsEdit)]
     public async Task<IActionResult> Update(int id, ProductInput input, CancellationToken ct)
     {
         await svc.UpdateAsync(id, input, Me, ct);
         return NoContent();
     }
 
-    [HttpDelete("{id:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("{id:int}"), Authorize(Policy = Perm.ProductsDelete)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct) =>
         await DeleteAsync(id, ct);
 
     /// <summary>The suppliers this product is bought from (for the product form's "Supplied by" picker).</summary>
-    [HttpGet("{id:int}/suppliers"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("{id:int}/suppliers"), Authorize(Policy = Perm.SuppliersManage)]
     public Task<List<ProductSupplierDto>> Suppliers(int id, CancellationToken ct) => svc.SuppliersAsync(id, ct);
 
     /// <summary>The product's photo for the customer catalog. PNG or JPEG, up to 2 MB.</summary>
-    [HttpPut("{id:int}/image"), Authorize(Policy = Policies.Admin)]
+    [HttpPut("{id:int}/image"), Authorize(Policy = Perm.ProductsEdit)]
     [RequestSizeLimit(Inventory.Application.Company.CompanyProfileService.MaxImageBytes + 4096)]
     public async Task<IActionResult> SetImage(int id, IFormFile file, CancellationToken ct)
     {
@@ -67,7 +68,7 @@ public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductServic
         return NoContent();
     }
 
-    [HttpGet("{id:int}/image"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("{id:int}/image"), Authorize(Policy = Perm.ProductsView)]
     public async Task<IActionResult> Image(int id, CancellationToken ct)
     {
         var img = await svc.ImageAsync(id, ct);
@@ -76,7 +77,7 @@ public class ProductsController(ICurrentUser cu, CatalogQueries q, ProductServic
         return File(img.Data, img.ContentType);
     }
 
-    [HttpDelete("{id:int}/image"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("{id:int}/image"), Authorize(Policy = Perm.ProductsDelete)]
     public async Task<IActionResult> RemoveImage(int id, CancellationToken ct) { await svc.RemoveImageAsync(id, Me, ct); return NoContent(); }
 
     private async Task<IActionResult> DeleteAsync(int id, CancellationToken ct)
@@ -91,16 +92,16 @@ public sealed record NameRequest(string Name, string? Location);
 [ApiController, Route("api")]
 public class ReferenceDataController(ICurrentUser cu, CatalogQueries q, PartnerService svc) : AppController(cu)
 {
-    [HttpGet("categories"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("categories"), Authorize(Policy = Perm.ProductsView)]
     public Task<List<CategoryDto>> Categories(CancellationToken ct) => q.CategoriesAsync(ct);
 
-    [HttpPost("categories"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("categories"), Authorize(Policy = Perm.CatalogSetup)]
     public async Task<IActionResult> AddCategory(NameRequest r, CancellationToken ct) => Ok(new { id = await svc.CreateCategoryAsync(r.Name, Me, ct) });
 
-    [HttpGet("warehouses"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("warehouses"), Authorize(Policy = Perm.StockView)]
     public Task<List<WarehouseDto>> Warehouses(CancellationToken ct) => q.WarehousesAsync(ct);
 
-    [HttpPost("warehouses"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("warehouses"), Authorize(Policy = Perm.CatalogSetup)]
     public async Task<IActionResult> AddWarehouse(NameRequest r, CancellationToken ct) => Ok(new { id = await svc.CreateWarehouseAsync(r.Name, r.Location, Me, ct) });
 }
 
@@ -108,11 +109,11 @@ public class ReferenceDataController(ICurrentUser cu, CatalogQueries q, PartnerS
 public class InventoryController(ICurrentUser cu, CatalogQueries q, Inventory.Application.Stock.StockConsolidationService consolidation) : AppController(cu)
 {
     /// <summary>What "Tidy up" would do: products sharing a name that would become one, and stock rows that would be added together. Changes nothing.</summary>
-    [HttpGet("consolidate/preview"), Authorize(Policy = Policies.Admin)]
+    [HttpGet("consolidate/preview"), Authorize(Policy = Perm.StockAdjust)]
     public Task<Inventory.Application.Stock.ConsolidationPreview> ConsolidatePreview(CancellationToken ct) => consolidation.PreviewAsync(ct);
 
     /// <summary>Does it. Quantities are added, never lost (the total on hand must be identical afterwards or nothing is saved).</summary>
-    [HttpPost("consolidate"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("consolidate"), Authorize(Policy = Perm.StockAdjust)]
     public async Task<object> Consolidate(CancellationToken ct)
     {
         var result = await consolidation.RunAsync(Me, ct);
@@ -120,11 +121,11 @@ public class InventoryController(ICurrentUser cu, CatalogQueries q, Inventory.Ap
         return new { result.ProductsMerged, result.StockRowsMerged, result.StockOnHandBefore, result.StockOnHandAfter, DatabaseRefusesDuplicateNames = guard };
     }
 
-    [HttpGet("batches"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("batches"), Authorize(Policy = Perm.StockView)]
     public Task<PagedResult<BatchRowDto>> Batches([FromQuery] PageRequest paging, [FromQuery] bool onlyLow, CancellationToken ct) => q.BatchesAsync(paging, onlyLow, ct);
 
     /// <param name="referenceType">Production | Transfer | PurchaseOrder | Invoice | OpeningBalance | Manual …</param>
-    [HttpGet("movements"), Authorize(Policy = Policies.Staff)]
+    [HttpGet("movements"), Authorize(Policy = Perm.StockView)]
     public Task<PagedResult<MovementRowDto>> Movements([FromQuery] PageRequest paging, [FromQuery] string? referenceType, [FromQuery] int? productId, CancellationToken ct) =>
         q.MovementsAsync(paging, referenceType, productId, ct);
 }
@@ -137,11 +138,11 @@ public sealed record AdjustRequest(int BatchId, int Delta, string Reason);
 [ApiController, Route("api/stock")]
 public class StockController(ICurrentUser cu, StockOperations ops, IClock clock) : AppController(cu)
 {
-    [HttpPost("production"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("production"), Authorize(Policy = Perm.StockReceive)]
     public async Task<IActionResult> Produce(ProductionRequest r, CancellationToken ct) =>
         Ok(new { movementId = await ops.RecordProductionAsync(r.ProductId, r.WarehouseId, r.Quantity, r.ProducedOn ?? clock.BusinessToday, r.BatchNumber, r.ExpiryDate, Me, ct) });
 
-    [HttpPut("production/{movementId:int}"), Authorize(Policy = Policies.Admin)]
+    [HttpPut("production/{movementId:int}"), Authorize(Policy = Perm.StockCorrect)]
     public async Task<IActionResult> Correct(int movementId, CorrectProductionRequest r, CancellationToken ct)
     {
         await ops.CorrectProductionAsync(movementId, r.Quantity, r.ProducedOn, Me, ct);
@@ -149,21 +150,21 @@ public class StockController(ICurrentUser cu, StockOperations ops, IClock clock)
     }
 
     /// <summary>"Delete" a production entry: reverses its stock and keeps the history row with quantity 0 (defect D6).</summary>
-    [HttpDelete("production/{movementId:int}"), Authorize(Policy = Policies.Ceo)]
+    [HttpDelete("production/{movementId:int}"), Authorize(Policy = Perm.StockDelete)]
     public async Task<IActionResult> DeleteProduction(int movementId, CancellationToken ct)
     {
         await ops.CorrectProductionAsync(movementId, 0, clock.BusinessToday, Me, ct);
         return NoContent();
     }
 
-    [HttpPost("transfers"), Authorize(Policy = Policies.Staff)]
+    [HttpPost("transfers"), Authorize(Policy = Perm.StockTransfer)]
     public async Task<IActionResult> Transfer(TransferRequest r, CancellationToken ct)
     {
         await ops.TransferAsync(r.ProductId, r.FromWarehouseId, r.ToWarehouseId, r.Quantity, Me, ct);
         return NoContent();
     }
 
-    [HttpPost("adjustments"), Authorize(Policy = Policies.Admin)]
+    [HttpPost("adjustments"), Authorize(Policy = Perm.StockAdjust)]
     public async Task<IActionResult> Adjust(AdjustRequest r, [FromServices] Inventory.Application.Approvals.ApprovalService approvals, CancellationToken ct)
     {
         // Above the business's limit (off until switched on under Approvals) the adjustment is held for someone else's approval (202) instead of being made.

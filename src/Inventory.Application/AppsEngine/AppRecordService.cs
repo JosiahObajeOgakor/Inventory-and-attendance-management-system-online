@@ -107,7 +107,7 @@ public sealed partial class AppRecordService(IBusinessDbContext db, IClock clock
         else
         {
             r = await db.AppRecords.SingleOrDefaultAsync(x => x.Id == id && x.App == app && x.Kind == kind, ct) ?? throw new NotFoundException("Record");
-            if (r.Status == AwaitingApproval && IsMarketer(user)) throw new BusinessRuleException("This is waiting for an administrator's approval. Ask them to reject it if you need to change it.");
+            if (r.Status == AwaitingApproval && NeedsApproval(user)) throw new BusinessRuleException("This is waiting for an administrator's approval. Ask them to reject it if you need to change it.");
         }
 
         var data = new JsonObject();

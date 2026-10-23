@@ -48,7 +48,7 @@ public sealed class SalesService(
         if (req.SaleDate is { } asked && asked != clock.BusinessToday)
         {
             // Recording a past sale (back to 2020) is for a manager or the CEO; a future date is never allowed.
-            if (user.Role is not (RoleNames.Admin or RoleNames.Manager)) throw new ForbiddenActionException("Only a manager or the CEO can record a sale on an earlier date.");
+            if (!user.Can(Permissions.SalesEdit)) throw new ForbiddenActionException("Your role can't record a sale on an earlier date.");
             if (asked > clock.BusinessToday) throw new BusinessRuleException("A sale can't be dated in the future.");
             if (asked < BusinessDates.Earliest) throw new BusinessRuleException($"A sale can't be dated before {BusinessDates.Earliest:d MMM yyyy}.");
         }

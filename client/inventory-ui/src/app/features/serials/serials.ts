@@ -24,7 +24,7 @@ const STATUS_STAMP: Record<string, string> = { 'In Stock': 'stamp-ok', Sold: 'st
 
       <div class="tabs" role="tablist">
         <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'units'" (click)="tab.set('units')">Units</button>
-        @if (auth.isAdmin()) { <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'check'" (click)="openCheck()">Stock check</button> }
+        @if (auth.can('serials.writeoff')) { <button type="button" class="tab" role="tab" [attr.aria-selected]="tab() === 'check'" (click)="openCheck()">Stock check</button> }
       </div>
 
       @if (tab() === 'units') {
@@ -49,7 +49,7 @@ const STATUS_STAMP: Record<string, string> = { 'In Stock': 'stamp-ok', Sold: 'st
                   <td>@if (s.invoiceNumber) { <span class="mono">{{ s.invoiceNumber }}</span><div class="muted sm">{{ s.customer }} · {{ s.soldAt | day }}</div> } @else { — }</td>
                   <td class="actions">
                     @if (s.status === 'Sold') { <button type="button" class="btn btn-sm" (click)="openTakeBack(s)">Take back</button> }
-                    @if (auth.isAdmin() && (s.status === 'In Stock' || s.status === 'Returned')) { <button type="button" class="btn btn-sm btn-danger" (click)="writeOff(s)">Write off</button> }
+                    @if (auth.can('serials.writeoff') && (s.status === 'In Stock' || s.status === 'Returned')) { <button type="button" class="btn btn-sm btn-danger" (click)="writeOff(s)">Write off</button> }
                   </td></tr>
               }
             </tbody>

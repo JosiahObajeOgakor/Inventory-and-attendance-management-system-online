@@ -39,7 +39,7 @@ import { NairaPipe, Pager, Stamp } from '../../shared/ui';
                   @if (c.balance > 0) { <button type="button" class="btn btn-sm btn-primary" (click)="openPay(c)">Record payment</button> }
                   <button type="button" class="btn btn-sm" (click)="metricsFor.set(c.id)">History</button>
                   <button type="button" class="btn btn-sm" (click)="openEdit(c)">Edit</button>
-                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button> }</td></tr>
+                  @if (auth.can('customers.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(c)">Delete</button> }</td></tr>
             }
           </tbody>
         </table></div>

@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Inventory.Api.Controllers;
 
 /// <summary>The monthly VAT return: figures, CSV for the filing, and recording the filing and payment.</summary>
-[ApiController, Route("api/tax"), ServiceFilter(typeof(LedgerSyncFilter)), Authorize(Policy = Policies.Admin), RequiresNewFeatures]
+[ApiController, Route("api/tax"), ServiceFilter(typeof(LedgerSyncFilter)), Authorize(Policy = Perm.TaxManage), RequiresNewFeatures]
 public class TaxController(ICurrentUser cu, TaxService svc) : AppController(cu)
 {
     [HttpGet("vat/{year:int}/{month:int}")]

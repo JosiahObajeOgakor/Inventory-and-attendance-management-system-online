@@ -67,7 +67,7 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
               </div>
               <div class="row">
                 <label class="btn btn-sm"><input type="file" accept="image/png,image/jpeg" hidden (change)="upload(a.kind, $event)" /> {{ has(a.kind) ? 'Replace' : 'Upload' }}</label>
-                @if (has(a.kind) && auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(a.kind)">Remove</button> }
+                @if (has(a.kind) && auth.can('company.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(a.kind)">Remove</button> }
               </div>
             </div>
           }
@@ -105,7 +105,7 @@ const ASSETS: { kind: AssetKind; label: string; hint: string }[] = [
                 <td><label class="check"><input type="checkbox" [checked]="z.isActive" (change)="patchZone(z.id, { isActive: $any($event.target).checked })" /> {{ z.isActive ? 'Yes' : 'No' }}</label></td>
                 <td class="actions">
                   @if (dirty().includes(z.id)) { <button type="button" class="btn btn-sm btn-primary" (click)="saveZone(z)">Save</button> }
-                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteZone(z)">Remove</button> }
+                  @if (auth.can('company.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteZone(z)">Remove</button> }
                 </td>
               </tr>
             }

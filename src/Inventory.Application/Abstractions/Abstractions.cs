@@ -101,7 +101,12 @@ public interface IClock
 }
 
 /// <param name="BranchId">The branch the user works at in the open business, if they are tied to one (they then use only its warehouses).</param>
-public sealed record CurrentUser(int Id, string FullName, string Role, int? BranchId = null);
+/// <param name="Permissions">What the user's roles grant (null where nobody signed in, e.g. a background job or a test acting as the system).</param>
+public sealed record CurrentUser(int Id, string FullName, string Role, int? BranchId = null, IReadOnlySet<string>? Permissions = null)
+{
+    /// <summary>True when the user holds the permission; a caller without a permission set (the system itself) can do anything.</summary>
+    public bool Can(string permission) => Permissions is null || Permissions.Contains(permission);
+}
 
 public interface ICurrentUser
 {

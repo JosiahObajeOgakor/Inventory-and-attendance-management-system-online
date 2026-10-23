@@ -35,7 +35,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
         </div>
         <div class="actions">
           <button type="button" class="btn btn-primary" (click)="openNew()"><app-icon name="plus" [size]="18" /> Record a purchase</button>
-          @if (auth.canDelete()) { <button type="button" class="btn btn-danger" (click)="openClear()">Clear records</button> }
+          @if (auth.can('purchases.delete')) { <button type="button" class="btn btn-danger" (click)="openClear()">Clear records</button> }
         </div>
       </div>
 
@@ -81,7 +81,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
                   <button type="button" class="btn btn-sm" (click)="sending.set(s)"><app-icon name="send" [size]="15" /> Send</button>
                   <a class="btn btn-sm" [href]="'/api/supplies/' + s.id + '/pdf'" target="_blank" rel="noopener"><app-icon name="print" [size]="15" /> PDF</a>
                   @if (s.outstanding > 0) { <button type="button" class="btn btn-sm" (click)="openPay(s)">Pay</button> }
-                  @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }
+                  @if (auth.can('purchases.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="remove(s)">Delete</button> }
                 </td>
               </tr>
             }

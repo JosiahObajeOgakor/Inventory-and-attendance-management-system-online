@@ -25,7 +25,7 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
           <a class="btn" href="/api/exports/inventory" download><app-icon name="download" [size]="18" /> Excel</a>
           @if (auth.company() !== 'candid') { <button type="button" class="btn btn-primary" (click)="open('production')"><app-icon name="plus" [size]="18" /> Record production</button> }
           <button type="button" class="btn" (click)="open('transfer')"><app-icon name="swap" [size]="18" /> Move between warehouses</button>
-          @if (auth.isAdmin()) { <button type="button" class="btn" (click)="openTidy()">Tidy up duplicates</button> }
+          @if (auth.can('stock.adjust')) { <button type="button" class="btn" (click)="openTidy()">Tidy up duplicates</button> }
         </div>
       </div>
 
@@ -45,14 +45,14 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
 
         @if (tab() === 'batches') {
           <div class="table-wrap"><table class="table">
-            <thead><tr><th>Product</th><th>Warehouse</th><th>Batch</th><th>Expires</th><th class="num">On hand</th><th>Status</th>@if (auth.isAdmin()) { <th><span class="sr-only">Actions</span></th> }</tr></thead>
+            <thead><tr><th>Product</th><th>Warehouse</th><th>Batch</th><th>Expires</th><th class="num">On hand</th><th>Status</th>@if (auth.can('stock.adjust')) { <th><span class="sr-only">Actions</span></th> }</tr></thead>
             <tbody>
               @for (b of batches.items(); track b.batchId) {
                 <tr><td><span class="strong">{{ b.product }}</span><div class="muted mono sm">{{ b.sku }} · {{ b.category }}</div></td><td>{{ b.warehouse }}</td>
                   <td class="mono">{{ b.batchNumber }}</td><td>{{ b.expiryDate ? (b.expiryDate | day) : '—' }}</td><td class="num mono strong">{{ b.quantity }}</td>
                   <td><app-stamp [label]="b.status" /></td>
-                  @if (auth.isAdmin()) { <td class="actions"><button type="button" class="btn btn-sm" (click)="openAdjust(b)">Adjust</button>
-                    @if (auth.canDelete()) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteItem(b)">Delete item</button> }</td> }</tr>
+                  @if (auth.can('stock.adjust')) { <td class="actions"><button type="button" class="btn btn-sm" (click)="openAdjust(b)">Adjust</button>
+                    @if (auth.can('stock.delete')) { <button type="button" class="btn btn-sm btn-danger" (click)="deleteItem(b)">Delete item</button> }</td> }</tr>
               }
             </tbody>
           </table></div>

@@ -17,7 +17,7 @@ public sealed record BranchUserDto(int UserId, string Username, string FullName,
 
 /// <summary>Branches, which warehouses and staff belong to each, and how each is doing.</summary>
 [ApiController, Route("api/branches"), RequiresNewFeatures]
-[Authorize(Policy = Policies.Admin)]
+[Authorize(Policy = Perm.CompanyEdit)]
 public class BranchesController(ICurrentUser cu, BranchService svc, ICompanyContext company, IdentityStore store, UserManager<AppUser> users, IClock clock)
     : AppController(cu)
 {

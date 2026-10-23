@@ -19,7 +19,7 @@ const stamp = (s: string) => s === 'Approved' ? 'ok' : s === 'Pending' ? 'warn' 
   template: `
     <div class="page">
       <div class="page-head"><h1>Time Off</h1><div class="grow"></div>
-        @if (auth.isAdmin()) { <button type="button" class="btn" (click)="typesOpen.set(true)">Leave types</button><button type="button" class="btn btn-primary" (click)="startRequest()">Record leave</button> }</div>
+        @if (auth.can('timeoff.manage')) { <button type="button" class="btn" (click)="typesOpen.set(true)">Leave types</button><button type="button" class="btn btn-primary" (click)="startRequest()">Record leave</button> }</div>
 
       @if (d(); as t) {
         <div class="kpis">
@@ -44,7 +44,7 @@ const stamp = (s: string) => s === 'Approved' ? 'ok' : s === 'Pending' ? 'warn' 
                   <td><span [class]="'stamp stamp-' + tone(r.status)">{{ r.status }}</span>@if (r.decisionNote) { <div class="muted sm">{{ r.decisionNote }}</div> }</td>
                   <td class="muted sm">{{ r.requestedBy }}</td>
                   <td class="actions">
-                    @if (r.status === 'Pending' && auth.isAdmin()) { <button type="button" class="btn btn-sm btn-primary" (click)="approve(r.id)">Approve</button><button type="button" class="btn btn-sm" (click)="reject(r.id)">Reject</button> }
+                    @if (r.status === 'Pending' && auth.can('timeoff.manage')) { <button type="button" class="btn btn-sm btn-primary" (click)="approve(r.id)">Approve</button><button type="button" class="btn btn-sm" (click)="reject(r.id)">Reject</button> }
                     @if (r.status === 'Pending' || (r.status === 'Approved' && r.fromDate > today)) { <button type="button" class="btn btn-sm" (click)="cancel(r.id)">Cancel</button> }
                   </td></tr>
               }</tbody>

@@ -13,7 +13,8 @@ namespace Inventory.Api.Controllers;
 
 public sealed record LoginRequest(string Username, string Password, string Company);
 public sealed record CompanyChoice(string Key, string DisplayName, bool HasPriceLists = false, bool BuysGoods = false, bool HasNewFeatures = false, bool HasMarketing = false);
-public sealed record MeResponse(int Id, string Username, string FullName, string Role, string Company, IReadOnlyList<CompanyChoice> Companies, bool MustChangePassword);
+/// <param name="Permissions">What this user may do (Inventory.Domain.Permissions codes), so the app shows only the screens and buttons that will work.</param>
+public sealed record MeResponse(int Id, string Username, string FullName, string Role, string Company, IReadOnlyList<CompanyChoice> Companies, bool MustChangePassword, IReadOnlyList<string> Permissions);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record SwitchCompanyRequest(string Company);
 
@@ -77,7 +78,7 @@ public class AuthController(
         try
         {
             var me = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Abstractions.ICurrentUser>().User;
-            if (me is not null && me.Role is not RoleNames.Admin)
+            if (me is not null && me.Can(Permissions.AttendanceSelf) && !me.Can(Permissions.UsersManage))
                 await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Staff.AttendanceService>().CheckOutAsync(me, ct);
         }
         catch (Exception ex) { log.LogWarning(ex, "Could not log check-out"); }
@@ -126,6 +127,7 @@ public class AuthController(
         if (user.MustChangePassword) extra.Add(new Claim(MustChangePasswordMiddleware.ClaimType, "true"));
         if (await store.UserBranches.AsNoTracking().Where(x => x.UserId == user.Id && x.CompanyKey == companyKey).Select(x => (int?)x.BranchId).FirstOrDefaultAsync() is int branch)
             extra.Add(new Claim(AppClaims.Branch, branch.ToString()));
+
         await signIn.SignOutAsync();
         await signIn.SignInWithClaimsAsync(user, isPersistent: false, extra);
     }
@@ -134,7 +136,7 @@ public class AuthController(
     {
         var role = (await users.GetRolesAsync(user)).FirstOrDefault() ?? "";
         var choices = companies.All.Where(c => user.CanOpen(c.Key)).Select(c => new CompanyChoice(c.Key, c.DisplayName, c.HasPriceLists, c.BuysGoods, c.HasNewFeatures, c.HasNewFeatures || c.HasMarketing)).ToList();
-        return new MeResponse(user.Id, user.UserName!, user.FullName, role, companyKey, choices, user.MustChangePassword);
+        return new MeResponse(user.Id, user.UserName!, user.FullName, role, companyKey, choices, user.MustChangePassword, await store.PermissionsForAsync(user.Id));
     }
 
     private async Task Audit(string username, bool ok, string? reason, CancellationToken ct)

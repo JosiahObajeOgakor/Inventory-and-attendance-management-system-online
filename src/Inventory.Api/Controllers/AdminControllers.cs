@@ -15,12 +15,12 @@ namespace Inventory.Api.Controllers;
 public class DashboardController(ICurrentUser cu, DashboardQueries q) : AppController(cu)
 {
     /// <summary>Profit, expenses and reorder advice are computed and returned ONLY for admins; clerks get nulls.</summary>
-    [HttpGet, Authorize(Policy = Policies.Staff)]
+    [HttpGet, Authorize(Policy = Perm.ProductsView)]
     public Task<DashboardDto> Get(CancellationToken ct) => q.GetAsync(IsAdmin, ct);
 }
 
 [ApiController, Route("api/finance")]
-[Authorize(Policy = Policies.Admin)]
+[Authorize(Policy = Perm.FinanceView)]
 public class FinanceController(ICurrentUser cu, FinanceQueries q) : AppController(cu)
 {
     [HttpGet("summary")]
@@ -39,11 +39,18 @@ public sealed record UpdateUserRequest(string FullName, string Role, string[] Co
 public sealed record ResetPasswordRequest(string NewPassword);
 
 [ApiController, Route("api/users")]
-[Authorize(Policy = Policies.Ceo)]
-public class UsersController(ICurrentUser cu, UserManager<AppUser> users, CompanyRegistry companies, ILogger<UsersController> log) : AppController(cu)
+[Authorize(Policy = Perm.UsersManage)]
+public class UsersController(ICurrentUser cu, UserManager<AppUser> users, CompanyRegistry companies, RoleManager<IdentityRole<int>> roles, IdentityStore store,
+    ILogger<UsersController> log) : AppController(cu)
 {
-    private static bool ValidRole(string r) => RoleNames.All.Contains(r);
-    private const string BadRole = "Role must be ADMIN (CEO), MANAGER or CLERK.";
+    private Task<bool> ValidRole(string r) => string.IsNullOrWhiteSpace(r) ? Task.FromResult(false) : roles.RoleExistsAsync(r);
+    private const string BadRole = "Choose one of the roles listed under People & access → Roles.";
+
+    private async Task<bool> RoleGrants(string role, string permission)
+    {
+        var id = (await roles.FindByNameAsync(role))?.Id;
+        return id is int rid && await store.RolePermissions.AnyAsync(p => p.RoleId == rid && p.Permission == permission);
+    }
 
     /// <summary>null when blank (no email), "" when it is not an email address, else the trimmed address. Clerks get the sale emails here.</summary>
     private static string? CleanEmail(string? e)
@@ -66,7 +73,7 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
     [HttpPost]
     public async Task<IActionResult> Create(CreateUserRequest r)
     {
-        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
+        if (!await ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
         var access = r.Companies.Where(c => companies.Find(c) is not null).ToArray();
         if (access.Length == 0) return BadRequest(new ProblemDetails { Status = 400, Title = "Choose at least one company." });
         if (string.IsNullOrWhiteSpace(r.FullName) || string.IsNullOrWhiteSpace(r.Username)) return BadRequest(new ProblemDetails { Status = 400, Title = "Name and username are required." });
@@ -86,9 +93,9 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
     {
         var user = await users.FindByIdAsync(id.ToString());
         if (user is null) return NotFound();
-        if (!ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
-        if (id == Me.Id && (!r.IsActive || r.Role != RoleNames.Admin))
-            return Conflict(new ProblemDetails { Status = 409, Title = "You can't disable or demote your own account." });
+        if (!await ValidRole(r.Role)) return BadRequest(new ProblemDetails { Status = 400, Title = BadRole });
+        if (id == Me.Id && (!r.IsActive || !await RoleGrants(r.Role, Permissions.UsersManage)))
+            return Conflict(new ProblemDetails { Status = 409, Title = "You can't disable your own account or move yourself to a role that can't manage people." });
 
         var mail = CleanEmail(r.Email);
         if (mail == "") return BadRequest(new ProblemDetails { Status = 400, Title = "That doesn't look like a valid email address." });
@@ -123,7 +130,7 @@ public class UsersController(ICurrentUser cu, UserManager<AppUser> users, Compan
 }
 
 [ApiController, Route("api/audit")]
-[Authorize(Policy = Policies.Admin)]
+[Authorize(Policy = Perm.AuditView)]
 public class AuditController(ICurrentUser cu, IBusinessDbContext db, IdentityStore store) : AppController(cu)
 {
     [HttpGet]

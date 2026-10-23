@@ -1,9 +1,10 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
+import { CanActivateFn, Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { Auth } from './auth.service';
 import { MARKETING_APPS } from './product-catalog';
+import { APP_PERMISSION } from './permission-catalog';
 
 /** The API rejects any state-changing call without this header (defence in depth on top of SameSite=Strict). */
 export const csrfInterceptor: HttpInterceptorFn = (req, next) =>
@@ -37,30 +38,33 @@ export const appGuard: CanActivateFn = route => {
   return f.hasNewFeatures || (f.hasMarketing && MARKETING_APPS.includes(route.paramMap.get('app') ?? '')) ? true : inject(Router).createUrlTree(['/dashboard']);
 };
 
-/** CEO or manager. */
-export const adminGuard: CanActivateFn = () => {
+/** Where someone lands: the first screen their role opens (the dashboard for most; Campaigns for a marketer). */
+const HOMES: [string, string][] = [
+  ['/dashboard', 'products.view'], ['/dashboard', 'analytics.view'], ['/sales', 'sales.view'], ['/campaigns', 'campaigns.manage'], ['/website', 'sitecontent.manage'],
+  ['/customers', 'customers.view'], ['/finance', 'finance.view'], ['/team', 'attendance.view'], ['/users', 'users.manage'],
+];
+export function homePath(auth: Auth): string {
+  const app = Object.entries(APP_PERMISSION).find(([, p]) => auth.can(p));
+  return HOMES.find(([, p]) => auth.can(p))?.[0] ?? (app ? '/apps/' + app[0] : '/appearance');
+}
+
+/** A page that needs a permission: data: { perm: 'sales.view' } (or several, any one is enough: 'a|b'). Without it you go to your own first screen. */
+export const permGuard: CanActivateFn = route => {
   const auth = inject(Auth);
-  return auth.isAdmin() ? true : inject(Router).createUrlTree(['/dashboard']);
+  const wanted = String(route.data['perm'] ?? '').split('|').filter(Boolean);
+  if (wanted.some(p => auth.can(p))) return true;
+  const home = homePath(auth);
+  return inject(Router).createUrlTree([home === '/' + route.routeConfig?.path ? '/appearance' : home]);
 };
 
-/** CEO, manager or digital marketer: Campaigns, the Marketing apps and the Website. */
-export const marketingRoleGuard: CanActivateFn = () => {
+/** An app page needs that app's own permission. */
+export const appPermGuard: CanActivateFn = route => {
   const auth = inject(Auth);
-  return auth.isAdmin() || auth.isMarketer() ? true : inject(Router).createUrlTree(['/dashboard']);
+  return auth.can(APP_PERMISSION[route.paramMap.get('app') ?? ''] ?? '') ? true : inject(Router).createUrlTree([homePath(auth)]);
 };
 
-/** A digital marketer stays inside marketing: any other page sends them to Campaigns. (The API enforces the same fence on every endpoint.) */
-export const marketerFenceGuard: CanActivateChildFn = (_route, state) => {
+/** The dashboard: the management overview or the counter view, whichever the role has; otherwise your own first screen. */
+export const dashboardGuard: CanActivateFn = () => {
   const auth = inject(Auth);
-  if (!auth.isMarketer()) return true;
-  const path = state.url.split(/[?#]/)[0];
-  const app = path.startsWith('/apps/') ? path.split('/')[2] : null;
-  const ok = ['/campaigns', '/website', '/appearance'].some(p => path === p || path.startsWith(p + '/')) || (app !== null && MARKETING_APPS.includes(app));
-  return ok ? true : inject(Router).createUrlTree(['/campaigns']);
-};
-
-/** The CEO only (people & roles, clearing history). */
-export const ceoGuard: CanActivateFn = () => {
-  const auth = inject(Auth);
-  return auth.isCeo() ? true : inject(Router).createUrlTree(['/dashboard']);
+  return auth.can('products.view') || auth.can('analytics.view') ? true : inject(Router).createUrlTree([homePath(auth)]);
 };

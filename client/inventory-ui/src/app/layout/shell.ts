@@ -10,66 +10,66 @@ import { Modal } from '../shared/modal';
 import { Toasts } from '../shared/feedback';
 import { HttpClient } from '@angular/common/http';
 import { APPS, APP_GROUPS, MARKETING_APPS } from '../core/product-catalog';
+import { APP_PERMISSION } from '../core/permission-catalog';
 import { AssistantPanel } from '../features/assistant/assistant';
 import { ClerkWelcome } from '../features/attendance/clerk-welcome';
 
 /** Module-level so it survives the shell being destroyed and re-created (e.g. on a business switch). */
 let checkInAskedFor: string | null = null;
 
-interface NavItem { label: string; path: string; icon: string; adminOnly?: boolean; /** Also open to a digital marketer (who sees only these). */ marketer?: boolean; ceoOnly?: boolean; needs?: 'hasPriceLists'; /** A record-keeping app: offered only when the server has it switched on for this business. */ app?: string; /** A newer feature being tested with K9 Cravings: visible everywhere, usable only there. */ preview?: boolean; }
+interface NavItem { label: string; path: string; icon: string; /** Shown when the person's role has this permission (any one of 'a|b'). */ perm: string; needs?: 'hasPriceLists'; /** A record-keeping app: offered only when the server has it switched on for this business. */ app?: string; /** A newer feature being tested with K9 Cravings: visible everywhere, usable only there. */ preview?: boolean; }
 interface NavGroup { title: string; icon: string; items: NavItem[]; }
 
 const BUILT: NavGroup[] = [
   { title: 'Counter', icon: 'sale', items: [
-    { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
-    { label: 'Sales', path: '/sales', icon: 'sale' },
-    { label: 'Stock', path: '/stock', icon: 'stock' },
-    { label: 'Products', path: '/products', icon: 'product' },
-    { label: 'Price book', path: '/price-book', icon: 'tag', needs: 'hasPriceLists' },
-    { label: 'Serial numbers', path: '/serials', icon: 'barcode' },
+    { label: 'Dashboard', path: '/dashboard', icon: 'dashboard', perm: 'products.view|analytics.view' },
+    { label: 'Sales', path: '/sales', icon: 'sale', perm: 'sales.view' },
+    { label: 'Stock', path: '/stock', icon: 'stock', perm: 'stock.view' },
+    { label: 'Products', path: '/products', icon: 'product', perm: 'products.view' },
+    { label: 'Price book', path: '/price-book', icon: 'tag', perm: 'pricebook.view', needs: 'hasPriceLists' },
+    { label: 'Serial numbers', path: '/serials', icon: 'barcode', perm: 'serials.manage' },
   ] },
   { title: 'Trade', icon: 'customer', items: [
-    { label: 'Quotations', path: '/quotations', icon: 'file' },
-    { label: 'Waybills', path: '/waybills', icon: 'supplier' },
-    { label: 'Customers', path: '/customers', icon: 'customer', adminOnly: true },
-      { label: 'Debtors', path: '/debtors', icon: 'cash', adminOnly: true },
-      { label: 'Trade partners', path: '/partners', icon: 'partner', adminOnly: true },
-    { label: 'Campaigns', path: '/campaigns', icon: 'spark', adminOnly: true, preview: true, marketer: true },
-    { label: 'Marketing approvals', path: '/marketing-approvals', icon: 'check', adminOnly: true, preview: true },
-      { label: 'Website', path: '/website', icon: 'file', adminOnly: true, preview: true, marketer: true },
-    { label: 'Suppliers', path: '/suppliers', icon: 'supplier', adminOnly: true },
-    { label: 'Purchases', path: '/purchases', icon: 'purchase', adminOnly: true },
+    { label: 'Quotations', path: '/quotations', icon: 'file', perm: 'sales.view' },
+    { label: 'Waybills', path: '/waybills', icon: 'supplier', perm: 'waybills.manage' },
+    { label: 'Customers', path: '/customers', icon: 'customer', perm: 'customers.view' },
+    { label: 'Debtors', path: '/debtors', icon: 'cash', perm: 'customers.view' },
+    { label: 'Trade partners', path: '/partners', icon: 'partner', perm: 'partners.manage' },
+    { label: 'Campaigns', path: '/campaigns', icon: 'spark', perm: 'campaigns.manage', preview: true },
+    { label: 'Marketing approvals', path: '/marketing-approvals', icon: 'check', perm: 'marketing.approve', preview: true },
+    { label: 'Website', path: '/website', icon: 'file', perm: 'sitecontent.manage', preview: true },
+    { label: 'Suppliers', path: '/suppliers', icon: 'supplier', perm: 'suppliers.manage' },
+    { label: 'Purchases', path: '/purchases', icon: 'purchase', perm: 'purchases.view' },
   ] },
   { title: 'Money', icon: 'finance', items: [
-    { label: 'Finance', path: '/finance', icon: 'finance', adminOnly: true },
-    { label: 'Analytics', path: '/analytics', icon: 'spark', adminOnly: true },
-    { label: 'Expenses', path: '/expenses', icon: 'cash', adminOnly: true },
-    { label: 'Rebates', path: '/rebates', icon: 'gift', adminOnly: true },
-    { label: 'Accounting', path: '/accounting', icon: 'audit', adminOnly: true, preview: true },
-    { label: 'Tax', path: '/tax', icon: 'cash', adminOnly: true, preview: true },
-    { label: 'Bank reconciliation', path: '/banking', icon: 'cash', adminOnly: true, preview: true },
-    { label: 'Budgets', path: '/budgets', icon: 'spark', adminOnly: true, preview: true },
-    { label: 'Fixed assets', path: '/fixed-assets', icon: 'stock', adminOnly: true, preview: true },
-    { label: 'Currencies', path: '/currencies', icon: 'finance', adminOnly: true, preview: true },
-    { label: 'Approvals', path: '/approvals', icon: 'audit', adminOnly: true, preview: true },
+    { label: 'Finance', path: '/finance', icon: 'finance', perm: 'finance.view' },
+    { label: 'Analytics', path: '/analytics', icon: 'spark', perm: 'analytics.view' },
+    { label: 'Expenses', path: '/expenses', icon: 'cash', perm: 'expenses.manage' },
+    { label: 'Rebates', path: '/rebates', icon: 'gift', perm: 'rebates.manage' },
+    { label: 'Accounting', path: '/accounting', icon: 'audit', perm: 'gl.view', preview: true },
+    { label: 'Tax', path: '/tax', icon: 'cash', perm: 'tax.manage', preview: true },
+    { label: 'Bank reconciliation', path: '/banking', icon: 'cash', perm: 'bank.reconcile', preview: true },
+    { label: 'Budgets', path: '/budgets', icon: 'spark', perm: 'gl.view', preview: true },
+    { label: 'Fixed assets', path: '/fixed-assets', icon: 'stock', perm: 'gl.view', preview: true },
+    { label: 'Currencies', path: '/currencies', icon: 'finance', perm: 'gl.view', preview: true },
+    { label: 'Approvals', path: '/approvals', icon: 'audit', perm: 'approvals.decide|company.edit', preview: true },
   ] },
   { title: 'People', icon: 'users', items: [
-    { label: 'Team', path: '/team', icon: 'clock', adminOnly: true },
-    { label: 'People & access', path: '/users', icon: 'users', ceoOnly: true },
+    { label: 'Team', path: '/team', icon: 'clock', perm: 'attendance.view' },
+    { label: 'People & access', path: '/users', icon: 'users', perm: 'users.manage' },
   ] },
   { title: 'System', icon: 'settings', items: [
-    { label: 'Company & documents', path: '/company', icon: 'settings', adminOnly: true },
-    { label: 'Branches', path: '/branches', icon: 'stock', adminOnly: true, preview: true },
-    { label: 'Activity log', path: '/activity', icon: 'audit', adminOnly: true },
-    { label: 'Database storage', path: '/storage', icon: 'stock', ceoOnly: true },
+    { label: 'Company & documents', path: '/company', icon: 'settings', perm: 'company.edit' },
+    { label: 'Branches', path: '/branches', icon: 'stock', perm: 'company.edit', preview: true },
+    { label: 'Activity log', path: '/activity', icon: 'audit', perm: 'audit.view' },
+    { label: 'Database storage', path: '/storage', icon: 'stock', perm: 'storage.manage' },
   ] },
 ];
-
 /** The core sections, plus the record-keeping apps: an app of an existing section joins it, the rest get a section of their own just before System. */
 const NAV: NavGroup[] = (() => {
   const nav = BUILT.map(g => ({ ...g, items: [...g.items] }));
   for (const g of APP_GROUPS) {
-    const items: NavItem[] = APPS.filter(a => a.group === g.group).map(a => ({ label: a.label, path: a.path ?? '/apps/' + a.key, icon: a.icon, adminOnly: true, app: a.key, preview: true, marketer: MARKETING_APPS.includes(a.key) }));
+    const items: NavItem[] = APPS.filter(a => a.group === g.group).map(a => ({ label: a.label, path: a.path ?? '/apps/' + a.key, icon: a.icon, perm: APP_PERMISSION[a.key] ?? 'users.manage', app: a.key, preview: true }));
     const own = nav.find(x => x.title === g.group);
     if (own) own.items.push(...items);
     else nav.splice(nav.findIndex(x => x.title === 'System'), 0, { title: g.group, icon: g.icon, items });
@@ -100,7 +100,7 @@ export class Shell {
   protected readonly navOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly groups = computed(() =>
-    NAV.map(g => ({ ...g, items: g.items.filter(i => (this.auth.isMarketer() ? !!i.marketer : (!i.adminOnly || this.auth.isAdmin())) && (!i.ceoOnly || this.auth.isCeo()) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || this.locked(i) || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
+    NAV.map(g => ({ ...g, items: g.items.filter(i => i.perm.split('|').some(p => this.auth.can(p)) && (!i.needs || this.auth.flags()[i.needs]) && (!i.app || this.locked(i) || this.enabledApps().includes(i.app))) })).filter(g => g.items.length));
   /** True for a newer feature in a business that doesn't have it yet. Campaigns and the Marketing apps open with Marketing alone. */
   protected locked(i: NavItem): boolean {
     const f = this.auth.flags();
@@ -146,9 +146,9 @@ export class Shell {
         void key;
       });
     });
-    effect(() => { if (this.auth.isAdmin() || this.auth.isMarketer()) this.idle.start(); else this.idle.stop(); });
+    effect(() => { if (this.auth.manages()) this.idle.start(); else this.idle.stop(); });
     effect(() => {
-      if (!this.auth.me() || !(this.auth.isAdmin() || this.auth.isMarketer())) { this.enabledApps.set([]); return; }
+      if (!this.auth.me() || !Object.values(APP_PERMISSION).some(p => this.auth.can(p))) { this.enabledApps.set([]); return; }
       this.http.get<string[]>('/api/apps/enabled').subscribe({ next: a => this.enabledApps.set(a), error: () => this.enabledApps.set([]) });
     });
     // A clerk is asked to clock on once per day, when they first arrive. The request runs untracked: an HTTP call started inside an effect
@@ -157,7 +157,7 @@ export class Shell {
     // used to fire another /api/attendance/today.
     effect(() => {
       const me = this.auth.me();
-      if (!me || this.auth.isCeo() || this.auth.isMarketer()) return;   // marketers don't clock in here
+      if (!me || !this.auth.can('attendance.self') || this.auth.can('users.manage')) return;   // those who clock in; never the person running the business
       const key = me.username + '|' + new Date().toDateString();
       if (checkInAskedFor === key) return;
       checkInAskedFor = key;
