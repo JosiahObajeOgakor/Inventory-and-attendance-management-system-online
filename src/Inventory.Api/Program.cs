@@ -107,7 +107,14 @@ builder.Services.AddScoped<Inventory.Application.Queries.IUserDirectory, UserDir
 builder.Services.AddApplication();
 builder.Services.AddSingleton(new Inventory.Application.AppsEngine.AppAccess(builder.Configuration["Apps:Enabled"]));
 builder.Services.AddSingleton<Inventory.Api.Infrastructure.CompanyScopes>();
-builder.Services.AddScoped<Inventory.Application.Messaging.ISmsSender, Inventory.Infrastructure.Messaging.TermiiSmsSender>();
+builder.Services.AddScoped<Inventory.Infrastructure.Messaging.TermiiSmsSender>();
+builder.Services.AddHttpClient<Inventory.Infrastructure.Messaging.TwilioSmsSender>(c => c.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddScoped<Inventory.Application.Messaging.ISmsSender>(sp => sp.GetRequiredService<Inventory.Infrastructure.Messaging.TwilioSmsSender>());
+// Trade partners: CAC check with an outside provider (manual when none is set up) and alerts to staff and partners
+builder.Services.Configure<Inventory.Infrastructure.Partners.VerificationOptions>(builder.Configuration.GetSection(Inventory.Infrastructure.Partners.VerificationOptions.Section));
+builder.Services.AddHttpClient<Inventory.Infrastructure.Partners.DojahVerifier>(c => c.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<Inventory.Application.Partners.IBusinessVerifier>(sp => sp.GetRequiredService<Inventory.Infrastructure.Partners.DojahVerifier>());
+builder.Services.AddScoped<Inventory.Application.Partners.IStaffAlerts, Inventory.Infrastructure.Partners.StaffAlertService>();
 builder.Services.AddHostedService<Inventory.Api.Infrastructure.BroadcastWorker>();
 
 // ---- identity: cookie session, legacy-hash aware, lockout 5 tries / 15 min (rule A) ----
@@ -172,6 +179,9 @@ builder.Services.AddRateLimiter(o =>
     o.AddPolicy(Policies.WebChatRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    o.AddPolicy(Policies.ApplyRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 5, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
 });
 
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never);

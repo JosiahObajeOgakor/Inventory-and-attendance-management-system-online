@@ -79,6 +79,7 @@ public partial class BusinessDbContext(DbContextOptions<BusinessDbContext> optio
         ConfigureBranches(b);
         ConfigureMoney(b);
         ConfigureChatEvents(b);
+        ConfigurePartners(b);
 
         b.Entity<Category>(e =>
         {

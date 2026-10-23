@@ -161,6 +161,47 @@ public class WebChatController(IConfiguration config, Microsoft.Extensions.Optio
         return await HttpContext.RequestServices.GetRequiredService<Inventory.Application.Website.WebCheckoutService>().CheckoutAsync(r, site + "/?paid=1#shop", ct);
     }
 
+    /// <summary>
+    /// A pet shop, wholesaler or distributor applies for trade prices: the form's fields plus the CAC certificate (and optionally an ID or shop photo).
+    /// Nothing changes for them until a manager approves; the admin is told at once.
+    /// </summary>
+    [HttpPost("trade/apply"), AllowAnonymous, RequestSizeLimit(7_000_000), EnableRateLimiting(Policies.ApplyRateLimit)]
+    public async Task<ActionResult<Inventory.Application.Partners.PartnerApplied>> ApplyForTrade([FromQuery] string? store, [FromForm] TradeApplicationForm f, CancellationToken ct)
+    {
+        if (Store(store) is not { } key) return NotFound();
+        if (!string.IsNullOrEmpty(f.Website)) return Ok(new Inventory.Application.Partners.PartnerApplied(0, "Pending", "Thank you."));   // honeypot: only bots fill the hidden field
+        HttpContext.Items[RequestCompany.OverrideItem] = key;
+        var uploads = new List<Inventory.Application.Partners.PartnerUpload>();
+        foreach (var (kind, file) in new[] { ("cac", f.Cac), ("id", f.Id), ("other", f.Other) })
+        {
+            if (file is null || file.Length == 0) continue;
+            if (file.Length > Inventory.Application.Partners.TradePartnerService.MaxDocumentBytes) return Problem(statusCode: 400, detail: "Please attach files under 3 MB each.");
+            await using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, ct);
+            uploads.Add(new(kind, file.FileName, file.ContentType, ms.ToArray()));
+        }
+        var svc = HttpContext.RequestServices.GetRequiredService<Inventory.Application.Partners.TradePartnerService>();
+        return await svc.ApplyAsync(new(f.BusinessName, f.ContactName, f.Phone, f.Email, f.Address, f.CacNumber, f.TaxId, f.Description, f.Tier), uploads, "website", ct);
+    }
+
+    public sealed class TradeApplicationForm
+    {
+        public string BusinessName { get; set; } = "";
+        public string ContactName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Address { get; set; } = "";
+        public string CacNumber { get; set; } = "";
+        public string? TaxId { get; set; }
+        public string Description { get; set; } = "";
+        public string Tier { get; set; } = "Wholesaler";
+        public IFormFile? Cac { get; set; }
+        public IFormFile? Id { get; set; }
+        public IFormFile? Other { get; set; }
+        /// <summary>Hidden from people; a bot that fills every field fills this too.</summary>
+        public string? Website { get; set; }
+    }
+
     /// <summary>Counts a visit, a basket started, a basket sent to WhatsApp or a checkout opened. Nothing about the visitor is stored.</summary>
     [HttpPost("track"), AllowAnonymous, RequestSizeLimit(1024), EnableRateLimiting(Policies.WebChatRateLimit)]
     public async Task<IActionResult> Track(TrackRequest r, CancellationToken ct)

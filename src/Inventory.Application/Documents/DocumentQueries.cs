@@ -163,7 +163,8 @@ public sealed class DocumentQueries(IBusinessDbContext db, CompanyProfileService
         var images = catalog
             ? await db.ProductImages.AsNoTracking().Where(i => ids.Contains(i.ProductId)).ToDictionaryAsync(i => i.ProductId, i => i.Data, ct)
             : [];
-        var lines = products.Where(x => chosen || includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0)
+        // an unpriced product would print as ₦0, which customers read as free or as a mistake: it stays off the list until it has a price
+        var lines = products.Where(x => x.p.PriceFor(tier) > 0 && (chosen || includeOutOfStock || qty.GetValueOrDefault(x.p.Id) > 0))
             .OrderBy(x => x.Category).ThenBy(x => x.p.Name)
             .Select(x => new PriceListLine(x.Category, x.p.Name, x.p.Sku, x.p.Unit, x.p.PriceFor(tier), qty.GetValueOrDefault(x.p.Id), images.GetValueOrDefault(x.p.Id))).ToList();
         var today = clock.BusinessToday;

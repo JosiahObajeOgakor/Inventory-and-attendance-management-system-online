@@ -71,7 +71,7 @@ public class ChatSalesTests(MySqlFixture mysql)
     private sealed class Rig
     {
         public required string Cs; public required BusinessDbContext Db; public required ChatFlowService Flow; public required PaymentLinkService Pay; public required ChatPaymentNotifier Notifier;
-        public required RecordingAlerts Alerts; public required FakeVirtualAccounts Va; public required CountingModel Ai; public required RecordingSender Sender; public required RecordingNotifier Admin; public required Seed Seed;
+        public required RecordingAlerts Alerts; public required FakeVirtualAccounts Va; public required CountingModel Ai; public required RecordingSender Sender; public required RecordingNotifier Admin; public required Seed Seed; public required RecordingStaffAlerts Staff;
         public async Task<string> Say(string phone, string text, string name = "")
         {
             var r = await Flow.HandleAsync(ChatChannels.WhatsApp, phone, name, text, default);
@@ -93,13 +93,14 @@ public class ChatSalesTests(MySqlFixture mysql)
         var tx = Wire.Tx(db);
         var quotes = new QuotationService(db, tx, clock, co, SalesFor(db), new NoUsers());
         var admin = new RecordingNotifier(); var va = new FakeVirtualAccounts(); var ai = new CountingModel(aiJson); var sender = new RecordingSender();
-        var alerts = new RecordingAlerts();
+        var alerts = new RecordingAlerts(); var staffAlerts = new RecordingStaffAlerts();
         var pay = new PaymentLinkService(db, tx, clock, co, new PaymentGateways([gateway ?? new FakeGateway(false)]), admin, new CustomerPaymentService(db, tx, clock), quotes, va, withAlerts ? alerts : null);
         var opts = Options.Create(new SalesAssistantOptions());
         var texts = new ChatOrderText(db, co);
         var flow = new ChatFlowService(db, new ChatConversationService(db, clock), new CustomerLookupService(db), quotes, pay, new StockAvailabilityService(db, co, clock, opts),
-            new ChatAiInterpreter(ai, db, opts, NullLogger<ChatAiInterpreter>.Instance), texts, new CompanyProfileService(db, co, clock), co, clock, opts, NullLogger<ChatFlowService>.Instance, new Inventory.Application.Campaigns.ConsentService(db, clock));
-        return new Rig { Cs = cs, Db = db, Flow = flow, Pay = pay, Alerts = alerts, Va = va, Ai = ai, Sender = sender, Admin = admin, Seed = seed, Notifier = new ChatPaymentNotifier(db, texts, sender, co, clock, NullLogger<ChatPaymentNotifier>.Instance) };
+            new ChatAiInterpreter(ai, db, opts, NullLogger<ChatAiInterpreter>.Instance), texts, new CompanyProfileService(db, co, clock), co, clock, opts, NullLogger<ChatFlowService>.Instance, new Inventory.Application.Campaigns.ConsentService(db, clock),
+            partners: new Inventory.Application.Partners.TradePartnerService(db, clock, co, new FakeVerifier(), staffAlerts, NullLogger<Inventory.Application.Partners.TradePartnerService>.Instance));
+        return new Rig { Cs = cs, Db = db, Flow = flow, Pay = pay, Alerts = alerts, Va = va, Ai = ai, Sender = sender, Admin = admin, Seed = seed, Staff = staffAlerts, Notifier = new ChatPaymentNotifier(db, texts, sender, co, clock, NullLogger<ChatPaymentNotifier>.Instance) };
     }
 
     private static async Task<(PaymentLink Link, Quotation Quote)> OpenOrder(Rig r)
@@ -177,7 +178,7 @@ public class ChatSalesTests(MySqlFixture mysql)
     }
 
     [Fact]
-    public async Task A_registered_wholesaler_is_quoted_and_charged_their_own_price_and_a_stranger_the_retail_price()
+    public async Task Only_an_approved_trade_partner_is_quoted_trade_prices_a_customer_type_alone_or_a_suspension_gets_retail()
     {
         var r = await BuildAsync(stock: 40);
         var musa = await r.Db.Customers.SingleAsync(c => c.Phone == Musa);
@@ -185,8 +186,55 @@ public class ChatSalesTests(MySqlFixture mysql)
         var retail = await r.Db.Products.AsNoTracking().Where(p => p.Id == r.Seed.ProductId).Select(p => new { p.PriceRetail, p.PriceWholesaler }).SingleAsync();
         Assert.True(retail.PriceWholesaler < retail.PriceRetail);
 
-        Assert.Contains(ChatOrderText.Naira(retail.PriceWholesaler * 3), await r.Say(Musa, "3 adult dog food", "Musa"));
+        // staff marking a customer "Wholesaler" is not enough: the chat quotes retail
+        Assert.Contains(ChatOrderText.Naira(retail.PriceRetail * 3), await r.Say(Musa, "3 adult dog food", "Musa"));
+        await r.Say(Musa, "cancel");
+
+        var partner = new TradePartner { BusinessName = "Musa Pets", ContactName = "Musa", Phone = Musa, Email = "m@example.com", Address = "1 Market Road, Kano", CacNumber = "RC123456",
+            Description = "Pet shop", RequestedTier = "Wholesaler", ApprovedTier = "Wholesaler", Status = PartnerStatuses.Approved, CreatedAt = DateTime.UtcNow };
+        r.Db.TradePartners.Add(partner); await r.Db.SaveChangesAsync();
+        Assert.Contains(ChatOrderText.Naira(retail.PriceWholesaler * 3), await r.Say(Musa, "3 adult dog food"));
         Assert.Contains(ChatOrderText.Naira(retail.PriceRetail * 3), await r.Say(Ngozi, "3 adult dog food", "Ngozi"));
+        await r.Say(Musa, "cancel");
+
+        partner.Status = PartnerStatuses.Suspended; await r.Db.SaveChangesAsync();
+        Assert.Contains(ChatOrderText.Naira(retail.PriceRetail * 3), await r.Say(Musa, "3 adult dog food"));
+    }
+
+    [Fact]
+    public async Task A_shop_registers_for_trade_prices_on_WhatsApp_with_the_fill_in_form()
+    {
+        var r = await BuildAsync(stock: 10);
+        var form = await r.Say(Musa, "TRADE", "Musa");
+        Assert.Contains("TRADE FORM", form);
+        Assert.Contains("CAC number:", form);
+
+        Assert.Contains("Please fill in", await r.Say(Musa, "Business name: Musa Pets\nYour name: Musa Bello\nEmail: musa@example.com\nCAC number: RC123456"));
+
+        var done = await r.Say(Musa, "TRADE FORM\nBusiness name: Musa Pets\nYour name: Musa Bello\nEmail: musa@example.com\nShop address: 4 Market Road, Kano\n" +
+                                     "CAC number: RC 123456\nTIN: 12345678-0001\nWholesaler or Distributor: distributor\nAbout your business: We supply pet shops across Kano state.");
+        Assert.Contains("with our managers", done);
+        r.Db.ChangeTracker.Clear();
+        var p = await r.Db.TradePartners.SingleAsync();
+        Assert.Equal(Musa, p.Phone);                                                     // the sender's own number, never one typed in the form
+        Assert.Equal("Distributor", p.RequestedTier);
+        Assert.Equal("whatsapp", p.Channel);
+        Assert.Single(r.Staff.Staff);
+
+        Assert.Contains("still with our managers", await r.Say(Musa, "trade"));
+        var retail = await r.Db.Products.AsNoTracking().Where(x => x.Id == r.Seed.ProductId).Select(x => x.PriceRetail).SingleAsync();
+        Assert.Contains(ChatOrderText.Naira(retail * 2), await r.Say(Musa, "2 adult dog food"));   // pending means retail
+    }
+
+    [Fact]
+    public async Task A_product_without_a_price_is_never_offered()
+    {
+        var r = await BuildAsync(stock: 10);
+        var p = await r.Db.Products.SingleAsync(x => x.Id == r.Seed.ProductId);
+        p.PriceRetail = 0; await r.Db.SaveChangesAsync();
+        var reply = await r.Say(Ngozi, "products");
+        Assert.DoesNotContain("₦0", reply);
+        Assert.DoesNotContain(p.Name, reply, StringComparison.OrdinalIgnoreCase);
     }
 
     // ------------------------------------------------------------------ the enquiry desk: questions answered in any state, then back to the sale

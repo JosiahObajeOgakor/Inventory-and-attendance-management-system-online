@@ -17,10 +17,14 @@ public sealed class StockAvailabilityService(IBusinessDbContext db, ICompanyCont
     /// <summary>Active, non-serial products with their price and reservation-adjusted stock. <paramref name="ownQuotationId"/> is the shopper's own open order, which must not count against them.</summary>
     public Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, CancellationToken ct) => CatalogueAsync(ownQuotationId, PriceTiers.Retailer, ct);
 
-    /// <summary>The same catalogue priced for one customer's tier: a registered wholesaler or distributor sees their own prices, anyone else the retail price.</summary>
+    /// <summary>
+    /// The same catalogue priced for one customer's tier: an approved trade partner sees their own prices, anyone else the retail price.
+    /// A product without a price for that tier is left out altogether: the chat and the shop must never offer something at ₦0.
+    /// </summary>
     public async Task<List<CatalogItem>> CatalogueAsync(int? ownQuotationId, string tier, CancellationToken ct)
     {
-        var products = await db.Products.AsNoTracking().Where(p => p.IsActive && !p.TracksSerial).OrderBy(p => p.Name).ToListAsync(ct);
+        var products = (await db.Products.AsNoTracking().Where(p => p.IsActive && !p.TracksSerial).OrderBy(p => p.Name).ToListAsync(ct))
+            .Where(p => p.PriceFor(tier) > 0).ToList();
         if (products.Count == 0) return [];
         var ids = products.Select(p => p.Id).ToList();
         var available = await AvailableAsync(ids, ownQuotationId, ct);

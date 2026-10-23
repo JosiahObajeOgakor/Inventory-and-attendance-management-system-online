@@ -15,6 +15,8 @@ public static class Policies
     public const string AuthRateLimit = "auth";
     public const string WhatsAppRateLimit = "whatsapp";
     public const string WebChatRateLimit = "webchat";
+    /// <summary>Trade applications carry documents: a handful per address per quarter hour is plenty for a real shop and stops a form-filling bot.</summary>
+    public const string ApplyRateLimit = "apply";
 }
 
 /// <summary>

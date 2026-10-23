@@ -21,6 +21,7 @@ export const routes: Routes = [
       { path: 'stock', loadComponent: () => import('./features/stock/stock').then(m => m.StockPage), title: 'Stock' },
       { path: 'products', loadComponent: () => import('./features/products/products').then(m => m.ProductsPage), title: 'Products' },
       { path: 'customers', canActivate: [adminGuard], loadComponent: () => import('./features/customers/customers').then(m => m.CustomersPage), title: 'Customers' },
+  { path: 'partners', canActivate: [adminGuard], loadComponent: () => import('./features/partners/partners').then(m => m.PartnersPage), title: 'Trade partners' },
   { path: 'debtors', canActivate: [adminGuard], loadComponent: () => import('./features/debtors/debtors').then(m => m.DebtorsPage), title: 'Debtors' },
       { path: 'suppliers', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/suppliers').then(m => m.SuppliersPage), title: 'Suppliers' },
       { path: 'suppliers/:id', canActivate: [adminGuard], loadComponent: () => import('./features/suppliers/supplier-detail').then(m => m.SupplierDetail), title: 'Supplier' },

@@ -10,6 +10,7 @@ import { I18n, LANGS } from './core/i18n';
 import { Stores } from './core/stores';
 import { Team } from './sections/team/team';
 import { Testimonials } from './sections/testimonials/testimonials';
+import { Trade } from './sections/trade/trade';
 import { RevealDirective } from './core/reveal.directive';
 import { whatsappDisplay, whatsappHref } from './core/whatsapp';
 
@@ -17,7 +18,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 
 @Component({
   selector: 'app-root',
-  imports: [ChatWidget, Nutrition, ProductList, StoresSection, ServiceInfo, Articles, Team, Testimonials, RevealDirective],
+  imports: [ChatWidget, Nutrition, ProductList, StoresSection, ServiceInfo, Articles, Team, Testimonials, Trade, RevealDirective],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })

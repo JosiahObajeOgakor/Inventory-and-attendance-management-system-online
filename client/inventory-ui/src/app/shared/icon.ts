@@ -26,6 +26,7 @@ const PATHS: Record<string, string> = {
   edit: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4',
   trash: 'M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13',
   chevron: 'M9 6l6 6-6 6',
+  partner: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16M11 13v2h2v-2',
   download: 'M12 4v11M7 11l5 5 5-5M5 20h14',
   clock: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
   tag: 'M3 12V4h8l10 10-8 8zM8 8h.01',

@@ -27,7 +27,7 @@ public sealed partial class ChatFlowService(
     IBusinessDbContext db, ChatConversationService conversations, CustomerLookupService customers, QuotationService quotations, PaymentLinkService pay,
     StockAvailabilityService stock, ChatAiInterpreter ai, ChatOrderText texts, CompanyProfileService profile, ICompanyContext company, IClock clock,
     IOptions<SalesAssistantOptions> options, ILogger<ChatFlowService> log, Inventory.Application.Campaigns.ConsentService consent,
-    Inventory.Application.Email.DocumentEmailService? emails = null)
+    Inventory.Application.Email.DocumentEmailService? emails = null, Inventory.Application.Partners.TradePartnerService? partners = null)
 {
     private static readonly CurrentUser SalesBot = new(0, "Sales Assistant", "SYSTEM");
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -132,6 +132,7 @@ public sealed partial class ChatFlowService(
         if (await HandleMarketingCommandAsync(t, ct)) return;
         if (t.C.State != ChatStates.Idle && ChatLexicon.IsCancel(t.Norm)) { Cancel(t); return; }
         if (await HandleWaybillAsync(t, ct)) return;
+        if (await HandleTradeAsync(t, ct)) return;        // trade registration: the form, the filled form, or where an application stands
         if (await HandleQuoteIntentAsync(t, ct)) return;
         if (await HandleEnquiryAsync(t, ct)) return;      // a question is answered in any state, then the sale is picked up again
         switch (t.C.State)
@@ -148,13 +149,16 @@ public sealed partial class ChatFlowService(
     private async Task<List<CatalogItem>> CatAsync(Turn t, CancellationToken ct) =>
         t.Cat ??= await stock.CatalogueAsync(t.C.State is ChatStates.AwaitingConfirm or ChatStates.AwaitingPayment ? t.C.QuotationId : null, await TierAsync(t, ct), ct);
 
-    /// <summary>A registered wholesaler or distributor is quoted and charged their own tier price; anyone else (including every new number) the retail price.</summary>
+    /// <summary>
+    /// Retail prices for everyone, unless the number belongs to a trade partner staff have approved (and not suspended): then the tier staff approved.
+    /// The customer's type on its own is not enough; trade prices are only for verified businesses.
+    /// </summary>
     private async Task<string> TierAsync(Turn t, CancellationToken ct)
     {
         if (t.Tier is not null) return t.Tier;
         var phone = PhoneOf(t);
-        var type = phone is null ? null : await db.Customers.AsNoTracking().Where(c => c.Phone == phone).Select(c => c.CustomerType).FirstOrDefaultAsync(ct);
-        return t.Tier = type switch { CustomerTypes.Distributor => PriceTiers.Distributor, CustomerTypes.Wholesaler => PriceTiers.Wholesaler, _ => PriceTiers.Retailer };
+        var tier = phone is null ? null : await db.TradePartners.AsNoTracking().Where(p => p.Phone == phone && p.Status == PartnerStatuses.Approved).Select(p => p.ApprovedTier).FirstOrDefaultAsync(ct);
+        return t.Tier = PriceTiers.IsValid(tier) ? tier! : PriceTiers.Retailer;
     }
 
     private void Track(Turn t, string kind, decimal? amount = null, string? reference = null) =>

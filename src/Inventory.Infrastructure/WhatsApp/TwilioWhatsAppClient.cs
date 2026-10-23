@@ -28,6 +28,10 @@ public sealed class TwilioOptions
     public Dictionary<string, string> Templates { get; set; } = [];
     /// <summary>Businesses without a number of their own that use the first number (one line sells for every business): comma-separated keys, or "*" (the default) for all.</summary>
     public string SharedWith { get; set; } = "*";
+    /// <summary>SMS sender on the same account: an SMS-capable Twilio number (+1…) or an approved alphanumeric sender ID. Empty = no Twilio SMS.</summary>
+    public string SmsFrom { get; set; } = "";
+    /// <summary>Alternative to <see cref="SmsFrom"/>: a Twilio Messaging Service (MG…), which picks the sender per country.</summary>
+    public string SmsMessagingServiceSid { get; set; } = "";
 }
 
 /// <summary>Twilio's WhatsApp channel over plain HTTPS (no SDK, same style as the other gateways).</summary>
