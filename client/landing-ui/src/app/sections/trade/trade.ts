@@ -5,16 +5,13 @@ import { firstValueFrom } from 'rxjs';
 import { RevealDirective } from '../../core/reveal.directive';
 import { whatsappHref } from '../../core/whatsapp';
 import { Pixels } from '../../core/pixels';
+import { PortalState } from '../partner/portal-state';
 
 interface RegFile { id: number; kind: string; fileName: string; size: number; }
 interface RegStore { key: string; name: string; }
 interface RegState { step: number; email: string; emailVerified: boolean; data: Record<string, string>; files: RegFile[]; stores: RegStore[]; }
-interface PartnerPrice { id: number; name: string; unit: string; price: number; retail: number; inStock: boolean; }
-interface PartnerOrder { number: string; date: string; total: number; paid: number; status: string; }
-interface PartnerAccount { store: string; storeName: string; businessName: string; contactName: string; status: string; tier: string | null; requestedTier: string; note: string | null;
-  appliedAt: string; owed: number; wallet: number; prices: PartnerPrice[]; orders: PartnerOrder[]; }
 
-const DEVICE_KEY = 'trade-device', SESSION_KEY = 'partner-session';
+const DEVICE_KEY = 'trade-device';
 const MAX_BYTES = 3_000_000;
 const TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 export const STEPS = ['Email', 'Business', 'Contact', 'Registration', 'Documents', 'Review'];
@@ -33,13 +30,14 @@ export const STEPS = ['Email', 'Business', 'Contact', 'Registration', 'Documents
 export class Trade {
   private readonly http = inject(HttpClient);
   private readonly pixels = inject(Pixels);
+  private readonly portal = inject(PortalState);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('apply');
   protected readonly whatsappApply = whatsappHref('TRADE: I want to register my business for trade prices.');
   protected readonly steps = STEPS;
 
   /** 'wizard' while applying, 'done' after sending, 'account' when a partner is signed in. */
-  protected readonly view = signal<'wizard' | 'done' | 'account'>('wizard');
+  protected readonly view = signal<'wizard' | 'done'>('wizard');
   /** The step on screen (1–6); never past the furthest step saved. */
   protected readonly step = signal(1);
   protected readonly state = signal<RegState | null>(null);
@@ -52,9 +50,6 @@ export class Trade {
   protected readonly resumed = signal('');
   protected readonly cooldown = signal(0);
   protected readonly doneMessage = signal('');
-  protected readonly accounts = signal<PartnerAccount[]>([]);
-  protected readonly accountEmail = signal('');
-  protected readonly accountTab = signal(0);
 
   // ------------------------------------------------------------------ opening
 
@@ -62,8 +57,7 @@ export class Trade {
     this.error.set(''); this.info.set(''); this.resumed.set('');
     this.dialog()?.nativeElement.showModal();
     if (!this.browser) return;
-    if (read(SESSION_KEY) && await this.loadAccount()) return;
-    if (signIn) { this.view.set('wizard'); this.step.set(1); return; }
+    if (signIn) { this.close(); this.portal.open(); return; }
     if (read(DEVICE_KEY)) {
       try {
         const s = await firstValueFrom(this.http.get<RegState | null>('/api/trade/draft', { headers: this.headers() }));
@@ -91,6 +85,8 @@ export class Trade {
       const r = await firstValueFrom(this.http.post<{ next: string; email: string; deviceToken: string | null; state: RegState | null; message: string }>(
         '/api/trade/start', { email }, { headers: this.headers() }));
       this.email.set(email);
+      // an existing partner: the portal takes over (signed straight in on a trusted browser, otherwise at the code step; no second code is sent)
+      if (r.next === 'login' || r.next === 'signedin') { this.close(); this.portal.continueSignIn(email, r.next, (r as { session?: string }).session); return; }
       if (r.deviceToken) write(DEVICE_KEY, r.deviceToken);
       if (r.next === 'resume' && r.state) { this.state.set(r.state); this.step.set(Math.min(r.state.step, STEPS.length)); this.resumed.set(r.message); return; }
       this.awaitingCode.set(r.next === 'login' ? 'login' : 'code');
@@ -106,7 +102,7 @@ export class Trade {
       const r = await firstValueFrom(this.http.post<{ partner: boolean; session?: string; deviceToken?: string | null; state?: RegState }>(
         '/api/trade/verify', { email: this.email(), code }, { headers: this.headers() }));
       this.awaitingCode.set(''); this.info.set('');
-      if (r.partner && r.session) { write(SESSION_KEY, r.session, true); await this.loadAccount(); return; }
+      if (r.partner && r.session) { this.close(); this.portal.continueSignIn(this.email(), 'signedin', r.session); return; }
       if (r.deviceToken) write(DEVICE_KEY, r.deviceToken);
       this.state.set(r.state!); this.step.set(Math.min(r.state!.step, STEPS.length));
       if (r.state!.step > 2) this.resumed.set(`Email confirmed. Your answers are saved: carrying on at step ${this.step()}.`);
@@ -186,20 +182,6 @@ export class Trade {
     });
   }
 
-  // ------------------------------------------------------------------ partner account
-
-  private async loadAccount(): Promise<boolean> {
-    try {
-      const r = await firstValueFrom(this.http.get<{ email: string; accounts: PartnerAccount[] }>('/api/trade/me', { headers: this.headers() }));
-      this.accounts.set(r.accounts); this.accountEmail.set(r.email); this.accountTab.set(0); this.view.set('account');
-      return true;
-    } catch { remove(SESSION_KEY, true); return false; }
-  }
-
-  protected signOut(): void { remove(SESSION_KEY, true); this.accounts.set([]); this.view.set('wizard'); this.step.set(1); }
-  protected saving(p: PartnerPrice): number { return p.retail > p.price ? Math.round((100 * (p.retail - p.price)) / p.retail) : 0; }
-  protected naira(v: number): string { return '₦' + v.toLocaleString('en-NG', { maximumFractionDigits: 2 }); }
-  protected orderLink(a: PartnerAccount): string { return whatsappHref(`Hello, this is ${a.businessName} (trade partner). I'd like to place an order.`); }
   protected kb(n: number): string { return n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`; }
 
   // ------------------------------------------------------------------ plumbing
@@ -207,7 +189,7 @@ export class Trade {
   private headers(): HttpHeaders {
     let h = new HttpHeaders();
     const d = read(DEVICE_KEY); if (d) h = h.set('X-Device-Token', d);
-    const s = read(SESSION_KEY, true); if (s) h = h.set('X-Partner-Session', s);
+    const tb = read('trusted-browser'); if (tb) h = h.set('X-Trusted-Browser', tb);
     return h;
   }
 

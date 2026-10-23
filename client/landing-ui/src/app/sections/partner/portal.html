@@ -1,0 +1,214 @@
+@if (state.isOpen()) {
+  <div class="pp" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+    @if (phase() !== 'in') {
+      <!-- sign in: one calm card, one thing to do at a time -->
+      <div class="signin">
+        <button type="button" class="icon-btn signin__close" (click)="close()" aria-label="Close">✕</button>
+        <div class="signin__card">
+          <div class="signin__mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/></svg>
+          </div>
+          <h2 id="pp-title">Partner account</h2>
+          @switch (phase()) {
+            @case ('loading') { <p class="muted center">Opening your account…</p> }
+            @case ('email') {
+              <p class="muted center">Sign in with the email you registered your business with.</p>
+              <form #fe class="stack" novalidate (submit)="start(fe); $event.preventDefault()">
+                <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" [value]="email()" placeholder="you@yourshop.com" /></label>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <button type="submit" class="btn btn--primary btn--block" [disabled]="busy()">{{ busy() ? 'Checking…' : 'Continue' }}</button>
+              </form>
+              <p class="fine center">On a browser you've used before you go straight in. On a new one we email you a code.</p>
+            }
+            @case ('code') {
+              <p class="muted center">{{ info() }}</p>
+              <form #fc class="stack" novalidate (submit)="verify(fc); $event.preventDefault()">
+                <label class="field"><span>6-digit code</span>
+                  <input #code class="code" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" placeholder="••••••" /></label>
+                @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                <button type="submit" class="btn btn--primary btn--block" [disabled]="busy()">{{ busy() ? 'Signing in…' : 'Sign in' }}</button>
+              </form>
+              <div class="row-links"><button type="button" class="link" (click)="phase.set('email')">Use another email</button><button type="button" class="link" (click)="resend()" [disabled]="busy()">Send a new code</button></div>
+            }
+          }
+        </div>
+      </div>
+    } @else {
+      @if (account(); as a) {
+        <!-- the account -->
+        <header class="top">
+          <div class="top__who">
+            <span class="avatar" aria-hidden="true">{{ initials(a.businessName) }}</span>
+            <div class="top__names"><strong id="pp-title">{{ a.businessName }}</strong><span>{{ a.status === 'Approved' ? a.tier + ' prices' : a.status }} · {{ maskedEmail() }}</span></div>
+          </div>
+          <div class="top__actions">
+            <div class="bell-wrap">
+              <button type="button" class="icon-btn" (click)="toggleBell()" [attr.aria-expanded]="bellOpen()" aria-label="Notifications">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                @if (unread()) { <span class="dot">{{ unread() }}</span> }
+              </button>
+              @if (bellOpen()) {
+                <div class="bell" role="region" aria-label="Notifications">
+                  <strong>Notifications</strong>
+                  @for (n of notices(); track $index) { <div class="bell__item" [class]="'bell__item bell__item--' + n.kind"><span>{{ n.text }}</span><small>{{ when(n.at) }}</small></div> }
+                  @empty { <p class="muted">Nothing yet. Payments, orders and replies show here.</p> }
+                </div>
+              }
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" (click)="signOut()">Sign out</button>
+            <button type="button" class="icon-btn" (click)="close()" aria-label="Close">✕</button>
+          </div>
+        </header>
+
+        @if (accounts().length > 1) {
+          <div class="stores" role="tablist" aria-label="Store">
+            @for (s of accounts(); track s.store; let i = $index) {
+              <button type="button" role="tab" [class.on]="storeIndex() === i" [attr.aria-selected]="storeIndex() === i" (click)="pickStore(i)">{{ s.storeName }}</button>
+            }
+          </div>
+        }
+
+        @if (toast()) { <p class="toast" role="status">{{ toast() }}</p> }
+
+        @if (approved()) {
+          <nav class="tabs" aria-label="Account">
+            @for (t of [{ k: 'shop', l: 'Shop', i: 'M3 6h18l-2 12H5L3 6Zm5 0a4 4 0 0 1 8 0' }, { k: 'wallet', l: 'Wallet', i: 'M3 7h18v12H3zM16 13h2M3 7l3-3h12' }, { k: 'orders', l: 'Orders', i: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6' }, { k: 'messages', l: 'Messages', i: 'M4 5h16v11H8l-4 4z' }]; track t.k) {
+              <button type="button" [class.on]="tab() === t.k" [attr.aria-current]="tab() === t.k ? 'page' : null" (click)="openTab($any(t.k))">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path [attr.d]="t.i" /></svg>
+                <span>{{ t.l }}</span>
+              </button>
+            }
+          </nav>
+        }
+
+        <div class="pp__body">
+          @if (!approved()) {
+            <section class="panel state">
+              @switch (a.status) {
+                @case ('Pending') { <h3>Your application is being reviewed</h3><p>A manager at {{ a.storeName }} is checking your details, usually within one working day. You'll get an email and a WhatsApp message as soon as it's decided.</p> }
+                @case ('Suspended') { <h3>Your trade account is on hold</h3><p>{{ a.note || 'Please call us to restore it.' }}</p> }
+                @default { <h3>Your application wasn't approved</h3><p>{{ a.note || 'Message us to talk it through.' }}</p> }
+              }
+              <a class="btn btn--whatsapp" [href]="whatsapp()" target="_blank" rel="noopener">Message us on WhatsApp</a>
+            </section>
+          } @else {
+            @switch (tab()) {
+              @case ('shop') {
+                <section class="panel">
+                  <div class="panel__head"><h3>Your prices</h3>
+                    <input class="search" type="search" placeholder="Search products" aria-label="Search products" [value]="query()" (input)="query.set($any($event.target).value)" /></div>
+                  <ul class="products">
+                    @for (p of shown(); track p.id) {
+                      <li class="product" [class.product--out]="!p.inStock" [class.product--in]="qty(p.id) > 0">
+                        <div class="product__info">
+                          <strong>{{ p.name }}</strong>
+                          <span class="product__price">{{ naira(p.price) }} <small>per {{ p.unit.toLowerCase() }}</small></span>
+                          <span class="product__retail">@if (pct(p)) { <s>{{ naira(p.retail) }}</s> <em>save {{ pct(p) }}%</em> } @if (!p.inStock) { · out of stock }</span>
+                        </div>
+                        @if (p.inStock) {
+                          @if (qty(p.id) === 0) { <button type="button" class="btn btn--primary btn--sm product__add" (click)="change(p.id, 1)">Add</button> }
+                          @else {
+                            <div class="stepper" role="group" [attr.aria-label]="'Quantity of ' + p.name">
+                              <button type="button" (click)="change(p.id, -1)" aria-label="One less">−</button>
+                              <input type="number" min="0" inputmode="numeric" [value]="qty(p.id)" (change)="setQty(p.id, $any($event.target).value)" [attr.aria-label]="'How many ' + p.name" />
+                              <button type="button" (click)="change(p.id, 1)" aria-label="One more">+</button>
+                            </div>
+                          }
+                        }
+                      </li>
+                    } @empty { <li class="muted">No product matches.</li> }
+                  </ul>
+                </section>
+                @if (count()) {
+                  <div class="cartbar">
+                    <div><strong>{{ count() }} {{ count() === 1 ? 'item' : 'items' }} · {{ naira(subtotal()) }}</strong>@if (saving()) { <span>You save {{ naira(saving()) }} on retail</span> }</div>
+                    <button type="button" class="btn btn--accent" (click)="openCheckout()">Checkout</button>
+                  </div>
+                }
+              }
+
+              @case ('wallet') {
+                <section class="balance">
+                  <span>Wallet balance</span>
+                  <strong>{{ naira(a.wallet) }}</strong>
+                  <small>Spend it on any order at your prices, in one tap.</small>
+                </section>
+                <section class="panel">
+                  <h3>Top up with AlatPay</h3>
+                  <div class="amounts" role="radiogroup" aria-label="Amount">
+                    @for (v of topUps; track v) { <button type="button" role="radio" [attr.aria-checked]="topUp() === v" [class.on]="topUp() === v" (click)="topUp.set(v); custom.value = ''">{{ naira(v) }}</button> }
+                  </div>
+                  <label class="field"><span>Or another amount</span><input #custom inputmode="numeric" placeholder="e.g. 75000" (input)="topUp.set(null)" /></label>
+                  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                  <button type="button" class="btn btn--primary btn--block" (click)="fund(custom.value)" [disabled]="busy()">{{ busy() ? 'Opening AlatPay…' : 'Top up now' }}</button>
+                  <p class="fine">You pay on AlatPay's secure page (card, bank transfer or USSD). Your wallet is credited the moment AlatPay confirms, and you'll get an email and a WhatsApp message.</p>
+                </section>
+                <section class="panel">
+                  <h3>History</h3>
+                  <ul class="history">
+                    @for (w of wallet(); track w.reference) {
+                      <li><span>{{ w.kind === 'Funding' ? 'Top-up' : w.kind === 'Purchase' ? 'Order ' + (w.note ?? '') : w.kind }}<small>{{ when(w.at) }}@if (w.status === 'Pending') { · waiting for AlatPay }</small></span>
+                        <strong [class.neg]="w.amount < 0" [class.pending]="w.status === 'Pending'">{{ w.amount < 0 ? '−' : '+' }}{{ naira(w.amount < 0 ? -w.amount : w.amount) }}</strong></li>
+                    } @empty { <li class="muted">No wallet activity yet.</li> }
+                  </ul>
+                </section>
+              }
+
+              @case ('orders') {
+                <section class="panel">
+                  <h3>Your orders</h3>
+                  <ul class="history">
+                    @for (o of a.orders; track o.number) {
+                      <li><span>{{ o.number }}<small>{{ o.date }}</small></span><span class="right"><strong>{{ naira(o.total) }}</strong><small class="status" [class.paid]="o.status === 'Paid'">{{ o.status }}</small></span></li>
+                    } @empty { <li class="muted">No orders yet. Add products in Shop.</li> }
+                  </ul>
+                  @if (a.owed > 0) { <p class="owed">You owe {{ a.storeName }} {{ naira(a.owed) }}.</p> }
+                </section>
+              }
+
+              @case ('messages') {
+                <section class="panel chat">
+                  <div class="chat__head"><h3>Messages</h3><a class="link" [href]="whatsapp()" target="_blank" rel="noopener">Or WhatsApp us</a></div>
+                  <div #thread class="chat__thread" aria-live="polite">
+                    @for (m of messages(); track m.id) {
+                      <div class="bubble" [class.bubble--me]="m.fromPartner"><p>{{ m.text }}</p><small>{{ m.fromPartner ? 'You' : m.by }} · {{ when(m.at) }}</small></div>
+                    } @empty { <p class="muted center">Ask about stock, delivery or your account. We reply here and by email.</p> }
+                  </div>
+                  <form class="chat__compose" (submit)="send(); $event.preventDefault()">
+                    <textarea rows="2" maxlength="2000" placeholder="Write a message…" aria-label="Message" [value]="draft()" (input)="draft.set($any($event.target).value)"></textarea>
+                    <button type="submit" class="btn btn--primary" [disabled]="busy() || !draft().trim()">Send</button>
+                  </form>
+                  @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+                </section>
+              }
+            }
+          }
+        </div>
+
+
+
+        @if (checkoutOpen()) {
+          <div class="sheet-backdrop" (click)="checkoutOpen.set(false)"></div>
+          <section class="checkout" role="dialog" aria-modal="true" aria-labelledby="co-title">
+            <div class="checkout__head"><h3 id="co-title">Checkout</h3><button type="button" class="icon-btn" (click)="checkoutOpen.set(false)" aria-label="Close">✕</button></div>
+            <ul class="co-lines">
+              @for (l of lines(); track l.p.id) { <li><span>{{ l.qty }} × {{ l.p.name }}</span><strong>{{ naira(l.qty * l.p.price) }}</strong></li> }
+            </ul>
+            <p class="co-total"><span>Items</span><strong>{{ naira(subtotal()) }}</strong></p>
+            <p class="fine">VAT is added on the invoice where it applies. Delivery is arranged with you after the order.</p>
+            <label class="field"><span>Delivery note (optional)</span><textarea rows="2" maxlength="250" placeholder="Where and when to deliver" [value]="note()" (input)="note.set($any($event.target).value)"></textarea></label>
+            <div class="payopts" role="radiogroup" aria-label="Pay with">
+              <button type="button" role="radio" [attr.aria-checked]="payWith() === 'wallet'" [class.on]="payWith() === 'wallet'" [disabled]="a.wallet <= 0" (click)="payWith.set('wallet')">
+                <strong>Wallet</strong><span>{{ naira(a.wallet) }} available</span></button>
+              <button type="button" role="radio" [attr.aria-checked]="payWith() === 'online'" [class.on]="payWith() === 'online'" (click)="payWith.set('online')">
+                <strong>Pay online</strong><span>Card, transfer or USSD via AlatPay</span></button>
+            </div>
+            @if (payWith() === 'wallet' && a.wallet < subtotal()) { <p class="error">Your wallet is short for this order. <button type="button" class="link" (click)="checkoutOpen.set(false); openTab('wallet')">Top up</button> or pay online.</p> }
+            @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+            <button type="button" class="btn btn--primary btn--block" (click)="placeOrder()" [disabled]="busy()">{{ busy() ? 'Placing order…' : payWith() === 'wallet' ? 'Place order and pay from wallet' : 'Continue to AlatPay' }}</button>
+          </section>
+        }
+      }
+    }
+  </div>
+}

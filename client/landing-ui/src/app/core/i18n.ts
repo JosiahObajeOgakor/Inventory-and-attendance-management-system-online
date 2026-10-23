@@ -61,6 +61,7 @@ const T: Record<string, Entry> = {
   'shop.per': { en: 'per', pcm: 'per', yo: 'fún', ig: 'otu', ha: 'kowane' },
   'shop.more': { en: 'Show more', pcm: 'Show more', yo: 'Fi púpọ̀ sí i hàn', ig: 'Gosi ndị ọzọ', ha: 'Nuna ƙari' },
   'shop.items': { en: 'items', pcm: 'items', yo: 'ọjà', ig: 'ihe', ha: 'kaya' },
+  'shop.item': { en: 'item', pcm: 'item', yo: 'ọjà', ig: 'ihe', ha: 'kaya' },
   'shop.clear': { en: 'Clear', pcm: 'Clear am', yo: 'Pa rẹ́', ig: 'Kpochapụ', ha: 'Share' },
   'shop.pay': { en: 'Pay online', pcm: 'Pay online', yo: 'Sanwó lórí ayélujára', ig: 'Kwụọ n\'ịntanetị', ha: 'Biya ta yanar gizo' },
   'shop.whatsapp': { en: 'Order on WhatsApp', pcm: 'Order for WhatsApp', yo: 'Paṣẹ lórí WhatsApp', ig: 'Tinye order na WhatsApp', ha: 'Yi oda ta WhatsApp' },

@@ -580,3 +580,13 @@ main {
   font-size: clamp(1rem, 1.6vw, 1.25rem);
   line-height: 1.35;
 }
+
+// Trade, always within reach: a pill in the menu and a line under the hero buttons.
+.nav__trade { padding: 0.35rem 0.8rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.55); }
+.nav__trade:hover, .nav__trade:focus-visible { background: rgba(255, 255, 255, 0.14); }
+.hero__trade {
+  display: inline-flex; gap: 0.35rem; margin-top: 1.1rem; padding: 0.55rem 1rem; border-radius: 999px;
+  background: rgba(23, 11, 34, 0.55); color: #fff; text-decoration: none; font-size: 0.95rem; backdrop-filter: blur(4px);
+}
+.hero__trade strong { color: var(--gold-bright); }
+.hero__trade:hover, .hero__trade:focus-visible { background: rgba(23, 11, 34, 0.75); }

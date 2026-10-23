@@ -76,6 +76,16 @@ const STATUSES = ['Pending', 'Approved', 'Suspended', 'Rejected'] as const;
                 } @else { <p class="muted sm">No documents attached (applied on WhatsApp). Ask for the CAC certificate before approving.</p> }
                 @if (p.decidedBy) { <p class="muted sm">{{ p.status }} by {{ p.decidedBy }} {{ p.decidedAt | date: 'd MMM y, h:mm a' }}{{ p.decisionNote ? ' — ' + p.decisionNote : '' }}</p> }
 
+                <div class="msgs">
+                  <h3 class="sub">Messages @if (thread().length) { <span class="muted sm">({{ thread().length }})</span> }</h3>
+                  <div class="thread">
+                    @for (m of thread(); track m.id) { <div class="bubble" [class.me]="!m.fromPartner"><p>{{ m.text }}</p><small>{{ m.fromPartner ? p.contactName : m.by }} · {{ m.at | date: 'd MMM, h:mm a' }}</small></div> }
+                    @empty { <p class="muted sm">No messages yet. Partners write from their account on the website.</p> }
+                  </div>
+                  <div class="reply"><textarea class="input" rows="2" maxlength="2000" placeholder="Reply to {{ p.businessName }}…" [value]="reply()" (input)="reply.set($any($event.target).value)"></textarea>
+                    <button type="button" class="btn btn-primary" [disabled]="busy() || !reply().trim()" (click)="send(p)">Send</button></div>
+                </div>
+
                 <div class="decide">
                   <label class="field grow"><span>Note to the applicant (optional)</span>
                     <input class="input" [value]="note()" (input)="note.set($any($event.target).value)" maxlength="300" placeholder="e.g. Approved for 3 months trial" /></label>
@@ -132,6 +142,12 @@ const STATUSES = ['Pending', 'Approved', 'Suspended', 'Rejected'] as const;
     .about { margin: 1rem 0; padding: .2rem 0 .2rem .9rem; border-left: 3px solid var(--primary, #a3480a); color: var(--text, #1c2130); white-space: pre-line; }
     .docs { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
     .decide { display: grid; gap: .75rem; margin-top: 1rem; }
+    .msgs { margin-top: 1rem; display: grid; gap: .6rem; } .sub { font-size: .95rem; margin: 0; }
+    .thread { display: flex; flex-direction: column; gap: .45rem; max-height: 18rem; overflow-y: auto; padding: .5rem; border-radius: 10px; background: var(--surface-2, #f6f7f9); }
+    .bubble { max-width: 80%; align-self: flex-start; padding: .5rem .75rem; border-radius: 12px; background: #fff; border: 1px solid var(--border, #e3e5ea); }
+    .bubble.me { align-self: flex-end; background: color-mix(in srgb, var(--primary, #a3480a) 12%, #fff); }
+    .bubble p { margin: 0; white-space: pre-wrap; } .bubble small { color: var(--muted, #5b6170); font-size: .72rem; }
+    .reply { display: flex; gap: .5rem; align-items: flex-end; } .reply textarea { flex: 1; }
     .field { display: grid; gap: .3rem; } .field span { font-size: .8rem; color: var(--muted, #5b6170); }
     .actions { display: flex; flex-wrap: wrap; gap: .5rem; } .danger { color: var(--danger, #b42318); }
     .empty { display: grid; gap: .3rem; padding: 2rem; text-align: center; color: var(--muted, #5b6170); }
@@ -151,6 +167,8 @@ export class PartnersPage implements OnInit {
   protected readonly error = signal('');
   protected readonly openId = signal<number | null>(null);
   protected readonly note = signal('');
+  protected readonly thread = signal<{ id: number; fromPartner: boolean; text: string; by: string | null; at: string }[]>([]);
+  protected readonly reply = signal('');
   protected readonly shown = computed(() => this.all().filter(p => p.status === this.status()));
   protected readonly counts = computed(() => this.all().reduce<Partial<Record<string, number>>>((m, p) => (m[p.status] = (m[p.status] ?? 0) + 1, m), {}));
 
@@ -164,7 +182,17 @@ export class PartnersPage implements OnInit {
   }
 
   protected setStatus(s: string) { this.status.set(s); this.openId.set(null); }
-  protected toggle(id: number) { this.openId.set(this.openId() === id ? null : id); this.note.set(''); }
+  protected toggle(id: number) {
+    this.openId.set(this.openId() === id ? null : id); this.note.set(''); this.reply.set(''); this.thread.set([]);
+    if (this.openId() === id) void firstValueFrom(this.http.get<{ id: number; fromPartner: boolean; text: string; by: string | null; at: string }[]>(`/api/trade-partners/${id}/messages`)).then(t => this.thread.set(t), () => {});
+  }
+
+  protected async send(p: Partner) {
+    this.busy.set(true);
+    try { this.thread.set(await firstValueFrom(this.http.post<{ id: number; fromPartner: boolean; text: string; by: string | null; at: string }[]>(`/api/trade-partners/${p.id}/messages`, { text: this.reply() }))); this.reply.set(''); this.error.set(''); }
+    catch (e) { this.error.set(this.message(e)); }
+    finally { this.busy.set(false); }
+  }
 
   protected approve(p: Partner, tier: string) { return this.run(p, 'approve', { tier, note: this.note() || null }); }
   protected act(p: Partner, action: 'reject' | 'suspend' | 'reinstate' | 'reverify') {

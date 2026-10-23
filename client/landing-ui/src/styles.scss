@@ -307,3 +307,9 @@ section {
 .consent a { color: var(--gold-bright); }
 .consent__actions { display: flex; gap: .6rem; align-items: center; }
 .consent__no { background: none; border: 1px solid rgba(251, 241, 228, .4); color: var(--cream); border-radius: 999px; padding: .6rem 1rem; font: inherit; cursor: pointer; min-height: 44px; }
+
+// While the basket bar is on screen (phones), the chat button sits above it instead of covering it.
+@media (max-width: 600px) {
+  body:has(.basket) .chat { display: none; }   // the basket bar already offers WhatsApp; the bubble would cover products
+  body:has(.pp) .chat { display: none; }
+}

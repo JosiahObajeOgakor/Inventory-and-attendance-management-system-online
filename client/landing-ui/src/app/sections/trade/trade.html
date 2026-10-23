@@ -33,54 +33,6 @@
           <button type="button" class="btn btn--primary" (click)="close()">Done</button>
         }
 
-        @case ('account') {
-          <div class="acct__head">
-            <h2 id="apply-title" class="sheet__title">Your partner account</h2>
-            <span class="muted sm">{{ accountEmail() }} · <button type="button" class="linkish" (click)="signOut()">Sign out</button></span>
-          </div>
-          @if (accounts().length > 1) {
-            <div class="tabs" role="tablist">
-              @for (a of accounts(); track a.store; let i = $index) {
-                <button type="button" role="tab" [class.on]="accountTab() === i" [attr.aria-selected]="accountTab() === i" (click)="accountTab.set(i)">{{ a.storeName }}</button>
-              }
-            </div>
-          }
-          @if (accounts()[accountTab()]; as a) {
-            <div class="acct__biz">
-              <strong>{{ a.businessName }}</strong>
-              <span class="badge" [class]="'badge badge--' + a.status.toLowerCase()">{{ a.status === 'Approved' ? a.tier : a.status }}</span>
-            </div>
-            @switch (a.status) {
-              @case ('Pending') { <p class="note">Your application to {{ a.storeName }} for {{ a.requestedTier.toLowerCase() }} prices is with our managers. We'll message you as soon as it's decided.</p> }
-              @case ('Rejected') { <p class="note note--bad">This application wasn't approved{{ a.note ? ': ' + a.note : '.' }} Message us on WhatsApp to talk it through.</p> }
-              @case ('Suspended') { <p class="note note--bad">Your trade account is on hold{{ a.note ? ': ' + a.note : '.' }} Please call us to restore it.</p> }
-              @case ('Approved') {
-                <div class="kpis">
-                  <div><span>Your tier</span><strong>{{ a.tier }}</strong></div>
-                  <div><span>You owe</span><strong>{{ naira(a.owed) }}</strong></div>
-                  <div><span>Wallet</span><strong>{{ naira(a.wallet) }}</strong></div>
-                </div>
-                <a class="btn btn--primary" [href]="orderLink(a)" target="_blank" rel="noopener">Order on WhatsApp at your prices</a>
-                <h3 class="h3">Your prices</h3>
-                <div class="table-wrap"><table class="tbl">
-                  <thead><tr><th>Product</th><th class="r">Your price</th><th class="r">Retail</th></tr></thead>
-                  <tbody>@for (p of a.prices; track p.id) {
-                    <tr [class.out]="!p.inStock"><td>{{ p.name }}<span class="muted sm"> · {{ p.unit }}@if (!p.inStock) { · out of stock }</span></td>
-                      <td class="r strong">{{ naira(p.price) }}@if (saving(p)) { <span class="save">−{{ saving(p) }}%</span> }</td><td class="r muted">{{ naira(p.retail) }}</td></tr>
-                  }</tbody>
-                </table></div>
-              }
-            }
-            <h3 class="h3">Recent orders</h3>
-            @if (a.orders.length) {
-              <div class="table-wrap"><table class="tbl">
-                <thead><tr><th>Order</th><th>Date</th><th class="r">Total</th><th>Status</th></tr></thead>
-                <tbody>@for (o of a.orders; track o.number) { <tr><td class="mono">{{ o.number }}</td><td>{{ o.date }}</td><td class="r">{{ naira(o.total) }}</td><td>{{ o.status }}</td></tr> }</tbody>
-              </table></div>
-            } @else { <p class="muted sm">No orders yet.</p> }
-          }
-        }
-
         @default {
           <h2 id="apply-title" class="sheet__title">{{ step() === 1 && awaitingCode() === 'login' ? 'Sign in' : 'Apply for trade prices' }}</h2>
 

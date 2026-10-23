@@ -5,14 +5,11 @@
     <span>Chewy Pet</span>
   </a>
   <nav class="nav__links" aria-label="Main">
-    <a href="#range">{{ t('nav.range') }}</a>
     <a href="#shop">{{ t('nav.shop') }}</a>
-    <a href="#crates">{{ t('nav.cages') }}</a>
-    <a href="#why">{{ t('nav.why') }}</a>
-    <a href="#team">{{ t('nav.team') }}</a>
+    <a href="#delivery">Delivery</a>
     <a href="#reviews">{{ t('nav.reviews') }}</a>
-    <a href="#candid">{{ t('nav.sister') }}</a>
-        <a href="#trade">Trade</a>
+    <a href="#candid">Candid Purrfect</a>
+    <a class="nav__trade" href="#trade">For pet shops</a>
   </nav>
   <div class="nav__actions">
   <label class="nav__lang"><span class="sr-only">{{ t('nav.language') }}</span>
@@ -61,8 +58,8 @@
           Chat with us on WhatsApp
         </a>
       </div>
-    </div>
-  </section>
+      <a class="hero__trade" href="#trade">Own a pet shop? <strong>Get trade prices &rarr;</strong></a>
+    </div>  </section>
 
   <div class="sheet sheet--first">
   <!-- Trust strip -->
@@ -70,98 +67,14 @@
     <p><span>Produced &amp; packed locally</span><span>All life stages, one brand</span><span>Order and pay over WhatsApp</span></p>
   </section>
 
-  <app-nutrition />
-
-  <app-product-list />
-
   <app-stores />
-
-  <app-service-info />
-
-  <!-- New product line: collapsible cages -->
-  <section id="crates" class="crates">
-    <a class="photo-card crates__photo reveal" appReveal [href]="crateWhatsappHref" target="_blank" rel="noopener">
-      <img src="/crate-lifestyle.jpg" alt="Golden retriever resting in a pink Chewy Pet collapsible cage at home" loading="lazy" />
-      <span class="photo-card__badge">New</span>
-      <div class="photo-card__foot">
-        <span class="photo-card__title">Collapsible Cage</span>
-        <span class="photo-card__arrow" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 17 17 7M9 7h8v8"/></svg>
-        </span>
-      </div>
-    </a>
-    <div class="crates__copy reveal" appReveal>
-      <p class="eyebrow">Comfort &amp; travel</p>
-      <h2>Now stocking cages, not just kibble.</h2>
-      <p class="crates__desc">
-        A sturdy, collapsible cage with a slide-out tray for easy cleanup — safe travel, vet
-        visits, and a calm space of their own at home. Ask about sizes and colors on WhatsApp.
-      </p>
-      <a class="btn btn--whatsapp" [href]="crateWhatsappHref" target="_blank" rel="noopener">Order Cage(s)</a>
-    </div>
-  </section>
-  </div>
-
-  <!-- Window 1: the sheet parts and the backyard shows through -->
-  <section class="window">
-    <div class="window__inner reveal" appReveal>
-      <p class="eyebrow">Fed right, full of play</p>
-      <h2 class="window__title">Good food results <br />in happy pets.</h2>
-      <a class="btn btn--accent btn--lg" href="#shop">{{ t('hero.shop') }}</a>
-    </div>
-  </section>
-
-  <div class="sheet">
-  <!-- Image duo: dogs / cats, one brand family -->
-  <section id="purrfect" class="duo">
-    <a class="duo__panel reveal" appReveal href="#shop">
-      <img src="/chewy-bag-puppy.jpg" alt="Chewy Pet dog food" loading="lazy" />
-      <div class="duo__scrim"></div>
-      <div class="duo__body">
-        <p class="eyebrow">Chewy Pet</p>
-        <h3>Our own complete dog food, every breed and stage</h3>
-        <span class="duo__link">Shop Chewy Pet &rarr;</span>
-      </div>
-    </a>
-    <a class="duo__panel duo__panel--brand reveal" appReveal href="#candid">
-      <img src="/candid-purrfect-logo.jpeg" alt="Candid Purrfect logo" loading="lazy" />
-      <div class="duo__scrim"></div>
-      <div class="duo__body">
-        <p class="eyebrow">Our sister store</p>
-        <h3>Candid Purrfect: more brands, cat food, treats and accessories</h3>
-        <span class="duo__link">Visit Candid Purrfect &rarr;</span>
-      </div>
-    </a>
-  </section>
-
-  <!-- Why -->
-  <section id="why" class="why">
-    <p class="eyebrow reveal" appReveal>Why pet parents stick with us</p>
-    <div class="why__grid">
-      <div class="tag tag--card reveal" appReveal>
-        <span class="tag__title">Balanced, not padded</span>
-        <span class="tag__desc">Protein and fat built for real energy, not just a heavier bag.</span>
-      </div>
-      <div class="tag tag--card reveal" appReveal>
-        <span class="tag__title">Ask a person, not a form</span>
-        <span class="tag__desc">Every order goes through WhatsApp — ask questions, get a straight answer.</span>
-      </div>
-      <div class="tag tag--card reveal" appReveal>
-        <span class="tag__title">Made for Nigerian homes</span>
-        <span class="tag__desc">Formulated and packed here, priced for here.</span>
-      </div>
-    </div>
-  </section>
-
-  <app-team />
-
-  <app-testimonials />
 
   <app-trade />
 
-  <app-articles />
-  </div>
+  <app-service-info />
 
+  <app-testimonials />
+  </div>
   <!-- Window 2 (finale): the backyard again, full height -->
   <section class="window window--finale">
     <div class="window__inner reveal" appReveal>
@@ -191,12 +104,9 @@
       <p class="footer__heading">{{ t('footer.explore') }}</p>
       <a href="#shop">Shop</a>
       <a href="#delivery">Delivery &amp; hours</a>
-      <a href="#range">Our range</a>
-      <a href="#crates">Cages</a>
-      <a href="#why">Why Chewy Pet</a>
-      <a href="#team">Team</a>
       <a href="#reviews">Reviews</a>
-          <a href="#trade">Trade prices for shops</a>
+      <a href="#trade">Trade prices for pet shops</a>
+      <a href="#partner">Partner sign in</a>
     </nav>
 
     <div class="footer__col">
@@ -232,6 +142,7 @@
 </footer>
 
 <app-chat-widget />
+<app-partner-portal />
 
 @if (pixels.ask()) {
   <aside class="consent" role="region" aria-label="Cookie choice">

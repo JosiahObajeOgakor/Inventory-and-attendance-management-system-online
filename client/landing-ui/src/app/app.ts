@@ -1,16 +1,13 @@
 import { Component, ElementRef, afterNextRender, computed, inject, signal, viewChild } from '@angular/core';
 import { ChatWidget } from './chat/chat-widget';
-import { Nutrition } from './sections/nutrition/nutrition';
-import { ProductList } from './sections/product-list/product-list';
 import { StoresSection } from './sections/stores/stores';
 import { ServiceInfo } from './sections/service-info/service-info';
-import { Articles } from './sections/articles/articles';
 import { Track } from './core/track';
 import { I18n, LANGS } from './core/i18n';
 import { Stores } from './core/stores';
-import { Team } from './sections/team/team';
 import { Testimonials } from './sections/testimonials/testimonials';
 import { Trade } from './sections/trade/trade';
+import { PartnerPortal } from './sections/partner/portal';
 import { RevealDirective } from './core/reveal.directive';
 import { whatsappDisplay, whatsappHref } from './core/whatsapp';
 import { Pixels } from './core/pixels';
@@ -19,7 +16,7 @@ const BACKYARD_SRC = '/backyard.mp4';
 
 @Component({
   selector: 'app-root',
-  imports: [ChatWidget, Nutrition, ProductList, StoresSection, ServiceInfo, Articles, Team, Testimonials, Trade, RevealDirective],
+  imports: [ChatWidget, StoresSection, ServiceInfo, Testimonials, Trade, PartnerPortal, RevealDirective],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })

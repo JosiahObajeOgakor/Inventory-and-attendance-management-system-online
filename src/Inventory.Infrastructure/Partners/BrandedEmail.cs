@@ -66,13 +66,14 @@ public sealed class BrandedEmail(IEmailSender email, ICompanyScopes stores, IMem
 
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
 
-    private static string Html(BrandedMail m, string name, string contact, string accent, string ink, bool logo)
+    /// <summary>The email's HTML (public so tests can render a preview).</summary>
+    public static string Html(BrandedMail m, string name, string contact, string accent, string ink, bool logo)
     {
         var sb = new StringBuilder();
         sb.Append($"<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f2f7\"><div style=\"display:none;max-height:0;overflow:hidden\">{E(m.Paragraphs.FirstOrDefault())}</div>");
         sb.Append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f2f7;padding:24px 12px\"><tr><td align=\"center\">");
         sb.Append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:Segoe UI,Helvetica,Arial,sans-serif\">");
-        sb.Append($"<tr><td style=\"padding:24px 28px 18px;text-align:left\">{(logo ? $"<img src=\"cid:logo\" alt=\"{E(name)}\" style=\"max-height:56px;max-width:220px;display:block\">" : $"<strong style=\"font-size:20px;color:{ink}\">{E(name)}</strong>")}</td></tr>");
+        sb.Append($"<tr><td style=\"padding:24px 28px 18px;text-align:left\">{(logo ? $"<img src=\"cid:logo\" alt=\"{E(name)}\" style=\"max-height:72px;max-width:240px;display:block\">" : $"<strong style=\"font-size:20px;color:{ink}\">{E(name)}</strong>")}</td></tr>");
         sb.Append($"<tr><td style=\"height:4px;background:{accent};line-height:4px;font-size:0\">&nbsp;</td></tr>");
         sb.Append($"<tr><td style=\"padding:28px 28px 8px\"><h1 style=\"margin:0 0 14px;font-size:22px;line-height:1.3;color:{ink}\">{E(m.Heading)}</h1>");
         foreach (var p in m.Paragraphs) sb.Append($"<p style=\"margin:0 0 14px;font-size:15px;line-height:1.6;color:#374151\">{E(p)}</p>");

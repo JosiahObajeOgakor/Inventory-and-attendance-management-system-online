@@ -144,8 +144,28 @@
 @media (max-width: 520px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
   .card__body { padding: 0.8rem; }
-  .basket { bottom: 0.5rem; }
-  .basket__actions { width: 100%; justify-content: space-between; }
+}
+
+.wa-short { display: none; }
+.basket-spacer { display: none; }
+
+// Phones: the basket is a full-width bar fixed to the bottom of the screen, total on top and two equal buttons underneath, never wider than the screen.
+@media (max-width: 600px) {
+  .basket {
+    position: fixed; left: 0; right: 0; bottom: 0; margin: 0; z-index: 40;
+    border-radius: 18px 18px 0 0; padding: 0.85rem 16px calc(0.85rem + env(safe-area-inset-bottom));
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem 0.75rem; align-items: center;
+    box-shadow: 0 -12px 30px -12px rgba(23, 11, 34, 0.45);
+  }
+  .basket__sum { grid-column: 1; }
+  .basket__sum strong { font-size: 1rem; }
+  .basket__actions { display: contents; }
+  .basket__clear { grid-column: 2; grid-row: 1; justify-self: end; min-height: 44px; }
+  .basket__actions .btn { grid-row: 2; width: 100%; min-height: 48px; justify-content: center; padding-inline: 0.75rem; font-size: 0.95rem; white-space: nowrap; }
+  .basket:not(:has(.btn--accent)) .btn--whatsapp { grid-column: 1 / -1; }
+  .wa-long { display: none; }
+  .wa-short { display: inline; }
+  .basket-spacer { display: block; height: 9.5rem; }
 }
 
 // ---------- product page and pay dialogs ----------
