@@ -13,6 +13,10 @@ public static partial class ChatText
     {
         [ChatLanguages.English] = new()
         {
+            ["p_welcome"] = "Welcome back, {0} 👋 You're seeing your {1} prices.",
+            ["p_last"] = "Your last order: {0}. Reply REORDER to order it again, or tell me what you need.",
+            ["p_wallet"] = "Wallet balance: {0}. You can pay from your partner account: {1}",
+            ["p_no_last"] = "No orders yet. Tell me what you need, e.g. \"10 {0}\".",
             ["t_intro"] = "Trade prices are for registered pet shops, wholesalers and distributors. Copy the form below, fill it in and send it back (one message):",
             ["t_after"] = "Prefer a web form with document upload? {0}",
             ["t_web"] = "Apply for trade prices here (takes two minutes, attach your CAC certificate): {0}",
@@ -27,6 +31,10 @@ public static partial class ChatText
         },
         [ChatLanguages.Pidgin] = new()
         {
+            ["p_welcome"] = "Welcome back, {0} 👋 Na your {1} price you go see here.",
+            ["p_last"] = "Your last order: {0}. Reply REORDER make I put am again, or tell me wetin you need.",
+            ["p_wallet"] = "Wallet balance: {0}. You fit pay from your partner account: {1}",
+            ["p_no_last"] = "You never order before. Tell me wetin you need, e.g. \"10 {0}\".",
             ["t_intro"] = "Trade price na for registered pet shop, wholesaler and distributor. Copy the form wey dey below, fill am, send am back (one message):",
             ["t_after"] = "You prefer web form wey you fit upload document? {0}",
             ["t_web"] = "Apply for trade price for here (e no pass two minutes, attach your CAC certificate): {0}",
@@ -41,6 +49,10 @@ public static partial class ChatText
         },
         [ChatLanguages.Igbo] = new()
         {
+            ["p_welcome"] = "Nnọọ ọzọ, {0} 👋 Ọ bụ ọnụahịa {1} gị ka ị na-ahụ.",
+            ["p_last"] = "Iwu ikpeazụ gị: {0}. Zaa REORDER ka m tinye ya ọzọ, ma ọ bụ gwa m ihe ị chọrọ.",
+            ["p_wallet"] = "Ego dị na wallet gị: {0}. Ị nwere ike ịkwụ ụgwọ site na akaụntụ gị: {1}",
+            ["p_no_last"] = "Ị nyebeghị iwu. Gwa m ihe ị chọrọ, dịka \"10 {0}\".",
             ["t_intro"] = "Ọnụahịa trade bụ maka ụlọ ahịa anụ ụlọ, ndị wholesaler na ndị distributor edebanyere aha. Detuo fọm dị n'okpuru, dejupụta ya, zighachi ya (otu ozi):",
             ["t_after"] = "Ị chọrọ fọm weebụ ebe ị ga-ebugo akwụkwọ? {0}",
             ["t_web"] = "Tinye akwụkwọ maka ọnụahịa trade ebe a (ọ naghị agafe nkeji abụọ, tinye asambodo CAC gị): {0}",
@@ -55,6 +67,10 @@ public static partial class ChatText
         },
         [ChatLanguages.Hausa] = new()
         {
+            ["p_welcome"] = "Barka da dawowa, {0} 👋 Farashin {1} ɗinka kake gani.",
+            ["p_last"] = "Odarka ta ƙarshe: {0}. Amsa da REORDER in maimaita ta, ko ka faɗa min abin da kake buƙata.",
+            ["p_wallet"] = "Kuɗin da ke wallet ɗinka: {0}. Za ka iya biya daga asusun abokin hulɗa: {1}",
+            ["p_no_last"] = "Ba ka taɓa yin oda ba. Faɗa min abin da kake buƙata, misali \"10 {0}\".",
             ["t_intro"] = "Farashin trade na shagunan dabbobi, masu sayar da yawa da masu rarrabawa da aka yi wa rajista ne. Kwafi fom ɗin da ke ƙasa, cike shi, ka mayar (saƙo ɗaya):",
             ["t_after"] = "Kana son fom na yanar gizo inda za ka loda takardu? {0}",
             ["t_web"] = "Nemi farashin trade a nan (bai wuce minti biyu ba, haɗa takardar CAC ɗinka): {0}",
@@ -69,6 +85,10 @@ public static partial class ChatText
         },
         [ChatLanguages.Yoruba] = new()
         {
+            ["p_welcome"] = "Ẹ kú àbọ̀, {0} 👋 Iye owó {1} yín ni ẹ ń rí.",
+            ["p_last"] = "Àṣẹ yín tó kẹ́yìn: {0}. Ẹ fèsì REORDER kí n tún un ṣe, tàbí kí ẹ sọ ohun tí ẹ fẹ́.",
+            ["p_wallet"] = "Owó inú wallet yín: {0}. Ẹ lè sanwó láti àkọọ́lẹ̀ alábàáṣiṣẹ́pọ̀ yín: {1}",
+            ["p_no_last"] = "Ẹ kò tíì ra nǹkan rí. Ẹ sọ ohun tí ẹ fẹ́, bíi \"10 {0}\".",
             ["t_intro"] = "Iye owó trade wà fún ṣọ́ọ̀bù ẹranko, wholesaler àti distributor tí a forúkọ sílẹ̀. Da fọ́ọ̀mù ìsàlẹ̀ kọ, kún un, kí o fi ránṣẹ́ padà (ìfiránṣẹ́ kan):",
             ["t_after"] = "Ṣé o fẹ́ fọ́ọ̀mù orí ayélujára tí o lè gbé ìwé sí? {0}",
             ["t_web"] = "Béèrè fún iye owó trade níbí (kò ju ìṣẹ́jú méjì lọ, so ìwé-ẹ̀rí CAC rẹ mọ́ ọn): {0}",

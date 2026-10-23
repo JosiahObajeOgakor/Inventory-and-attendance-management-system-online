@@ -96,6 +96,7 @@ public static class DependencyInjection
         s.AddScoped<Partners.TradePartnerService>();
         s.AddScoped<Partners.TradeRegistrationService>();
         s.AddScoped<Partners.PartnerDashboard>();
+        s.AddScoped<Partners.PartnerPortalService>();
         s.AddScoped<Campaigns.CampaignIdeas>();
         s.AddScoped<Website.WebCheckoutService>();
         s.AddScoped<Ledger.GeneralLedger>();

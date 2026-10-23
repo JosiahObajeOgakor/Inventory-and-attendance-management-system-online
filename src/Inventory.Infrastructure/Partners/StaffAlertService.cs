@@ -17,7 +17,7 @@ namespace Inventory.Infrastructure.Partners;
 /// Partners hear on WhatsApp (when their chat is open), SMS and email. Every channel and recipient is tried on its own and a failure is only logged.
 /// </summary>
 public sealed class StaffAlertService(IChatSender whatsApp, ISmsSender sms, IEmailSender email, IOptions<NotifyOptions> options, UserManager<AppUser> users,
-    ICompanyContext company, ILogger<StaffAlertService> log) : IStaffAlerts
+    ICompanyContext company, IBrandedEmail branded, ILogger<StaffAlertService> log) : IStaffAlerts
 {
     public async Task TellStaffAsync(StaffAlert a, CancellationToken ct)
     {
@@ -45,8 +45,14 @@ public sealed class StaffAlertService(IChatSender whatsApp, ISmsSender sms, IEma
         // WhatsApp free text only reaches a chat that wrote in the last 24 hours, so SMS goes too: one of them lands.
         var onWhatsApp = to.Length > 0 && whatsApp.IsConfigured(company.Key) && await Try("partner WhatsApp", () => whatsApp.TrySendTextAsync(company.Key, to, a.Text, ct));
         if (!onWhatsApp && to.Length > 0 && sms.IsConfigured) await Try("partner SMS", () => sms.TrySendAsync(to, Short(a.Text), ct));
-        if (email.IsConfigured && !string.IsNullOrWhiteSpace(a.Email))
-            await Try("partner email", async () => { await email.SendAsync(new EmailMessage(a.Email.Trim(), a.Name, a.Subject, Html(a.Text), a.Text, [], company.LegalName, options.Value.AdminEmail.Length > 0 ? options.Value.AdminEmail : null), ct); return true; });
+        if (branded.IsConfigured && !string.IsNullOrWhiteSpace(a.Email))
+            await Try("partner email", async () =>
+            {
+                var heading = a.Subject.Contains(": ") ? a.Subject[(a.Subject.IndexOf(": ", StringComparison.Ordinal) + 2)..] : a.Subject;
+                await branded.SendAsync(new BrandedMail(a.Email.Trim(), a.Name, a.Subject, char.ToUpperInvariant(heading[0]) + heading[1..], a.Text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries),
+                    [company.Key], ButtonText: a.ButtonText, ButtonUrl: a.ButtonUrl, Footnote: "Any questions? Reply to this email or message us on WhatsApp."), ct);
+                return true;
+            });
     }
 
     private async Task<bool> Try(string what, Func<Task<bool>> send)

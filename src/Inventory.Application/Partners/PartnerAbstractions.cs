@@ -18,7 +18,7 @@ public interface IBusinessVerifier
 public sealed record StaffAlert(string Subject, string Text, string? Html = null, bool AdminOnly = false);
 
 /// <summary>A message to a partner: WhatsApp when their chat is open, SMS, and email. Each channel is tried on its own.</summary>
-public sealed record ContactAlert(string Name, string Phone, string? Email, string Subject, string Text);
+public sealed record ContactAlert(string Name, string Phone, string? Email, string Subject, string Text, string? ButtonText = null, string? ButtonUrl = null);
 
 public interface IStaffAlerts
 {
@@ -33,4 +33,16 @@ public interface ICompanyScopes
     IReadOnlyList<string> TradeStores { get; }
     string DisplayName(string key);
     Task<T> InAsync<T>(string key, Func<IServiceProvider, Task<T>> work);
+}
+
+/// <param name="Stores">The store(s) the email is about; its logo heads the email (Candid Purrfect's when both are involved).</param>
+/// <param name="Code">A one-time code shown large in its own box.</param>
+public sealed record BrandedMail(string To, string? ToName, string Subject, string Heading, IReadOnlyList<string> Paragraphs, IReadOnlyList<string> Stores,
+    string? Code = null, string? ButtonText = null, string? ButtonUrl = null, string? Footnote = null);
+
+/// <summary>Customer-facing email in the business's own look: logo, brand colour, one clear action, contact details in the footer.</summary>
+public interface IBrandedEmail
+{
+    bool IsConfigured { get; }
+    Task SendAsync(BrandedMail mail, CancellationToken ct);
 }

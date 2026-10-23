@@ -11,6 +11,8 @@ public partial class BusinessDbContext
     public DbSet<TradeApplicationDraft> TradeApplicationDrafts => Set<TradeApplicationDraft>();
     public DbSet<TradeApplicationFile> TradeApplicationFiles => Set<TradeApplicationFile>();
     public DbSet<EmailCode> EmailCodes => Set<EmailCode>();
+    public DbSet<PartnerMessage> PartnerMessages => Set<PartnerMessage>();
+    public DbSet<TrustedDevice> TrustedDevices => Set<TrustedDevice>();
 
     private static void ConfigurePartners(ModelBuilder b)
     {
@@ -105,6 +107,30 @@ public partial class BusinessDbContext
             e.Property(x => x.ExpiresAt).HasPrecision(6);
             e.Property(x => x.UsedAt).HasPrecision(6);
             e.HasIndex(x => new { x.Email, x.Purpose, x.CreatedAt });
+        });
+        b.Entity<PartnerMessage>(e =>
+        {
+            e.ToTable("partner_messages");
+            e.Property(x => x.Text).HasMaxLength(2000).IsRequired();
+            e.Property(x => x.By).HasMaxLength(100);
+            e.Property(x => x.At).HasPrecision(6);
+            e.Property(x => x.ReadAt).HasPrecision(6);
+            e.HasIndex(x => new { x.TradePartnerId, x.Id });
+            e.HasOne<TradePartner>().WithMany().HasForeignKey(x => x.TradePartnerId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<TrustedDevice>(e =>
+        {
+            e.ToTable("trusted_devices");
+            e.Property(x => x.Email).HasMaxLength(150).IsRequired();
+            e.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+            e.Property(x => x.FirstIp).HasMaxLength(45);
+            e.Property(x => x.LastIp).HasMaxLength(45);
+            e.Property(x => x.UserAgent).HasMaxLength(200);
+            e.Property(x => x.CreatedAt).HasPrecision(6);
+            e.Property(x => x.LastUsedAt).HasPrecision(6);
+            e.Property(x => x.ExpiresAt).HasPrecision(6);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.Email);
         });
     }
 }

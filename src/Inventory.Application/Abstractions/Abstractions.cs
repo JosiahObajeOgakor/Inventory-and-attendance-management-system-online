@@ -19,6 +19,8 @@ public interface IBusinessDbContext
     DbSet<TradeApplicationDraft> TradeApplicationDrafts { get; }
     DbSet<TradeApplicationFile> TradeApplicationFiles { get; }
     DbSet<EmailCode> EmailCodes { get; }
+    DbSet<PartnerMessage> PartnerMessages { get; }
+    DbSet<TrustedDevice> TrustedDevices { get; }
     DbSet<GlAccount> GlAccounts { get; }
     DbSet<GlPeriod> GlPeriods { get; }
     DbSet<GlJournal> GlJournals { get; }

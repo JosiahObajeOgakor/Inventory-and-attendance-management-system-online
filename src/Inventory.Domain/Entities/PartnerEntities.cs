@@ -121,3 +121,17 @@ public class WalletEntry
     public DateTime? ConfirmedAt { get; set; }
     public string? ConfirmedBy { get; set; }
 }
+
+/// <summary>A message between a trade partner and the business (the portal's chat). Staff answer from Inventory → Trade partners; the partner is told by email.</summary>
+public class PartnerMessage
+{
+    public long Id { get; set; }
+    public int TradePartnerId { get; set; }
+    /// <summary>True when the partner wrote it; false for a reply from staff.</summary>
+    public bool FromPartner { get; set; }
+    public string Text { get; set; } = "";
+    /// <summary>Who replied (staff name); null for the partner.</summary>
+    public string? By { get; set; }
+    public DateTime At { get; set; }
+    public DateTime? ReadAt { get; set; }
+}

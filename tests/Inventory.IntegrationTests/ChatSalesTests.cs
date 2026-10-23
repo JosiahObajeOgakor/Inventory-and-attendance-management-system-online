@@ -300,6 +300,27 @@ public class ChatSalesTests(MySqlFixture mysql)
     }
 
     [Fact]
+    public async Task An_approved_partner_is_welcomed_by_name_with_their_last_order_and_REORDER_repeats_it_at_their_price()
+    {
+        var r = await BuildAsync(stock: 40);
+        var musa = await r.Db.Customers.SingleAsync(c => c.Phone == Musa);
+        r.Db.TradePartners.Add(new TradePartner { BusinessName = "Musa Pets", ContactName = "Musa Bello", Phone = Musa, Email = "m@example.com", Address = "4 Market Road, Kano", CacNumber = "RC123456",
+            Description = "Pet shop", RequestedTier = "Wholesaler", ApprovedTier = "Wholesaler", Status = PartnerStatuses.Approved, CustomerId = musa.Id, CreatedAt = DateTime.UtcNow });
+        await r.Db.SaveChangesAsync();
+        var sale = Sale(r.Seed, 3); sale.CustomerId = musa.Id;
+        await SalesFor(r.Db).SaveAsync(sale, Clerk, null);
+        var wholesale = await r.Db.Products.AsNoTracking().Where(p => p.Id == r.Seed.ProductId).Select(p => p.PriceWholesaler).SingleAsync();
+
+        var hello = await r.Say(Musa, "hello", "Musa");
+        Assert.Contains("Welcome back, Musa Pets", hello);
+        Assert.Contains("wholesaler prices", hello);
+        Assert.Contains("REORDER", hello);
+        Assert.Contains(ChatOrderText.Naira(wholesale * 3), await r.Say(Musa, "reorder"));   // the last order, at today's trade price
+
+        Assert.DoesNotContain("Welcome back", await r.Say(Ngozi, "hello", "Ngozi"));           // anyone else gets the usual welcome
+    }
+
+    [Fact]
     public async Task A_product_without_a_price_is_never_offered()
     {
         var r = await BuildAsync(stock: 10);

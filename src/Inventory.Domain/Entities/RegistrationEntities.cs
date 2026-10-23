@@ -61,3 +61,21 @@ public class EmailCode
     public int Attempts { get; set; }
     public DateTime? UsedAt { get; set; }
 }
+
+/// <summary>
+/// A browser a partner signed in from with an emailed code. The same browser signs in again without a code for 30 days; a new browser always needs one.
+/// Only the token's hash is stored; the token lives in that browser.
+/// </summary>
+public class TrustedDevice
+{
+    public long Id { get; set; }
+    public string Email { get; set; } = "";
+    public string TokenHash { get; set; } = "";
+    /// <summary>Where it was trusted from and last used from, for the record.</summary>
+    public string? FirstIp { get; set; }
+    public string? LastIp { get; set; }
+    public string? UserAgent { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastUsedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}

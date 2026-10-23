@@ -23,5 +23,11 @@ public class TradePartnersController(ICurrentUser cu, TradePartnerService svc) :
     [HttpPost("{id:int}/reverify")] public async Task<IActionResult> Reverify(int id, CancellationToken ct) => Ok(new { verification = await svc.ReverifyAsync(id, Me, ct) });
     [HttpDelete("{id:int}")] public async Task<IActionResult> Delete(int id, CancellationToken ct) { await svc.DeleteAsync(id, Me, ct); return NoContent(); }
 
+    /// <summary>The conversation with a partner (their portal chat), and a reply that reaches them by email and WhatsApp.</summary>
+    [HttpGet("{id:int}/messages")] public Task<List<PortalMessage>> Thread(int id, [FromServices] PartnerPortalService portal, CancellationToken ct) => portal.ThreadAsync(id, ct);
+    [HttpPost("{id:int}/messages")]
+    public async Task<List<PortalMessage>> Reply(int id, MessageInput m, [FromServices] PartnerPortalService portal, CancellationToken ct) { await portal.ReplyAsync(id, m.Text, Me, ct); return await portal.ThreadAsync(id, ct); }
+
     public sealed record Decision(string? Tier, string? Note);
+    public sealed record MessageInput(string Text);
 }

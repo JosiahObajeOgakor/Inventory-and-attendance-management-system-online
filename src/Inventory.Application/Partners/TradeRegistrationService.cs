@@ -31,7 +31,7 @@ public sealed record RegSubmitted(string Message, IReadOnlyList<string> Stores);
 /// An email that already belongs to a partner signs them in instead. Untouched drafts are followed up at 3, 7 and 21 days and removed 24 hours after the
 /// final (warning) email, which frees the address. Drafts live in the first trade store's database; the finished application goes to every store chosen.
 /// </summary>
-public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClock clock, IEmailSender email, ICompanyScopes stores, ILogger<TradeRegistrationService> log)
+public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClock clock, IBrandedEmail email, ICompanyScopes stores, ILogger<TradeRegistrationService> log)
 {
     public const int LastStep = 6;
     private static readonly TimeSpan CodeLife = TimeSpan.FromMinutes(15);
@@ -47,9 +47,9 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
     {
         var mail = CleanEmail(rawEmail);
         // an existing partner (approved, waiting, on hold) signs in to see their account
-        if (await PartnerStoresAsync(mail, ct) is { Count: > 0 })
+        if (await PartnerStoresAsync(mail, ct) is { Count: > 0 } partnerStores)
         {
-            await SendCodeAsync(mail, EmailCodePurposes.Login, ct);
+            await SendCodeAsync(mail, EmailCodePurposes.Login, partnerStores, ct);
             return new RegStart("login", Mask(mail), null, null, $"Welcome back. We've emailed a 6-digit code to {Mask(mail)} to sign you in.");
         }
         var draft = await db.TradeApplicationDrafts.Include(d => d.Files).FirstOrDefaultAsync(d => d.Email == mail, ct);
@@ -66,7 +66,7 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
             db.TradeApplicationDrafts.Add(draft);
             await db.SaveChangesAsync(ct);
         }
-        await SendCodeAsync(mail, EmailCodePurposes.Verify, ct);
+        await SendCodeAsync(mail, EmailCodePurposes.Verify, AboutStores(Parse(draft.DataJson)), ct);
         return new RegStart("code", Mask(mail), token, null, draft.EmailVerifiedAt is null
             ? $"We've emailed a 6-digit code to {Mask(mail)}. Enter it to confirm your email."
             : $"You've started before. We've emailed a code to {Mask(mail)} so you can carry on where you stopped.");
@@ -103,9 +103,10 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
     public async Task ResendAsync(string? rawEmail, CancellationToken ct)
     {
         var mail = CleanEmail(rawEmail);
-        var purpose = await PartnerStoresAsync(mail, ct) is { Count: > 0 } ? EmailCodePurposes.Login : EmailCodePurposes.Verify;
-        if (purpose == EmailCodePurposes.Verify && !await db.TradeApplicationDrafts.AnyAsync(d => d.Email == mail, ct)) throw new BusinessRuleException("Start with your email first.");
-        await SendCodeAsync(mail, purpose, ct);
+        var partnerStores = await PartnerStoresAsync(mail, ct);
+        if (partnerStores.Count > 0) { await SendCodeAsync(mail, EmailCodePurposes.Login, partnerStores, ct); return; }
+        var draft = await db.TradeApplicationDrafts.AsNoTracking().FirstOrDefaultAsync(d => d.Email == mail, ct) ?? throw new BusinessRuleException("Start with your email first.");
+        await SendCodeAsync(mail, EmailCodePurposes.Verify, AboutStores(Parse(draft.DataJson)), ct);
     }
 
     // ------------------------------------------------------------------ steps 2–6
@@ -184,6 +185,45 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
 
     // ------------------------------------------------------------------ partners (sign-in)
 
+    public static readonly TimeSpan TrustFor = TimeSpan.FromDays(30);
+
+    /// <summary>After a code: remember this browser for 30 days, so it signs in again without one. Returns the token the browser keeps.</summary>
+    public async Task<string> TrustAsync(string mail, string? ip, string? userAgent, CancellationToken ct)
+    {
+        var token = NewToken();
+        db.TrustedDevices.Add(new TrustedDevice { Email = mail, TokenHash = Hash(token), FirstIp = Clip(ip, 45), LastIp = Clip(ip, 45), UserAgent = Clip(userAgent, 200),
+            CreatedAt = clock.UtcNow, LastUsedAt = clock.UtcNow, ExpiresAt = clock.UtcNow + TrustFor });
+        await db.TrustedDevices.Where(d => d.Email == mail && d.ExpiresAt < clock.UtcNow).ExecuteDeleteAsync(ct);
+        await db.SaveChangesAsync(ct);
+        return token;
+    }
+
+    /// <summary>
+    /// True when this browser was trusted for this partner's email and the trust hasn't expired: they sign in without a code. A different browser has no
+    /// token (or another email's), so it always gets a code. Each use slides the 30 days on and records where it was used from.
+    /// </summary>
+    public async Task<bool> IsTrustedAsync(string? rawEmail, string? token, string? ip, CancellationToken ct)
+    {
+        if (token is not { Length: > 20 }) return false;
+        string mail; try { mail = CleanEmail(rawEmail); } catch (BusinessRuleException) { return false; }
+        var h = Hash(token);
+        var d = await db.TrustedDevices.FirstOrDefaultAsync(x => x.TokenHash == h && x.Email == mail && x.ExpiresAt > clock.UtcNow, ct);
+        if (d is null || (await PartnerStoresAsync(mail, ct)).Count == 0) return false;
+        d.LastUsedAt = clock.UtcNow; d.LastIp = Clip(ip, 45); d.ExpiresAt = clock.UtcNow + TrustFor;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    /// <summary>Sign out on this browser: it will need a code next time.</summary>
+    public Task ForgetAsync(string? token, CancellationToken ct)
+    {
+        if (token is not { Length: > 20 }) return Task.CompletedTask;
+        var h = Hash(token);
+        return db.TrustedDevices.Where(d => d.TokenHash == h).ExecuteDeleteAsync(ct);
+    }
+
+    private static string? Clip(string? s, int max) => string.IsNullOrWhiteSpace(s) ? null : s.Length > max ? s[..max] : s;
+
     /// <summary>The stores where this email belongs to a trade partner (any status).</summary>
     public async Task<List<string>> PartnerStoresAsync(string mail, CancellationToken ct)
     {
@@ -214,7 +254,11 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
             var due = FollowUps[d.RemindersSent];
             if (d.LastActivityAt > now.AddDays(-due.Days)) continue;
             var (subject, text) = FollowUpText(due.Count, d, siteUrl);
-            try { await email.SendAsync(new EmailMessage(d.Email, Parse(d.DataJson).Str("contactName"), subject, Html(text), text, [], "Chewy Pet Trade", null), ct); }
+            var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
+            var mail = new BrandedMail(d.Email, Parse(d.DataJson).Str("contactName"), subject, subject, paragraphs.Skip(1).Where(p => !p.Contains("/#trade") && p != "Chewy Pet Trade").ToList(),
+                AboutStores(Parse(d.DataJson)), ButtonText: due.Count == 3 ? "Keep my application" : "Continue my application", ButtonUrl: siteUrl.TrimEnd('/') + "/#trade",
+                Footnote: "Any questions? Just reply to this email.");
+            try { await email.SendAsync(mail, ct); }
             catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Trade follow-up to draft {Id} failed", d.Id); continue; }
             d.RemindersSent = due.Count; d.LastReminderAt = now;
             if (due.Count == 3) d.WarnedAt = now;
@@ -244,7 +288,7 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
 
     // ------------------------------------------------------------------ helpers
 
-    private async Task SendCodeAsync(string mail, string purpose, CancellationToken ct)
+    private async Task SendCodeAsync(string mail, string purpose, IReadOnlyList<string> about, CancellationToken ct)
     {
         if (!email.IsConfigured) throw new BusinessRuleException("We can't send email right now. Please apply on WhatsApp instead.");
         var now = clock.UtcNow;
@@ -254,11 +298,11 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         db.EmailCodes.Add(new EmailCode { Email = mail, Purpose = purpose, CodeHash = Hash(code), CreatedAt = now, ExpiresAt = now + CodeLife });
         await db.SaveChangesAsync(ct);
-        var what = purpose == EmailCodePurposes.Login ? "sign in to your partner account" : "confirm your email for your trade application";
-        var text = $"Your code is {code}\n\nEnter it on the website to {what}. It works for 15 minutes.\n\nIf you didn't ask for this, you can ignore this email.\n\nChewy Pet Trade";
-        var html = $"<div style=\"font:15px Segoe UI,Arial,sans-serif;color:#1c2130;line-height:1.5\"><p>Your code is</p><p style=\"font:700 32px/1 monospace;letter-spacing:8px;margin:8px 0 16px\">{code}</p>"
-                 + $"<p>Enter it on the website to {WebUtility.HtmlEncode(what)}. It works for 15 minutes.</p><p style=\"color:#777;font-size:13px\">If you didn't ask for this, you can ignore this email.</p></div>";
-        try { await email.SendAsync(new EmailMessage(mail, null, $"{code} is your Chewy Pet code", html, text, [], "Chewy Pet Trade", null), ct); }
+        var login = purpose == EmailCodePurposes.Login;
+        var branded = new BrandedMail(mail, null, $"{code} is your sign-in code", login ? "Sign in to your partner account" : "Confirm your email",
+            [login ? "Enter this code on the website to open your partner account." : "Enter this code on the website to confirm your email and carry on with your trade application."],
+            about, Code: code, Footnote: "The code works for 15 minutes. If you didn't ask for it, you can ignore this email; nobody can sign in without it.");
+        try { await email.SendAsync(branded, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             log.LogWarning(ex, "Code email failed");
@@ -279,6 +323,9 @@ public sealed partial class TradeRegistrationService(IBusinessDbContext db, IClo
         TradePartnerService.Clean(app);
         if (step == 2 && data.Str("stores") is not ("both" or "chewypets" or "candid")) throw new BusinessRuleException("Choose which store you want to buy from.");
     }
+
+    /// <summary>The stores an email is about: the ones chosen, or the website's own store before a choice is made.</summary>
+    private List<string> AboutStores(JsonObject data) => data.Str("stores") is { Length: > 0 } ? StoresOf(data) : [stores.TradeStores[0]];
 
     private List<string> StoresOf(JsonObject data)
     {

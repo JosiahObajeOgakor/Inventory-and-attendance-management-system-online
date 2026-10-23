@@ -69,6 +69,8 @@ public static class PaymentDocTypes
 {
     public const string Quotation = "Quotation";
     public const string Invoice = "Invoice";
+    /// <summary>Money a trade partner pays into their wallet (DocId is the partner); settled into a confirmed wallet entry, never a sale.</summary>
+    public const string Wallet = "Wallet";
 }
 
 /// <summary>
@@ -79,7 +81,8 @@ public static class PaymentDocTypes
 /// gets an account number inside WhatsApp.
 /// </summary>
 public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner tx, IClock clock, ICompanyContext company, PaymentGateways gateways,
-    IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations, IVirtualAccountGateway? virtualAccounts = null, ISaleAlerts? alerts = null)
+    IAdminNotifier notifier, CustomerPaymentService payments, QuotationService quotations, IVirtualAccountGateway? virtualAccounts = null, ISaleAlerts? alerts = null,
+    Partners.IStaffAlerts? staff = null)
 {
     /// <summary>The AlatPay provider name as stored on links (same constant the payment pages use).</summary>
     public const string AlatProvider = PaymentProviders.AlatPay;
@@ -186,6 +189,19 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         await alerts!.SaleCompletedAsync(alert, ct);
     }
 
+    /// <summary>A top-up confirmed: the partner hears on WhatsApp, SMS and email; the admin on WhatsApp, SMS and email, with the clerks copied.</summary>
+    private async Task WalletToldAsync(int partnerId, decimal paid, CancellationToken ct)
+    {
+        var p = await db.TradePartners.AsNoTracking().SingleOrDefaultAsync(x => x.Id == partnerId, ct);
+        if (p is null) return;
+        var balance = await db.WalletEntries.Where(w => w.TradePartnerId == p.Id && w.Status == WalletEntryStatuses.Confirmed).SumAsync(w => (decimal?)w.Amount, ct) ?? 0;
+        if (staff is null) { await notifier.NotifyAsync($"{company.LegalName}: wallet top-up", $"{p.BusinessName} topped up ₦{paid:N2}. Wallet: ₦{balance:N2}.", ct); return; }
+        await staff.TellStaffAsync(new Partners.StaffAlert($"{company.LegalName}: {p.BusinessName} topped up ₦{paid:N2}",
+            $"💰 WALLET TOP-UP CONFIRMED — {company.LegalName}\n{p.BusinessName} ({p.ApprovedTier}) paid ₦{paid:N2} into their wallet (AlatPay).\nWallet balance: ₦{balance:N2}."), ct);
+        await staff.TellContactAsync(new Partners.ContactAlert(p.ContactName, p.Phone, p.Email, $"{company.LegalName}: ₦{paid:N2} added to your wallet",
+            $"Payment received. ₦{paid:N2} has been added to your {company.LegalName} wallet.\n\nYour balance is now ₦{balance:N2}. You can order from your partner account at your {p.ApprovedTier?.ToLowerInvariant()} prices and pay from your wallet in one tap."), ct);
+    }
+
     /// <summary>For a bank transfer into an AlatPay virtual account: that account (bank, account name, number) is the one the money arrived in. Paystack card/link payments have none.</summary>
     private AccountRef? ReceivingAccount(PaymentLink l) =>
         !string.IsNullOrEmpty(l.ExternalId) && !string.IsNullOrEmpty(l.AccountNumber) ? new AccountRef(l.BankName ?? "AlatPay", company.LegalName, l.AccountNumber) : null;
@@ -276,7 +292,7 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         }
 
         string? summary = null; var already = false;
-        int? invoiceId = null; int? custId = null; string? custPhone = null; string? invoiceNumber = null;
+        int? invoiceId = null; int? custId = null; string? custPhone = null; string? invoiceNumber = null; int? walletPartner = null;
         try
         {
             await tx.RunAsync<bool>(async inner =>
@@ -284,6 +300,24 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
                 var l = await db.PaymentLinks.FromSqlInterpolated($"SELECT * FROM payment_links WHERE Reference = {reference} FOR UPDATE").SingleAsync(inner);
                 if (l.Status != PaymentLinkStatuses.Pending) { already = true; return false; }
                 var note = "";
+                if (l.DocType == PaymentDocTypes.Wallet)
+                {
+                    // a partner's top-up: the pending wallet entry becomes money they can spend, exactly once (the entry's reference is unique)
+                    var w = await db.WalletEntries.FromSqlInterpolated($"SELECT * FROM wallet_entries WHERE Reference = {reference} FOR UPDATE").SingleOrDefaultAsync(inner);
+                    if (w is null)
+                    {
+                        w = new WalletEntry { TradePartnerId = l.DocId, Kind = WalletEntryKinds.Funding, Reference = reference, Method = "alatpay", CreatedAt = clock.UtcNow };
+                        db.WalletEntries.Add(w);
+                    }
+                    if (w.Status == WalletEntryStatuses.Confirmed) { already = true; return false; }
+                    w.Amount = paid; w.Status = WalletEntryStatuses.Confirmed; w.ConfirmedAt = clock.UtcNow; w.ConfirmedBy = processor; w.PaymentLinkId = l.Id;
+                    l.Status = PaymentLinkStatuses.Paid; l.PaidAt = clock.UtcNow; l.PaidAmount = paid; l.Channel = v.Channel;
+                    db.AuditLogs.Add(new AuditLog { UserId = null, UserName = processor, Action = "WALLET_FUNDED", Entity = "TradePartner", EntityId = l.DocId.ToString(), At = clock.UtcNow, Detail = $"₦{paid:N2} by {l.CustomerName} via {processor}" });
+                    await db.SaveChangesAsync(inner);
+                    walletPartner = l.DocId;
+                    summary = $"Wallet top-up: ₦{paid:N2} from {l.CustomerName} via {processor}{(v.Channel is null ? "" : " (" + v.Channel + ")")}.";
+                    return true;
+                }
                 if (l.DocType == PaymentDocTypes.Invoice)
                 {
                     var (applied, leftover) = await payments.ApplyToInvoiceWithinAsync(l.DocId, paid, processor, system, inner, ReceivingAccount(l));
@@ -336,7 +370,8 @@ public sealed class PaymentLinkService(IBusinessDbContext db, TransactionRunner 
         if (already || summary is null) return new SettleResult(false, true, "Already recorded.", Reference: reference);
         try
         {
-            if (alerts is not null && invoiceId is int soldInvoice) await AlertAsync(link, soldInvoice, paid, v.Channel, ct);   // admin WhatsApp + email, clerk and customer email
+            if (walletPartner is int wp) await WalletToldAsync(wp, paid, ct);
+            else if (alerts is not null && invoiceId is int soldInvoice) await AlertAsync(link, soldInvoice, paid, v.Channel, ct);   // admin WhatsApp + email, clerk and customer email
             else await notifier.NotifyAsync($"{company.LegalName}: payment received", summary, ct);
             await db.PaymentLinks.Where(l => l.Reference == reference).ExecuteUpdateAsync(u => u.SetProperty(l => l.NotifiedAt, clock.UtcNow), ct);
         }

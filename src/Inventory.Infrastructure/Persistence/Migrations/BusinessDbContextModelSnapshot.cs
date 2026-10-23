@@ -2326,6 +2326,42 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("loan_repayments", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.PartnerMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("At")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("By")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<bool>("FromPartner")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<int>("TradePartnerId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TradePartnerId", "Id");
+
+                    b.ToTable("partner_messages", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.Payment", b =>
                 {
                     b.Property<int>("Id")
@@ -3781,6 +3817,56 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                     b.ToTable("trade_partner_documents", (string)null);
                 });
 
+            modelBuilder.Entity("Inventory.Domain.Entities.TrustedDevice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("FirstIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("varchar(45)");
+
+                    b.Property<string>("LastIp")
+                        .HasMaxLength(45)
+                        .HasColumnType("varchar(45)");
+
+                    b.Property<DateTime>("LastUsedAt")
+                        .HasPrecision(6)
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("trusted_devices", (string)null);
+                });
+
             modelBuilder.Entity("Inventory.Domain.Entities.WalletEntry", b =>
                 {
                     b.Property<long>("Id")
@@ -4160,6 +4246,15 @@ namespace Inventory.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("LoanId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Inventory.Domain.Entities.PartnerMessage", b =>
+                {
+                    b.HasOne("Inventory.Domain.Entities.TradePartner", null)
+                        .WithMany()
+                        .HasForeignKey("TradePartnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

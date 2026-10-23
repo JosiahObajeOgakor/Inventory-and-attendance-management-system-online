@@ -13,13 +13,13 @@ using static Inventory.IntegrationTests.MySqlFixture;
 
 namespace Inventory.IntegrationTests;
 
-internal sealed class CapturingEmail : IEmailSender
+internal sealed class CapturingEmail : IBrandedEmail
 {
     public bool IsConfigured => true;
-    public List<EmailMessage> Sent { get; } = [];
-    public Task SendAsync(EmailMessage message, CancellationToken ct) { Sent.Add(message); return Task.CompletedTask; }
-    /// <summary>The code from the latest "123456 is your Chewy Pet code" email.</summary>
-    public string LastCode => Sent.Last(m => m.Subject.EndsWith("is your Chewy Pet code")).Subject[..6];
+    public List<BrandedMail> Sent { get; } = [];
+    public Task SendAsync(BrandedMail message, CancellationToken ct) { Sent.Add(message); return Task.CompletedTask; }
+    /// <summary>The code from the latest code email.</summary>
+    public string LastCode => Sent.Last(m => m.Code is not null).Code!;
 }
 
 internal sealed class AdjustableClock : IClock
@@ -146,7 +146,8 @@ public class TradeRegistrationTests(MySqlFixture mysql)
         Assert.Equal((1, 0), await At(21.1));
         Assert.Contains("24 hours", r.Mail.Sent.Last().Subject);
         Assert.Contains("Quiet Pets", r.Mail.Sent[0].Subject);
-        Assert.All(r.Mail.Sent, m => Assert.Contains("https://chewypetsfeeds.com/#trade", m.Text));
+        Assert.All(r.Mail.Sent, m => Assert.Equal("https://chewypetsfeeds.com/#trade", m.ButtonUrl));
+        Assert.All(r.Mail.Sent, m => Assert.Equal(["chewypets"], m.Stores));                         // this applicant chose Chewy Pet: its logo heads the emails
         Assert.Equal((0, 0), await At(21.5));                                              // inside the 24 hours: kept
         Assert.Equal((0, 1), await At(22.2));                                              // then removed
         Assert.False(await r.Db.TradeApplicationDrafts.AnyAsync());
@@ -169,6 +170,20 @@ public class TradeRegistrationTests(MySqlFixture mysql)
         var d = await r.Db.TradeApplicationDrafts.AsNoTracking().SingleAsync();
         Assert.Equal(0, d.RemindersSent);
         Assert.Null(d.WarnedAt);
+    }
+
+    [Fact]
+    public async Task A_browser_trusted_after_a_code_signs_in_without_one_and_any_other_browser_needs_a_code()
+    {
+        var r = await BuildAsync();
+        var token = await ToReviewAsync(r);
+        await r.Svc.SubmitAsync(token, default);
+        var trusted = await r.Svc.TrustAsync("bola@example.com", "102.89.1.1", "Edge", default);
+        Assert.True(await r.Svc.IsTrustedAsync("Bola@Example.com", trusted, "41.58.2.2", default));     // same browser, even from another network
+        Assert.False(await r.Svc.IsTrustedAsync("bola@example.com", null, "102.89.1.1", default));        // another browser has no token
+        Assert.False(await r.Svc.IsTrustedAsync("someone@example.com", trusted, "102.89.1.1", default));  // the token belongs to one email only
+        await r.Svc.ForgetAsync(trusted, default);
+        Assert.False(await r.Svc.IsTrustedAsync("bola@example.com", trusted, "102.89.1.1", default));     // signed out: a code next time
     }
 
     [Fact]

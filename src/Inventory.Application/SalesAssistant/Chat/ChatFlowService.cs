@@ -133,6 +133,7 @@ public sealed partial class ChatFlowService(
         if (t.C.State != ChatStates.Idle && ChatLexicon.IsCancel(t.Norm)) { Cancel(t); return; }
         if (await HandleWaybillAsync(t, ct)) return;
         if (await HandleTradeAsync(t, ct)) return;        // trade registration: the form, the filled form, or where an application stands
+        if (await HandlePartnerAsync(t, ct)) return;      // an approved partner: welcomed by name with their last order, REORDER repeats it
         if (await HandleQuoteIntentAsync(t, ct)) return;
         if (await HandleEnquiryAsync(t, ct)) return;      // a question is answered in any state, then the sale is picked up again
         switch (t.C.State)

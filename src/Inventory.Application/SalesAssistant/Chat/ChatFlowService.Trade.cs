@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Inventory.Application.Common;
 using Inventory.Application.Partners;
 using Inventory.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Inventory.Application.SalesAssistant.Chat;
 
@@ -90,6 +91,39 @@ public sealed partial class ChatFlowService
                 if (labels.Contains(label) && !found.ContainsKey(key)) { found[key] = value; break; }
         }
         return found.Count >= 4 ? found : null;
+    }
+
+    /// <summary>
+    /// An approved trade partner writing from their registered number: "hello" gets their business name, tier, wallet and last order; "REORDER" puts
+    /// that order (what's still in stock, at today's tier prices) straight into the basket for the usual summary and payment.
+    /// </summary>
+    private async Task<bool> HandlePartnerAsync(Turn t, CancellationToken ct)
+    {
+        if (t.C.Channel != ChatChannels.WhatsApp || t.C.State is not (ChatStates.Idle or ChatStates.Collecting) || t.D.Lines.Count > 0) return false;
+        var reorder = t.Norm is "reorder" or "re order" or "order again" or "same as last time" or "same order";
+        if (!reorder && !ChatLexicon.IsGreeting(t.Norm)) return false;
+        var phone = PhoneOf(t);
+        var p = phone is null ? null : await db.TradePartners.AsNoTracking().FirstOrDefaultAsync(x => x.Phone == phone && x.Status == PartnerStatuses.Approved && x.CustomerId != null, ct);
+        if (p is null) return false;
+
+        var cat = await CatAsync(t, ct);
+        var last = await db.Invoices.AsNoTracking().Where(i => i.CustomerId == p.CustomerId && i.VoidedAt == null && !i.IsSample).OrderByDescending(i => i.Id)
+            .Select(i => i.Items.Select(x => new { x.ProductId, x.Quantity }).ToList()).FirstOrDefaultAsync(ct) ?? [];
+        var again = last.Where(l => cat.Any(c => c.Id == l.ProductId && c.Available >= l.Quantity)).ToList();
+        if (reorder && again.Count > 0)
+        {
+            t.D.Lines = again.Select(l => new DraftLine { ProductId = l.ProductId, Qty = l.Quantity }).ToList();
+            t.D.Name ??= p.ContactName;
+            t.C.State = ChatStates.Collecting;
+            await AdvanceAsync(t, ct);
+            return true;
+        }
+        t.Say("p_welcome", p.BusinessName, (p.ApprovedTier ?? "").ToLowerInvariant());
+        if (again.Count > 0) t.Say("p_last", string.Join(", ", again.Select(l => $"{l.Quantity} × {cat.First(c => c.Id == l.ProductId).Name}")));
+        else t.Say("p_no_last", ExampleProduct(t));
+        var wallet = await db.WalletEntries.Where(w => w.TradePartnerId == p.Id && w.Status == WalletEntryStatuses.Confirmed).SumAsync(w => (decimal?)w.Amount, ct) ?? 0;
+        if (wallet > 0) t.Say("p_wallet", ChatOrderText.Naira(wallet), (company.Website is { Length: > 0 } w ? w.TrimEnd('/') : SiteFallback) + "/#partner");
+        return true;
     }
 
     private static string First(string name) => name.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? name;
