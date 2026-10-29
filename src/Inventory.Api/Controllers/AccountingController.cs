@@ -1,7 +1,11 @@
 using Inventory.Api.Infrastructure;
 using Inventory.Application.Abstractions;
+using Inventory.Application.Common;
+using Inventory.Application.Documents;
 using Inventory.Application.Ledger;
 using Inventory.Domain;
+using Inventory.Infrastructure.Documents;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,9 +17,35 @@ public sealed record ReconciliationDto(decimal LedgerInventory, decimal StockAtC
 
 /// <summary>The general ledger: chart of accounts, statements, journals (prepared by one person, approved by another) and month close.</summary>
 [ApiController, Route("api/gl"), ServiceFilter(typeof(LedgerSyncFilter)), RequiresNewFeatures]
-public class AccountingController(ICurrentUser cu, AccountingService svc, IClock clock) : AppController(cu)
+public class AccountingController(ICurrentUser cu, AccountingService svc, IClock clock, DocumentQueries docs, IDocumentRenderer renderer, IBusinessDbContext db, ICompanyContext company)
+    : AppController(cu)
 {
     private DateOnly Today => clock.BusinessToday;
+
+    /// <summary>
+    /// The statements as a file to keep or send to an accountant: profit and loss for the period, balance sheet and trial balance at its end.
+    /// which = all | pl | bs | tb; format = pdf | xlsx.
+    /// </summary>
+    [HttpGet("statements"), Authorize(Policy = Perm.GlView)]
+    public async Task<IActionResult> Statements([FromQuery] string? which, [FromQuery] string? format, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromQuery] int? branchId, CancellationToken ct)
+    {
+        which = which is "pl" or "bs" or "tb" ? which : "all";
+        var end = to ?? Today;
+        var start = from ?? new DateOnly(end.Year, end.Month, 1);
+        if (start > end) throw new BusinessRuleException("The start date is after the end date.");
+        await svc.ForBranchAsync(branchId, ct);
+        var branch = branchId is int b ? await db.Branches.AsNoTracking().Where(x => x.Id == b).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
+        var d = new StatementsDoc(await docs.BrandAsync(ct), which, start, end, branch,
+            await svc.ProfitAndLossAsync(start, end, ct), await svc.BalanceSheetAsync(end, ct), await svc.TrialBalanceAsync(end, ct), clock.BusinessNow);
+
+        var title = which switch { "pl" => "profit-and-loss", "bs" => "balance-sheet", "tb" => "trial-balance", _ => "financial-statements" };
+        var name = $"{company.Key}-{title}-{(which is "pl" or "all" ? $"{start:yyyy-MM-dd}-to-" : "")}{end:yyyy-MM-dd}";
+        Response.Headers.CacheControl = "no-store";
+        if (format == "xlsx") return File(ExcelExporter.Statements(d), ExcelExporter.ContentType, name + ".xlsx");
+        Response.Headers.ContentDisposition = $"inline; filename=\"{name}.pdf\"";
+        return File(renderer.Statements(d), "application/pdf");
+    }
 
     [HttpGet("accounts"), Authorize(Policy = Perm.GlView)]
     public Task<IReadOnlyList<AccountDto>> Accounts(CancellationToken ct) => svc.AccountsAsync(ct);

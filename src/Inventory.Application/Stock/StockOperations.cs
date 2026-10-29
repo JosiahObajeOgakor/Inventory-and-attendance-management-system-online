@@ -16,6 +16,8 @@ public sealed class StockOperations(IBusinessDbContext db, TransactionRunner tx,
         tx.RunAsync(async inner =>
         {
             if (quantity <= 0) throw new BusinessRuleException("Enter how many were produced.");
+            if (expiry is { } e && e <= producedOn)
+                throw new BusinessRuleException($"The expiry date ({e:dd MMM yyyy}) must be after the production date ({producedOn:dd MMM yyyy}). Check the year.");
             await EnsureProductAndWarehouse(productId, warehouseId, inner);
             // Stock added for a product that already has a row here goes onto that row (a batch number typed is only used when it starts the row); the row keeps the earliest expiry.
             var b = await stock.TopUpAsync(productId, warehouseId, quantity, expiry, string.IsNullOrWhiteSpace(batchNumber) ? StockService.ShelfBatchNumber(expiry) : batchNumber.Trim(), inner);

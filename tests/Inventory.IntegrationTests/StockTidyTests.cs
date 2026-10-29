@@ -14,7 +14,7 @@ using static Inventory.IntegrationTests.MySqlFixture;
 namespace Inventory.IntegrationTests;
 
 /// <summary>
-/// One product = one name and one stock row per warehouse and expiry date. Buying more tops the row up instead of adding another; "low stock" is about the product, not an old
+/// One product = one name and one stock row per warehouse. Buying, supplying or producing more tops the row up instead of adding another; "low stock" is about the product, not an old
 /// emptied row; the Stock list pages without repeating or skipping rows; and what was already duplicated can be merged without losing a unit.
 /// </summary>
 [Collection("mysql")]
@@ -77,6 +77,41 @@ public class StockTidyTests(MySqlFixture mysql)
         var row = Assert.Single(await check.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId).ToListAsync());   // still one row
         Assert.Equal(22, row.QuantityOnHand);                                                                                           // 10 + 7 + 5
         Assert.Equal(2, await check.StockMovements.CountAsync(m => m.ProductId == r.Seed.ProductId && m.ReferenceType == "Production"));   // both additions are in the history
+    }
+
+    [Fact]
+    public async Task A_supply_added_to_stock_tops_up_the_row_and_deleting_it_takes_the_units_back_off_that_row()
+    {
+        var r = await BuildAsync(stock: 10);
+        await using var db = NewContext(r.Cs);
+        var tx = Wire.Tx(db); var stockSvc = new StockService(db, Clock);
+        var item = new SupplierProduct { SupplierId = r.SupplierId, Name = "Adult dog food 20kg (mill pack)", Unit = "Bag", UnitCost = 8000 };
+        db.SupplierProducts.Add(item); await db.SaveChangesAsync();
+        var supplies = new SupplyService(db, tx, stockSvc, Clock, Co, new SupplyRequestValidator());
+        SupplyRequest Delivery(int qty) => new()
+        {
+            SupplierId = r.SupplierId, AddToStock = true, WarehouseId = r.Seed.WarehouseId,
+            Lines = [new SupplyLineDto { SupplierProductId = item.Id, Quantity = qty, UnitCost = 8000, ProductId = r.Seed.ProductId }],
+        };
+        var first = await supplies.CreateAsync(Delivery(6), Clerk);
+        await supplies.CreateAsync(Delivery(4), Clerk);
+        await using (var mid = NewContext(r.Cs))
+            Assert.Equal(20, Assert.Single(await mid.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId).ToListAsync()).QuantityOnHand);   // ONE row: 10 + 6 + 4
+
+        await supplies.DeleteAsync(first.Id, Clerk);
+        await using var check = NewContext(r.Cs);
+        Assert.Equal(14, Assert.Single(await check.StockBatches.AsNoTracking().Where(b => b.ProductId == r.Seed.ProductId).ToListAsync()).QuantityOnHand);
+    }
+
+    [Fact]
+    public async Task A_production_expiry_on_or_before_the_production_day_is_refused()
+    {
+        var r = await BuildAsync(stock: 0);
+        await using var db = NewContext(r.Cs);
+        var ops = new StockOperations(db, Wire.Tx(db), new StockService(db, Clock), Clock);
+        var day = new DateOnly(2026, 10, 21);
+        var e = await Assert.ThrowsAsync<BusinessRuleException>(() => ops.RecordProductionAsync(r.Seed.ProductId, r.Seed.WarehouseId, 25, day, null, day, Clerk));
+        Assert.Contains("must be after the production date", e.Message);
     }
 
     [Fact]
@@ -223,11 +258,10 @@ public class StockTidyTests(MySqlFixture mysql)
         var product = Assert.Single(await check.Products.AsNoTracking().ToListAsync());                  // one product left: the original
         Assert.Equal(r.Seed.ProductId, product.Id);
         Assert.Equal(totalBefore, await check.StockBatches.SumAsync(b => b.QuantityOnHand));              // not one unit lost or gained
-        var rows = await check.StockBatches.AsNoTracking().OrderBy(b => b.ExpiryDate).ToListAsync();
-        Assert.Equal(2, rows.Count);                                                                       // one row per expiry date: ordinary stock + the dated stock
-        Assert.Equal(1, rows.Single(b => b.ExpiryDate != null).QuantityOnHand);                            // 3 dated units, 2 of them sold earliest-expiry-first
-        Assert.Equal(10 + 20 + 7 + 5, rows.Single(b => b.ExpiryDate == null).QuantityOnHand);              // original 10 + PO-1 20 + the duplicate's 7 + 5 bought for it, in ONE row
-        Assert.All(rows, b => Assert.Equal(r.Seed.ProductId, b.ProductId));
+        var row = Assert.Single(await check.StockBatches.AsNoTracking().ToListAsync());                   // ONE row for the product in this warehouse, as stock is now always added
+        Assert.Equal(10 + 20 + 7 + 5 + 1, row.QuantityOnHand);   // original 10 + PO-1 20 + the duplicate's 7 + 5 bought for it + the 1 dated unit left (2 of 3 sold earliest-expiry-first)
+        Assert.Equal(new DateOnly(2027, 5, 1), row.ExpiryDate);                                            // the earliest expiry of the stock it holds is kept
+        Assert.Equal(r.Seed.ProductId, row.ProductId);
         Assert.Empty(await check.InvoiceItems.AsNoTracking().Where(i => i.ProductId == dupId).ToListAsync());                // every sale line now belongs to the survivor
         Assert.Equal(2, await check.InvoiceItems.AsNoTracking().Where(i => i.ProductId == r.Seed.ProductId).SumAsync(i => i.Quantity));
         Assert.Empty(await check.PurchaseOrderItems.AsNoTracking().Where(i => i.ProductId == dupId).ToListAsync());

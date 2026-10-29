@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Api, messageOf } from '../../core/api.service';
+import { Auth } from '../../core/auth.service';
 import { FinanceSummary, LedgerRow, MonthlyIncome } from '../../core/models';
 import { Icon } from '../../shared/icon';
 import { PagedList } from '../../shared/paged-list';
@@ -10,7 +12,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 @Component({
   selector: 'app-finance',
-  imports: [Icon, NairaPipe, DayPipe, Pager],
+  imports: [Icon, NairaPipe, DayPipe, Pager, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -26,6 +28,18 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
           <a class="btn" [href]="exportUrl('full')" download><app-icon name="download" [size]="18" /> Everything (Excel)</a>
         </div>
       </div>
+      @if (auth.can('gl.view') && auth.flags().hasNewFeatures) {
+        <!-- the proper accounts for the month, from the general ledger, as files to keep or hand to the accountant -->
+        <section class="card books">
+          <div><span class="eyebrow">Accounts for {{ monthLabel() }}</span><p class="muted sm">Profit &amp; loss for the month, balance sheet and trial balance at its end, on your letterhead.</p></div>
+          <div class="books__acts">
+            <a class="btn btn-primary" [href]="statementsUrl('pdf', 'pl')" target="_blank" rel="noopener"><app-icon name="download" [size]="18" /> Profit &amp; loss (PDF)</a>
+            <a class="btn" [href]="statementsUrl('pdf', 'all')" target="_blank" rel="noopener"><app-icon name="download" [size]="18" /> Full accounts (PDF)</a>
+            <a class="btn" [href]="statementsUrl('xlsx', 'all')" download><app-icon name="download" [size]="18" /> Full accounts (Excel)</a>
+            <a class="btn btn-quiet" routerLink="/accounting">Open Accounting</a>
+          </div>
+        </section>
+      }
       @if (error()) { <p class="notice bad" role="alert">{{ error() }}</p> }
 
       @if (s(); as s) {
@@ -86,10 +100,14 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
         <app-pager [page]="ledger.page()" [pageSize]="ledger.pageSize" [total]="ledger.total()" (pageChange)="ledger.goTo($event)" [sizeable]="true" (sizeChange)="ledger.setSize($event)" />
       </section>
     </div>`,
-  styles: `.gap { margin-top: 1rem; } .sel { width: 12rem; } .owes { color: var(--stamp); font-weight: 600; }`,
+  styles: `.gap { margin-top: 1rem; } .sel { width: 12rem; } .owes { color: var(--stamp); font-weight: 600; }
+    .books { display: flex; flex-wrap: wrap; gap: .8rem 1.2rem; align-items: center; justify-content: space-between; padding: .9rem 1rem; margin-bottom: 1rem; }
+    .books p { margin: .2rem 0 0; } .books__acts { display: flex; flex-wrap: wrap; gap: .5rem; }
+    @media (max-width: 600px) { .books__acts { display: grid; grid-template-columns: 1fr; width: 100%; } .books__acts .btn { justify-content: center; } }`,
 })
 export class FinancePage implements OnInit {
   private readonly api = inject(Api);
+  protected readonly auth = inject(Auth);
   protected readonly s = signal<FinanceSummary | null>(null);
   protected readonly income = signal<MonthlyIncome[]>([]);
   protected readonly error = signal('');
@@ -114,6 +132,15 @@ export class FinancePage implements OnInit {
     const pad = (n: number) => String(n).padStart(2, '0');
     const last = new Date(y, m, 0).getDate();
     return `/api/exports/${kind}?from=${y}-${pad(m)}-01&to=${y}-${pad(m)}-${pad(last)}`;
+  }
+
+  protected monthLabel(): string { return this.months.find(m => m.value === this.selectedMonth())?.label ?? ''; }
+
+  /** The general-ledger statements for the selected month: profit and loss over it; balance sheet and trial balance at its last day. */
+  protected statementsUrl(format: 'pdf' | 'xlsx', which: 'pl' | 'all'): string {
+    const [y, m] = this.selectedMonth().split('-').map(Number);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `/api/gl/statements?which=${which}&format=${format}&from=${y}-${pad(m)}-01&to=${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}`;
   }
 
   protected setMonth(v: string) { this.selectedMonth.set(v); this.year.set(Number(v.split('-')[0])); void this.load(); }

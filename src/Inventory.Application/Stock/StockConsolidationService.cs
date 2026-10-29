@@ -14,7 +14,8 @@ public sealed record ConsolidationPreview(int DuplicateProductNames, int Product
 public sealed record ConsolidationResult(int ProductsMerged, int StockRowsMerged, int StockOnHandBefore, int StockOnHandAfter);
 
 /// <summary>
-/// Tidies what repeated purchases and repeated entry left behind: products that share a name become ONE product, and a product's stock in a warehouse becomes ONE row per expiry date.
+/// Tidies what repeated purchases and repeated entry left behind: products that share a name become ONE product, and a product's stock in a warehouse becomes ONE row (with the earliest expiry date of the rows still
+/// holding stock), exactly as production, purchases and supplies add to it.
 /// Nothing is lost: quantities are added together (checked: the grand total on hand must be identical afterwards, or everything is rolled back), and every sale, purchase, quotation,
 /// stock-history and serial-number record is re-pointed to the surviving product / row. It runs in one transaction.
 /// </summary>
@@ -45,7 +46,7 @@ public sealed class StockConsolidationService(IBusinessDbContext db, Transaction
         var survivors = Survivors(products);
         var names = products.ToDictionary(p => p.Id, p => p.Name);
         var dupGroups = products.GroupBy(p => ProductNames.Key(p.Name)).Where(g => g.Count() > 1).ToList();
-        var groups = batches.GroupBy(b => (Product: survivors[b.ProductId], b.WarehouseId, b.Expiry)).Where(g => g.Count() > 1).ToList();
+        var groups = batches.GroupBy(b => (Product: survivors[b.ProductId], b.WarehouseId)).Where(g => g.Count() > 1).ToList();
         var examples = dupGroups.Take(3).Select(g => $"{g.Count()} products named \"{names[g.First().Id]}\" become one")
             .Concat(groups.Take(5).Select(g => $"{names[g.Key.Product]}: {g.Count()} stock rows ({g.Sum(b => b.Qty):N0} in total) become one")).ToList();
         var mergeCount = groups.Sum(g => g.Count() - 1);
@@ -87,16 +88,17 @@ public sealed class StockConsolidationService(IBusinessDbContext db, Transaction
             foreach (var g in products.GroupBy(p => survivors[p.Id]).Where(g => g.Count() > 1 && g.Any(p => p.IsActive)))
                 await db.Products.Where(x => x.Id == g.Key).ExecuteUpdateAsync(u => u.SetProperty(x => x.IsActive, true), inner);
 
-            // 2. One row per (product, warehouse, expiry): the oldest row survives with the combined quantity; history is re-pointed at it.
+            // 2. One row per (product, warehouse): the oldest row survives with the combined quantity and the earliest expiry of the stock it holds; history is re-pointed at it.
             var current = await db.StockBatches.AsNoTracking().Select(b => new B(b.Id, b.ProductId, b.WarehouseId, b.ExpiryDate, b.QuantityOnHand)).ToListAsync(inner);
             var numbers = await db.StockBatches.AsNoTracking().Select(b => new { b.Id, b.BatchNumber }).ToDictionaryAsync(b => b.Id, b => b.BatchNumber, inner);
             var rowsMerged = 0;
-            foreach (var g in current.GroupBy(b => (b.ProductId, b.WarehouseId, b.Expiry)).Where(g => g.Count() > 1))
+            foreach (var g in current.GroupBy(b => (b.ProductId, b.WarehouseId)).Where(g => g.Count() > 1))
             {
                 var ordered = g.OrderBy(b => b.Id).ToList();
                 var keep = ordered.FirstOrDefault(b => !numbers[b.Id].StartsWith('~')) ?? ordered[0];       // keep a real batch name where one exists
                 var others = ordered.Where(b => b.Id != keep.Id).ToList();
                 var sum = ordered.Sum(b => b.Qty);
+                var expiry = Earliest(ordered.Where(b => b.Qty > 0)) ?? Earliest(ordered);
                 foreach (var o in others)
                 {
                     await db.StockMovements.Where(x => x.BatchId == o.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.BatchId, keep.Id), inner);
@@ -108,8 +110,9 @@ public sealed class StockConsolidationService(IBusinessDbContext db, Transaction
                     rowsMerged++;
                 }
                 var wanted = numbers[keep.Id].StartsWith('~') ? orig[keep.Id] : numbers[keep.Id];
-                var finalNumber = await FreeNameAsync(keep.Id, keep.ProductId, keep.WarehouseId, wanted, keep.Expiry, inner);
-                await db.StockBatches.Where(x => x.Id == keep.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.QuantityOnHand, sum).SetProperty(x => x.BatchNumber, finalNumber), inner);
+                var finalNumber = await FreeNameAsync(keep.Id, keep.ProductId, keep.WarehouseId, wanted, expiry, inner);
+                await db.StockBatches.Where(x => x.Id == keep.Id)
+                    .ExecuteUpdateAsync(u => u.SetProperty(x => x.QuantityOnHand, sum).SetProperty(x => x.BatchNumber, finalNumber).SetProperty(x => x.ExpiryDate, expiry), inner);
             }
             // Any row still carrying a temporary name (a duplicate product's only row in a warehouse) gets its own name back.
             foreach (var b in await db.StockBatches.AsNoTracking().Where(x => x.BatchNumber.StartsWith("~")).ToListAsync(inner))
@@ -125,6 +128,8 @@ public sealed class StockConsolidationService(IBusinessDbContext db, Transaction
             await db.SaveChangesAsync(inner);
             return new ConsolidationResult(productsMerged, rowsMerged, before, after);
         }, ct);
+
+    private static DateOnly? Earliest(IEnumerable<B> rows) => rows.Where(b => b.Expiry != null).Select(b => b.Expiry).Min();
 
     /// <summary>The wanted batch name if no other row of this product in this warehouse uses it; otherwise the standard shelf name (made unique if needed).</summary>
     private async Task<string> FreeNameAsync(int rowId, int productId, int warehouseId, string wanted, DateOnly? expiry, CancellationToken ct)

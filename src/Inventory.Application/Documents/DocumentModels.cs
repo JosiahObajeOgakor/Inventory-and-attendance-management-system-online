@@ -74,4 +74,13 @@ public interface IDocumentRenderer
     byte[] PriceListPng(PriceListDoc d);
     /// <summary>A Code 128 label the way the desktop app printed shelf labels: name, SKU, price and a scannable barcode.</summary>
     byte[] ShelfLabel(Branding brand, string productName, string sku, string barcode, decimal price);
+    /// <summary>The financial statements from the general ledger, one page each: profit and loss, balance sheet, trial balance (or just the one asked for).</summary>
+    byte[] Statements(StatementsDoc d);
 }
+
+/// <summary>
+/// The books for a period, as printed: profit and loss for <see cref="From"/>–<see cref="To"/>, balance sheet and trial balance at <see cref="To"/>.
+/// <see cref="Which"/> is "pl", "bs", "tb" or "all".
+/// </summary>
+public sealed record StatementsDoc(Branding Brand, string Which, DateOnly From, DateOnly To, string? Branch,
+    Ledger.ProfitAndLossDto ProfitAndLoss, Ledger.BalanceSheetDto BalanceSheet, Ledger.TrialBalanceDto TrialBalance, DateTime GeneratedAt);

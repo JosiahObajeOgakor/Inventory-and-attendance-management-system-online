@@ -9,7 +9,7 @@ namespace Inventory.Infrastructure.Documents;
 /// Spreadsheet exports (ClosedXML). The desktop app wrote CSV; these are real .xlsx files with typed number and date cells, so Excel
 /// sorts and sums them without the "numbers stored as text" nag. Every sheet freezes its header row and auto-fits its columns.
 /// </summary>
-public sealed class ExcelExporter(IBusinessDbContext db, ICompanyContext company, IClock clock)
+public sealed partial class ExcelExporter(IBusinessDbContext db, ICompanyContext company, IClock clock)
 {
     public const string ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private const string Money = "#,##0.00";

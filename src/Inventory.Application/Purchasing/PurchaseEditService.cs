@@ -71,17 +71,15 @@ public sealed class PurchaseEditService(IBusinessDbContext db, TransactionRunner
             var note = $"Edit of {order.PoNumber}";
 
             // Check every reduction first, so a refusal changes nothing.
-            var batches = new Dictionary<int, StockBatch?>();
+            // The goods went onto the product's stock row (older orders had a row named after the order, which is used first).
+            var shelves = new Dictionary<int, List<StockBatch>>();
             var problems = new List<string>();
             foreach (var pid in productIds.OrderBy(x => x))
             {
                 var delta = after.GetValueOrDefault(pid) - before.GetValueOrDefault(pid);
                 if (delta >= 0) continue;
-                var batch = await db.StockBatches
-                    .FromSqlInterpolated($"SELECT * FROM stock_batches WHERE ProductId = {pid} AND WarehouseId = {warehouseId} AND BatchNumber = {order.PoNumber} FOR UPDATE")
-                    .SingleOrDefaultAsync(ct);
-                batches[pid] = batch;
-                var onShelf = batch?.QuantityOnHand ?? 0;
+                var shelf = shelves[pid] = await stock.ShelfAsync(pid, warehouseId, order.PoNumber, ct);
+                var onShelf = Math.Min(shelf.Sum(b => b.QuantityOnHand), before.GetValueOrDefault(pid));
                 if (-delta > onShelf)
                     problems.Add($"{products[pid].Name}: {before.GetValueOrDefault(pid) - onShelf} of the {before.GetValueOrDefault(pid)} received are already sold or moved, so you can reduce it by at most {onShelf}.");
             }
@@ -92,14 +90,13 @@ public sealed class PurchaseEditService(IBusinessDbContext db, TransactionRunner
                 var delta = after.GetValueOrDefault(pid) - before.GetValueOrDefault(pid);
                 if (delta > 0)
                 {
-                    await stock.ReceiveAsync(pid, warehouseId, order.PoNumber, delta, null, MovementReferences.PurchaseEdit, order.Id, user.Id, ct, note);
+                    await stock.ReceiveToShelfAsync(pid, warehouseId, delta, null, MovementReferences.PurchaseEdit, order.Id, user.Id, ct, note);
                     stockIn.Add(new PurchaseStockChange(pid, products[pid].Name, delta));
                 }
                 else if (delta < 0)
                 {
-                    var batch = batches[pid]!;
-                    batch.QuantityOnHand += delta;
-                    stock.AddMovement(pid, warehouseId, MovementTypes.Out, -delta, MovementReferences.PurchaseEdit, order.Id, user.Id, note, batch.Id);
+                    foreach (var (batch, taken) in StockService.Take(shelves[pid], -delta))
+                        stock.AddMovement(pid, warehouseId, MovementTypes.Out, taken, MovementReferences.PurchaseEdit, order.Id, user.Id, note, batch.Id);
                     stockOut.Add(new PurchaseStockChange(pid, products[pid].Name, -delta));
                 }
             }

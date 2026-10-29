@@ -102,7 +102,7 @@ interface TidyPreview { duplicateProductNames: number; productsToMerge: number; 
     <!-- tidy up -->
     <app-modal [open]="dialog() === 'tidy'" heading="Tidy up duplicates" (closed)="close()">
       @if (tidy(); as t) {
-        @if (t.nothingToDo) { <p>Nothing to tidy: every product has one name and one stock row for each expiry date in each warehouse.</p> }
+        @if (t.nothingToDo) { <p>Nothing to tidy: every product has one name and one stock row in each warehouse.</p> }
         @else {
           <p>This joins things that were entered more than once. <strong>No stock is lost</strong>: quantities are added together, every sale, purchase and stock-history record is kept and re-pointed, and if the total on hand would change by even one unit, nothing is saved.</p>
           <ul>

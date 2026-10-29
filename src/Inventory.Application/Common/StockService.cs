@@ -110,6 +110,29 @@ public sealed class StockService(IBusinessDbContext db, IClock clock)
         return existing;
     }
 
+    /// <summary>
+    /// What is on the shelf for a product in a warehouse, locked: the rows to take from when stock that came in goes back out (a purchase reduced
+    /// or deleted). A row named <paramref name="preferBatch"/> (older records kept a row per document) comes first, then the oldest.
+    /// </summary>
+    public async Task<List<StockBatch>> ShelfAsync(int productId, int warehouseId, string? preferBatch, CancellationToken ct) =>
+        (await LockWarehouseBatchesAsync(productId, warehouseId, ct)).Where(b => b.QuantityOnHand > 0)
+            .OrderBy(b => b.BatchNumber == preferBatch ? 0 : 1).ThenBy(b => b.Id).ToList();
+
+    /// <summary>Takes <paramref name="quantity"/> off those rows in order (the caller has checked there is enough). Returns what came from each row.</summary>
+    public static List<(StockBatch Batch, int Quantity)> Take(IEnumerable<StockBatch> shelf, int quantity)
+    {
+        var taken = new List<(StockBatch, int)>();
+        foreach (var b in shelf)
+        {
+            if (quantity == 0) break;
+            var t = Math.Min(quantity, b.QuantityOnHand);
+            if (t <= 0) continue;
+            b.QuantityOnHand -= t; quantity -= t;
+            taken.Add((b, t));
+        }
+        return taken;
+    }
+
     /// <summary>Adds stock to the (product, warehouse, batch number) batch, creating it if needed, and logs an IN.</summary>
     public async Task<StockBatch> ReceiveAsync(int productId, int warehouseId, string batchNumber, int quantity,
         DateOnly? expiry, string referenceType, int? referenceId, int userId, CancellationToken ct, string? note = null)

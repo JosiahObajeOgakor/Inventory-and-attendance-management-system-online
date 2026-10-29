@@ -15,7 +15,7 @@ namespace Inventory.Infrastructure.Documents;
 /// a document that is too long for one page scales down to fit, exactly like the desktop "FitToOnePage".
 /// QuestPDF Community licence applies (free for businesses under USD 1M annual gross revenue) — see docs/DEPLOY notes.
 /// </summary>
-public sealed class QuestDocumentRenderer : IDocumentRenderer
+public sealed partial class QuestDocumentRenderer : IDocumentRenderer
 {
     private const string Face = "Noto Sans";
     private static readonly string Ink = "#16202A", Muted = "#56636C", Hairline = "#D3DAD5", Danger = "#C4372C";

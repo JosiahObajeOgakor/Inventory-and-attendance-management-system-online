@@ -42,7 +42,11 @@ type Statement = 'pl' | 'bs' | 'tb';
                 <label class="inline">As at <input class="input" type="date" [(ngModel)]="asOf" (change)="loadStatement()" /></label>
               }
               <button type="button" class="btn" (click)="print()">Print</button>
+              <a class="btn" [href]="fileUrl('pdf')" target="_blank" rel="noopener">PDF</a>
+              <a class="btn" [href]="fileUrl('xlsx')" download>Excel</a>
             </div>
+            <p class="pack muted sm">Full set — profit &amp; loss {{ from | day }} to {{ to | day }}, balance sheet and trial balance at {{ to | day }}:
+              <a [href]="fileUrl('pdf', 'all')" target="_blank" rel="noopener">PDF</a> · <a [href]="fileUrl('xlsx', 'all')" download>Excel</a></p>
 
             @if (stmt() === 'pl' && pl(); as p) {
               <div class="statement" id="statement">
@@ -239,7 +243,7 @@ type Statement = 'pl' | 'bs' | 'tb';
     .compact td, .compact th { padding: .3rem .6rem; } .jl select { min-width: 14rem; } .jl .num { width: 9rem; }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; } @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
     .box { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; } .kv { display: grid; grid-template-columns: 1fr auto; gap: .3rem 1rem; }
-    .tight { padding: 0 0 .6rem; } .actions { white-space: nowrap; }`,
+    .tight { padding: 0 0 .6rem; } .actions { white-space: nowrap; } .pack { padding: 0 1rem .4rem; margin: 0; } .pack a { font-weight: 600; }`,
 })
 export class AccountingPage implements OnInit {
   protected readonly auth = inject(Auth);
@@ -306,6 +310,12 @@ export class AccountingPage implements OnInit {
       if (this.stmt() === 'bs') this.bs.set(await this.api.balanceSheet(this.asOf));
       if (this.stmt() === 'tb') this.tb.set(await this.api.trialBalance(this.asOf));
     } catch (e) { this.toasts.error(messageOf(e)); }
+  }
+
+  /** The statement on screen (or the full set) as a file: the server renders it from the same ledger, on the business's letterhead. */
+  protected fileUrl(format: 'pdf' | 'xlsx', which: Statement | 'all' = this.stmt()): string {
+    const to = which === 'bs' || which === 'tb' ? this.asOf : this.to;
+    return `/api/gl/statements?which=${which}&format=${format}&from=${this.from}&to=${to}`;
   }
 
   protected async loadJournals() { try { this.journals.set(await this.api.journals(this.jFrom, this.jTo, this.jStatus || undefined)); } catch (e) { this.toasts.error(messageOf(e)); } }

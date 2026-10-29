@@ -53,9 +53,9 @@ public sealed class SupplyRequestValidator : AbstractValidator<SupplyRequest>
 }
 
 /// <summary>
-/// Records what a supplier supplied, kept entirely separate from stock and from purchase orders: no stock batch, no stock movement, no change
-/// to a product's cost price and no ledger entry. A supply's own total, what was paid on it and what is still owed are its whole truth, which
-/// is why an admin can delete supplies — singly, per supplier, per month or all of them — without unwinding anything else in the business.
+/// Records what a supplier supplied, kept separate from purchase orders and from a product's cost price. With "add to stock" the goods go onto
+/// the product's stock row; otherwise stock is untouched. The general ledger follows the record (see LedgerSync), so an admin can delete
+/// supplies — singly, per supplier, per month or all of them — and the books follow.
 /// </summary>
 public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, StockService stock, IClock clock, ICompanyContext company,
     IValidator<SupplyRequest> validator)
@@ -117,11 +117,12 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, S
             db.Supplies.Add(supply);
             if (req.AddToStock)
             {
-                await db.SaveChangesAsync(inner);   // the reference is the batch name, so the record must exist first
+                await db.SaveChangesAsync(inner);   // the movements carry the record's id, so it must exist first
                 foreach (var line in supply.Items.OrderBy(i => i.Name))
                 {
-                    await stock.ReceiveAsync(line.ProductId!.Value, warehouseId, supply.Reference, line.Quantity, null,
-                        MovementReferences.PurchaseOrder, supply.Id, user.Id, inner);
+                    // onto the product's existing stock row in that warehouse, never a new row per delivery
+                    await stock.ReceiveToShelfAsync(line.ProductId!.Value, warehouseId, line.Quantity, null,
+                        MovementReferences.PurchaseOrder, supply.Id, user.Id, inner, $"Supply {supply.Reference}");
                     // Remember what this item counts as, so next time the choice is already made. A product's cost price is NOT touched:
                     // supplier prices vary per delivery and must not silently rewrite what we cost our own goods at.
                     var item = own[line.SupplierProductId!.Value];
@@ -202,20 +203,23 @@ public sealed class SupplyService(IBusinessDbContext db, TransactionRunner tx, S
     /// </summary>
     private async Task<string> ReverseStockAsync(Supply s, CurrentUser user, CancellationToken ct)
     {
-        var batches = await db.StockBatches.Where(b => b.BatchNumber == s.Reference).ToListAsync(ct);
-        foreach (var line in s.Items.Where(i => i.ProductId is not null))
+        // Where it went in: older records have a row named after the record; newer ones went onto the product's shelf row in the record's warehouse.
+        var legacy = await db.StockBatches.AsNoTracking().Where(b => b.BatchNumber == s.Reference).Select(b => new { b.ProductId, b.WarehouseId }).ToListAsync(ct);
+        foreach (var line in s.Items.Where(i => i.ProductId is not null).GroupBy(i => i.ProductId!.Value))
         {
-            var batch = batches.FirstOrDefault(b => b.ProductId == line.ProductId);
-            if (batch is null || batch.QuantityOnHand < line.Quantity)
-                throw new BusinessRuleException($"{line.Name} from this purchase is no longer on the shelf, so it can't be deleted. " +
+            var qty = line.Sum(i => i.Quantity);
+            var warehouseId = legacy.FirstOrDefault(b => b.ProductId == line.Key)?.WarehouseId ?? s.WarehouseId ?? 0;
+            var shelf = await stock.ShelfAsync(line.Key, warehouseId, s.Reference, ct);
+            if (shelf.Sum(b => b.QuantityOnHand) < qty)
+                throw new BusinessRuleException($"{line.First().Name} from this purchase is no longer on the shelf, so it can't be deleted. " +
                     "Adjust the stock first if the goods really went back.");
-            batch.QuantityOnHand -= line.Quantity;
-            db.StockMovements.Add(new StockMovement
-            {
-                ProductId = line.ProductId!.Value, WarehouseId = batch.WarehouseId, MovementType = MovementTypes.Out, Quantity = line.Quantity,
-                ReferenceType = MovementReferences.PurchaseOrder, ReferenceId = s.Id, MovementDate = clock.UtcNow, UserId = user.Id,
-                BatchId = batch.Id, Note = $"Purchase {s.Reference} deleted",
-            });
+            foreach (var (batch, taken) in StockService.Take(shelf, qty))
+                db.StockMovements.Add(new StockMovement
+                {
+                    ProductId = line.Key, WarehouseId = batch.WarehouseId, MovementType = MovementTypes.Out, Quantity = taken,
+                    ReferenceType = MovementReferences.PurchaseOrder, ReferenceId = s.Id, MovementDate = clock.UtcNow, UserId = user.Id,
+                    BatchId = batch.Id, Note = $"Purchase {s.Reference} deleted",
+                });
         }
         return " · stock taken back out";
     }
